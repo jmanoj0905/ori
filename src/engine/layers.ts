@@ -25,7 +25,7 @@ import type { Frame, Line, Result, Vec2 } from './types'
 const EPS = 1e-9
 
 /** Point in a simple polygon (either orientation); boundary counts as inside. */
-function containsPoint(poly: readonly Vec2[], p: Vec2): boolean {
+export function containsPoint(poly: readonly Vec2[], p: Vec2): boolean {
   const n = poly.length
   for (let i = 0; i < n; i++) {
     const a = poly[i]

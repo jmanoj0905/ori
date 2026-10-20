@@ -41,6 +41,8 @@
  * moving faces are dropped. A flat result is then re-solved with `ear.layer` (falling back to
  * the propagated orders if the solver rejects it — the caller re-solves and
  * refuses). Non-flat results keep the propagated (last solved) orders (R2).
+ * `opts.solve: false` skips that solve even for a flat result (ops.ts uses it
+ * for the 0° "edited" preview frame, and solves flat commits itself once).
  */
 import ear from 'rabbit-ear'
 import type { FOLD, FoldKind, Frame, Line, PaperSize, Vec2 } from './types'
@@ -176,6 +178,7 @@ export function foldThrough(
   faces: number[],
   kind: FoldKind,
   angleDeg: number,
+  opts: { solve?: boolean } = {},
 ): Frame | null {
   const assignment = kind === 'valley' ? 'V' : 'M'
   const foldAngle = kind === 'valley' ? angleDeg : -angleDeg
@@ -259,8 +262,17 @@ export function foldThrough(
   removeStraightVertices(g, firstNewVertex)
   repopulate(g)
 
-  if (allFlat(g)) g.faceOrders = solveOrders(g) ?? g.faceOrders
+  if (opts.solve !== false && allFlat(g)) g.faceOrders = solveOrders(g) ?? g.faceOrders
   return toFrame(g)
+}
+
+/**
+ * A copy of `frame` with its adjacency arrays (vertices_vertices, edges_faces,
+ * faces_edges, …) rebuilt from vertices_coords / edges_vertices /
+ * faces_vertices. Use after renumbering faces or vertices.
+ */
+export function rebuildAdjacency(frame: Frame): Frame {
+  return toFrame(repopulate(clone(frame)))
 }
 
 // ---- topology helpers for the face-subset path ----

@@ -48,7 +48,7 @@ function containsPoint(poly: readonly Vec2[], p: Vec2): boolean {
 }
 
 /** above[f] = faces directly known to lie below f (world +z ordering). */
-function aboveGraph(frame: Frame): Map<number, number[]> {
+export function aboveGraph(frame: Frame): Map<number, number[]> {
   const w = windings(frame)
   const below = new Map<number, number[]>()
   const add = (top: number, bottom: number) => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { layerAt, selectFlap, withLayerOrder } from './layers'
+import { containsPoint, layerAt, selectFlap, withLayerOrder } from './layers'
 import { BASE_NAMES, baseFrame, foldThrough, foldedCoords, makeSheet } from './rabbit'
 import { halfFolded } from './testkit'
 import type { Frame, Line } from './types'
@@ -31,6 +31,15 @@ describe('layerAt', () => {
   test('unordered faces tie-break to the lowest face id', () => {
     const f = { ...halfFolded(), faceOrders: [] }
     expect(layerAt(f, [0.25, 0.5])).toEqual([0, 1])
+  })
+})
+
+describe('containsPoint', () => {
+  test('a polygon seen edge-on (zero-length sides) contains only its own boundary', () => {
+    const edgeOn: [number, number][] = [[0.5, 0], [0.5, 0], [0.5, 1], [0.5, 1]]
+    expect(containsPoint(edgeOn, [0.1, 0.5])).toBe(false)
+    expect(containsPoint(edgeOn, [0.5, 0.5])).toBe(true)
+    expect(containsPoint(edgeOn, [0.5, 0])).toBe(true)
   })
 })
 

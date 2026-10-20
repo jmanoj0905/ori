@@ -33,6 +33,11 @@ export function containsPoint(poly: readonly Vec2[], p: Vec2): boolean {
     const ab = sub(b, a)
     const ap = sub(p, a)
     const len2 = ab[0] * ab[0] + ab[1] * ab[1]
+    if (len2 <= EPS * EPS) {
+      // a zero-length side (e.g. a face seen edge-on in a projection) is just a point
+      if (Math.hypot(ap[0], ap[1]) <= EPS) return true
+      continue
+    }
     if (Math.abs(cross(ab, ap)) <= EPS * Math.max(1, Math.sqrt(len2))) {
       const t = len2 > 0 ? (ap[0] * ab[0] + ap[1] * ab[1]) / len2 : 0
       if (t >= -EPS && t <= 1 + EPS) return true

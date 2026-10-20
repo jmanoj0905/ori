@@ -113,21 +113,3 @@ export function preliminary(): Frame {
   if (!orders) throw new Error('preliminary fixture has no layer order')
   return { ...f, faceOrders: orders }
 }
-
-/**
- * Turn the model over (a stand-in until Task 9's `turnOver`): mirror paper
- * x → −x, so face 0 stays at the identity and the paper's back becomes its
- * front: faces re-wound, V ↔ M, fold angles and faceOrders signs negated.
- * The folded form is mirrored and the stack reversed.
- */
-export function turnedOver(frame: Frame): Frame {
-  const swap: Record<string, string> = { V: 'M', M: 'V' }
-  return rebuildAdjacency({
-    vertices_coords: frame.vertices_coords.map(([x, y]) => [-x, y] as Vec2),
-    edges_vertices: frame.edges_vertices.map(([u, v]) => [u, v] as [number, number]),
-    edges_assignment: frame.edges_assignment.map(a => swap[a] ?? a),
-    edges_foldAngle: frame.edges_foldAngle.map(a => (a === 0 ? 0 : -a)),
-    faces_vertices: frame.faces_vertices.map(vs => [...vs].reverse()),
-    faceOrders: frame.faceOrders.map(([a, b, s]) => [a, b, -s] as [number, number, number]),
-  })
-}

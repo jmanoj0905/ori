@@ -2,10 +2,10 @@ import { describe, expect, test } from 'vitest'
 import { petalFold, previewCompound, reverseFold, squashFold } from './compound'
 import { reflect } from './geometry'
 import { layerAt } from './layers'
-import { commit, preview, type Gesture } from './ops'
+import { commit, preview, turnOver, type Gesture } from './ops'
 import { foldedCoords, layerOrders, makeSheet } from './rabbit'
 import { containsPoint } from './layers'
-import { area, base, doubleTriangle, halfFolded, preliminary, turnedOver } from './testkit'
+import { area, base, doubleTriangle, halfFolded, preliminary } from './testkit'
 import type { Frame, Line, Tool, Vec2 } from './types'
 
 const sheet = () => makeSheet({ width: 1, height: 1 })
@@ -31,6 +31,29 @@ const isFlat = (f: Frame) => f.edges_foldAngle.every(a => close(a, 0, 1e-6) || c
 /** Vertices of `frame` at paper point `p`. */
 const verticesAt = (frame: Frame, p: Vec2) =>
   frame.vertices_coords.map((q, v) => (near(q, p) ? v : -1)).filter(v => v >= 0)
+
+/**
+ * The paper's corner vertices: where its two boundary edges are not collinear
+ * in paper space (paper coordinates are a rigid image of the sheet, and move
+ * under re-rooting and turnOver, so corners are found by shape, not position).
+ */
+const paperCorners = (frame: Frame): number[] => {
+  const ns = frame.vertices_coords.map(() => [] as number[])
+  frame.edges_vertices.forEach(([u, v], e) => {
+    if (frame.edges_assignment[e] !== 'B') return
+    ns[u].push(v)
+    ns[v].push(u)
+  })
+  const P = frame.vertices_coords
+  return ns
+    .map((n, v) => {
+      if (n.length !== 2) return -1
+      const [a, b] = n
+      const cr = (P[a][0] - P[v][0]) * (P[b][1] - P[v][1]) - (P[a][1] - P[v][1]) * (P[b][0] - P[v][0])
+      return Math.abs(cr) > 1e-9 ? v : -1
+    })
+    .filter(v => v >= 0)
+}
 
 /** Folded polygon of face f. */
 const foldedPoly = (frame: Frame, f: number, c = foldedCoords(frame)) => frame.faces_vertices[f].map(v => c[v])
@@ -301,27 +324,33 @@ describe('the crane path: squash ×2 makes a preliminary base, petal ×2 a bird 
   test('end to end through commit', () => {
     let f = doubleTriangle()
     f = ok(commit(f, gesture('squash', { grab: [0.9, 0.5], target: [0.6, 0.1] }))).frame
-    f = turnedOver(f) // the triangle is now at x ∈ [-1, -0.5]: C = [-.5,.5], P = [-1,0], Q = [-1,1]
-    f = ok(commit(f, gesture('squash', { grab: [-0.9, 0.7], target: [-0.6, 0.1] }))).frame
-    // a preliminary base: the square C, [-.5,0], P, [-1,.5], four layers
+    // the footprint is x ∈ [0.5, 1]; turning over mirrors it about x = 0.75 onto itself:
+    // the triangle is now C = [1,.5], P = [.5,0], Q = [.5,1]
+    f = turnOver(f).frame
+    f = ok(commit(f, gesture('squash', { grab: [0.6, 0.7], target: [0.9, 0.1] }))).frame
+    // a preliminary base: the square C, [1,0], P, [.5,.5], four layers
     expect(layerOrders(f)).not.toBeNull()
-    expect(layerAt(f, [-0.8, 0.1])).toHaveLength(4) // either side of the axis (the diagonal y = x + 1)
-    expect(layerAt(f, [-0.9, 0.3])).toHaveLength(4)
+    expect(layerAt(f, [0.7, 0.1])).toHaveLength(4) // either side of the axis (the diagonal y = x − 0.5)
+    expect(layerAt(f, [0.6, 0.3])).toHaveLength(4)
     const c = foldedCoords(f)
-    const corners = ([[0, 0], [1, 0], [0, 1], [1, 1]] as Vec2[]).flatMap(p => verticesAt(f, p)).map(v => c[v])
-    for (const p of corners) expect(near(p, [-1, 0])).toBe(true)
+    const corners = paperCorners(f).map(v => c[v])
+    expect(corners).toHaveLength(4)
+    for (const p of corners) expect(near(p, [0.5, 0])).toBe(true)
     // petal the front, turn over, petal the back
-    f = ok(commit(f, gesture('petal', { grab: [-0.95, 0.05], target: [-0.4, 0.6] }))).frame
+    f = ok(commit(f, gesture('petal', { grab: [0.55, 0.05], target: [1.1, 0.6] }))).frame
     expect(layerOrders(f)).not.toBeNull()
-    f = turnedOver(f)
-    f = ok(commit(f, gesture('petal', { grab: [0.95, 0.05], target: [0.4, 0.6] }))).frame
+    // the footprint is x ∈ [0.5, 0.5 + √½]; turned over about its centre it stays there
+    f = turnOver(f).frame
+    const s = Math.SQRT1_2
+    f = ok(commit(f, gesture('petal', { grab: [0.45 + s, 0.05], target: [s - 0.1, 0.6] }))).frame
     expect(layerOrders(f)).not.toBeNull()
     expect(area(f)).toBeCloseTo(1, 9)
     // two corners up at the petal tips, two down at the legs
     const c2 = foldedCoords(f)
-    const tips = ([[0, 0], [1, 0], [0, 1], [1, 1]] as Vec2[]).map(p => verticesAt(f, p).map(v => c2[v]))
-    const up = tips.filter(ps => ps.every(p => near(p, [1 - Math.SQRT1_2, Math.SQRT1_2], 1e-7)))
-    const down = tips.filter(ps => ps.every(p => near(p, [1, 0], 1e-7)))
+    const tips = paperCorners(f).map(v => [c2[v]])
+    expect(tips).toHaveLength(4)
+    const up = tips.filter(ps => ps.every(p => near(p, [0.5, s], 1e-7)))
+    const down = tips.filter(ps => ps.every(p => near(p, [0.5 + s, 0], 1e-7)))
     expect(up).toHaveLength(2)
     expect(down).toHaveLength(2)
   })

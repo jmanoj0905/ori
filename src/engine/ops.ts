@@ -77,6 +77,19 @@
  * unaffected since frames are independent. If no planar stationary face
  * exists the commit refuses "Flatten the model before this fold.".
  *
+ * Turn over (`turnOver`): the model is rotated 180° about the vertical axis
+ * x = cx through its folded bounding-box centre (world (x, y, z) →
+ * (2cx − x, y, −z)). Face 0's world pose becomes that rotation, a planar
+ * reflection of its paper coordinates, so this IS reroot's mirror case with
+ * s = 0 and A = (x → 2cx − x): paper coordinates mirrored, faces reversed (still
+ * counter-clockwise), V ↔ M, fold angles and faceOrders signs negated; face
+ * ids, vertex ids and edge ids unchanged. The folded form is mirrored about
+ * x = cx and the stack reversed (windings in folded view are unchanged — two
+ * orientation flips — while every order sign flips). Turning over twice is
+ * exact in everything but the coordinates (sign flips and reversals are
+ * involutions; cx is the same both times); coordinates come back to within
+ * rounding (2cx − (2cx − x)).
+ *
  * Tool dispatch: `preview`/`commit` switch on `g.tool`: 'fold' here,
  * 'reverse' / 'squash' / 'petal' in compound.ts (which reuses `plan`,
  * `originsBy`, `settleBy` and friends exported from here).
@@ -88,8 +101,8 @@ import type { Step } from './history'
 import { petalFold, previewCompound, reverseFold, squashFold } from './compound'
 import { containsPoint, selectFlap, withLayerOrder } from './layers'
 import { poses, transform, treePoses, type FacePose, type Rigid } from './poses'
-import { foldThrough, foldedCoords, rebuildAdjacency } from './rabbit'
-import type { FaceOrder, FoldKind, Frame, Line, Refusal, Result, Tool, Vec2 } from './types'
+import { foldThrough, foldedCoords, makeSheet, rebuildAdjacency } from './rabbit'
+import type { FaceOrder, FoldKind, Frame, Line, Ok, PaperSize, Refusal, Result, Tool, Vec2 } from './types'
 
 export type Gesture = {
   tool: Tool
@@ -155,6 +168,25 @@ export function commit(frame: Frame, g: Gesture): Result<{ frame: Frame; step: S
     case 'petal':
       return petalFold(frame, g)
   }
+}
+
+// ---- paper and turn over ----
+
+export const PAPER_SIZES = Object.freeze({
+  square: Object.freeze({ width: 1, height: 1 }),
+  a4: Object.freeze({ width: 1, height: Math.SQRT2 }),
+}) satisfies Record<string, PaperSize>
+
+/** The first frame: a flat, unfolded sheet of `size` paper units, corner at the origin. */
+export const createPaper = (size: PaperSize): Frame => makeSheet(size)
+
+/** Turn the model over (see the header): mirror about x = folded bbox centre, stack reversed. */
+export function turnOver(frame: Frame): Ok<{ frame: Frame; step: Step }> {
+  const xs = foldedCoords(frame).map(p => p[0])
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const A: Planar = { a: -1, b: 0, c: 0, d: 1, tx: 2 * cx, ty: 0, det: -1, identity: false }
+  const { frame: out } = reroot(frame, 0, A)
+  return { ok: true, frame: out, step: { kind: 'turnOver', params: { axisX: cx }, label: 'Turn over', at: Date.now() } }
 }
 
 // ---- shared planning ----

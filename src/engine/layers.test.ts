@@ -56,12 +56,20 @@ describe('selectFlap', () => {
   test('a grab exactly on a crease is deterministic and does not throw', () => {
     const a = selectFlap(halfFolded(), [0.5, 0.5], 1, vertical(0.4))
     expect(a).toEqual(selectFlap(halfFolded(), [0.5, 0.5], 1, vertical(0.4)))
-    expect(a).toEqual({ faces: [1], k: 1 })
+    // the grab is on the hinge, which lies on the moving side: both layers come
+    expect(a).toEqual({ faces: [0, 1], k: 1 })
   })
-  test('a layer hinged to the grabbed one, wholly on the moving side, comes along', () => {
-    // the hinge at x = 0.5 lies on the moving side of x = 0.6, so face 0 is dragged with face 1
-    expect(selectFlap(halfFolded(), [0.25, 0.5], 1, vertical(0.6))).toEqual({ faces: [0, 1], k: 1 })
+  test('a hinged layer straddling the crease comes along when the hinge is on the moving side', () => {
+    // fold the folded edge (hinge at x = 0.5) over a crease at x = 0.25
+    const h = halfFolded()
+    const flap = selectFlap(h, [0.4, 0.5], 1, vertical(0.25))
+    expect(flap).toEqual({ faces: [0, 1], k: 1 })
+    expect(foldThrough(h, vertical(0.25), flap.faces, 'valley', 180)!.faces_vertices).toHaveLength(4)
   })
+  test('a hinge on the stationary side keeps the lower layer put', () =>
+    expect(selectFlap(halfFolded(), [0.1, 0.5], 1, vertical(0.25))).toEqual({ faces: [1], k: 1 }))
+  test('a crease missing the folded paper moves everything hinged to the grab', () =>
+    expect(selectFlap(halfFolded(), [0.25, 0.5], 1, vertical(0.6))).toEqual({ faces: [0, 1], k: 1 }))
   test('flood fill never crosses the crease line itself', () => {
     // crease on the hinge: grabbing the top layer unfolds it alone
     expect(selectFlap(halfFolded(), [0.25, 0.5], 1, vertical(0.5))).toEqual({ faces: [1], k: 1 })
@@ -85,6 +93,19 @@ describe('Rabbit Ear bases', () => {
       expect(flap.faces).toContain(stack[0])
     })
   })
+})
+
+describe('Rabbit Ear kite base', () => {
+  // folded kite: faces 0/1 are the upper flap and the sheet under it (y ≥ 0),
+  // hinged by the V diagonal; faces 2/3 mirror them below y = 0, joined to
+  // face 1 by the flat centre line y = 0.
+  test('a crease above the centre line moves only the upper flap and its hinged layer', () =>
+    expect(selectFlap(baseFrame('kite'), [1, 0.2], 1, { origin: [0, 0.1], vector: [1, 0] })).toEqual({
+      faces: [0, 1],
+      k: 1,
+    }))
+  test('a crease across the tip takes both tip layers (joined at the centre line), not the flaps', () =>
+    expect(selectFlap(baseFrame('kite'), [1.2, 0.05], 1, vertical(1.1))).toEqual({ faces: [1, 2], k: 1 }))
 })
 
 describe('withLayerOrder', () => {

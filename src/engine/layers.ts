@@ -114,12 +114,15 @@ const sideOf = (p: Vec2, l: Line) => cross(l.vector, sub(p, l.origin))
  *   1. Seeds: the top k faces of `layerAt(frame, grab)`, k clamped to
  *      [1, layer count] (k = 0 and no faces when nothing is under `grab`).
  *   2. Flood fill from the seeds across shared edges that are not boundary
- *      edges (assignment B, or only one face) and do not lie on the crease
- *      line, into a neighbour face only if its whole folded-space polygon is
- *      on the moving side (every vertex on that side or on the line). Such a
- *      layer is hinged to a moving layer entirely on the moving side, so it
- *      must come along. Faces straddling the crease stay put (foldThrough
- *      splits only the selected ones).
+ *      edges (assignment B, or only one face) and that reach strictly into
+ *      the moving side (at least one folded endpoint off the crease line on
+ *      the moving side). Such an edge is a hinge between a moving layer and
+ *      its neighbour on the side that moves, so the neighbour comes along
+ *      even if it straddles the crease (foldThrough splits it; only its
+ *      moving-side part turns). Edges on the crease line, or wholly on the
+ *      stationary side, are never crossed. E.g. on a half fold creased at
+ *      x = 0.25: grabbing at x = 0.4 (hinge at 0.5 on the moving side) moves
+ *      both layers; grabbing at x = 0.1 moves only the top one.
  *   If `grab` lies on the crease line itself, the moving side is undefined
  *   and only the seeds are returned.
  * `faces` is sorted ascending; `k` is the clamped count.
@@ -141,8 +144,7 @@ export function selectFlap(
   const g = sideOf(grab, moveSide) / vlen
   const grabSide = Math.abs(g) > EPS ? Math.sign(g) : 0
   if (grabSide !== 0) {
-    const onMovingSide = (f: number) => frame.faces_vertices[f].every(v => side(v) * grabSide >= -EPS)
-    const onCrease = (u: number, v: number) => Math.abs(side(u)) <= EPS && Math.abs(side(v)) <= EPS
+    const reachesMovingSide = (u: number, v: number) => side(u) * grabSide > EPS || side(v) * grabSide > EPS
 
     // edge key → assignment, and edge key → incident faces
     const key = (u: number, v: number) => (u < v ? `${u} ${v}` : `${v} ${u}`)
@@ -165,9 +167,9 @@ export function selectFlap(
         const kf = key(u, v)
         const a = assignment.get(kf)
         const fs = edgeFaces.get(kf) ?? []
-        if (fs.length !== 2 || a === 'B' || a === 'b' || onCrease(u, v)) return
+        if (fs.length !== 2 || a === 'B' || a === 'b' || !reachesMovingSide(u, v)) return
         for (const h of fs) {
-          if (h === f || chosen.has(h) || !onMovingSide(h)) continue
+          if (h === f || chosen.has(h)) continue
           chosen.add(h)
           queue.push(h)
         }

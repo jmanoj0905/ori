@@ -416,3 +416,89 @@ describe('folding along an existing hinge (unfold)', () => {
     expect(layerAt(frame, [0.75, 0.5])).toHaveLength(1)
   })
 })
+
+describe('reverse fold on a thick flap (the crane leg)', () => {
+  const S = Math.SQRT1_2
+  // bird base through commit (as in 'the crane path' above): legs' point T = (½ + √½, 0),
+  // axis T → petal tips (½, √½); local frame: y up the axis, x across it
+  const L = (x: number, y: number): Vec2 => [0.5 + S + x * S - y * S, x * S + y * S]
+  const T = L(0, 0)
+  /** Fold along the crease that brings `from` onto `to` (perpendicular bisector), grabbing at `grab`. */
+  const bring = (tool: Tool, grab: Vec2, from: Vec2, to: Vec2, layers: number) => {
+    const mid: Vec2 = [(from[0] + to[0]) / 2, (from[1] + to[1]) / 2]
+    const line: Line = { origin: mid, vector: [-(to[1] - from[1]), to[0] - from[0]] }
+    return gesture(tool, { grab, target: reflect(grab, line), layers })
+  }
+  function narrowedBird(): Frame {
+    let f = doubleTriangle()
+    f = ok(commit(f, gesture('squash', { grab: [0.9, 0.5], target: [0.6, 0.1] }))).frame
+    f = turnOver(f).frame
+    f = ok(commit(f, gesture('squash', { grab: [0.6, 0.7], target: [0.9, 0.1] }))).frame
+    f = ok(commit(f, gesture('petal', { grab: [0.55, 0.05], target: [1.1, 0.6] }))).frame
+    f = turnOver(f).frame
+    f = ok(commit(f, gesture('petal', { grab: [0.45 + S, 0.05], target: [S - 0.1, 0.6] }))).frame
+    // kite folds: each lower edge (T → side corner (∓(√½ − ½), ½)) onto the axis; each
+    // leg's layers are joined along that edge, so the whole leg (4 layers) narrows to 8
+    const side = S - 0.5
+    const onAxis = L(0, Math.hypot(side, 0.5))
+    f = ok(commit(f, bring('fold', L(-0.14, 0.4), L(-side, 0.5), onAxis, 4))).frame
+    f = ok(commit(f, bring('fold', L(0.14, 0.4), L(side, 0.5), onAxis, 4))).frame
+    return f
+  }
+  const legGrab = L(-0.01, 0.15)
+  const c = 0.4
+  const tip = L(c * S, c + c * S) // up and across the axis, 45° off it
+  const neck = bring('reverse', legGrab, T, tip, 8)
+
+  test('the narrowed leg is 8 layers that no single spine line splits', () => {
+    const f = narrowedBird()
+    expect(layerAt(f, legGrab)).toHaveLength(8)
+  })
+
+  test('inside reverse: area conserved, valid layers, the tip lands at the reflected point', () => {
+    const before = narrowedBird()
+    const { frame, step } = ok(reverseFold(before, neck))
+    expect(step.label).toBe('Inside reverse fold · 8 layers')
+    expect(area(frame)).toBeCloseTo(1, 9)
+    expect(layerOrders(frame)).not.toBeNull()
+    expect(isFlat(frame)).toBe(true)
+    // the leg's paper corner was at T; it is now at the reflected tip
+    const c0 = foldedCoords(before)
+    const corner = paperCorners(before).find(v => near(c0[v], T, 1e-7) && layerAt(before, legGrab).some(f => before.faces_vertices[f].includes(v)))
+    expect(corner).toBeDefined()
+    const p = before.vertices_coords[corner!]
+    const c1 = foldedCoords(frame)
+    const now = verticesAt(frame, p)
+    expect(now.length).toBeGreaterThan(0)
+    for (const v of now) expect(near(c1[v], tip, 1e-7)).toBe(true)
+  })
+
+  test("inside reverse: the tip's layers go between the leg's two halves", () => {
+    const before = narrowedBird()
+    const leg = new Set(layerAt(before, legGrab))
+    const { frame } = ok(reverseFold(before, neck))
+    const parent = parentsOf(before, frame)
+    const c0 = foldedCoords(before)
+    const corner = paperCorners(before).find(v => near(c0[v], T, 1e-7) && [...leg].some(f => before.faces_vertices[f].includes(v)))!
+    const tipFaces = new Set(facesTouching(frame, [before.vertices_coords[corner]]))
+    // just above the crease, where the reversed tip overlaps the leg's base
+    const crease: Line = { origin: [(T[0] + tip[0]) / 2, (T[1] + tip[1]) / 2], vector: [-(tip[1] - T[1]), tip[0] - T[0]] }
+    const q = reflect(L(-0.05, c - 0.01), crease)
+    const stack = layerAt(frame, q).filter(f => leg.has(parent[f]))
+    const pattern = stack.map(f => (tipFaces.has(f) ? 't' : 'b')).join('')
+    expect(pattern).toMatch(/^b{4}t+b{4}$/)
+  })
+
+  test('a thick flap whose halves are not mirror images is refused with the spec message', () => {
+    // halfFolded, its bottom half folded up over (4 layers on [0,½]×[½,1]), then the
+    // top two layers' corner (0,1) folded in: 6 layers at the corner, the top
+    // two halves of a small triangle over a square's four. No single spine line,
+    // and the top half (the triangle's layers plus one square layer) does not
+    // cover the bottom half beyond the crease.
+    const sq = ok(commit(halfFolded(), gesture('fold', { grab: [0.25, 0.1], target: [0.25, 0.9], layers: 2 }))).frame
+    const f = ok(commit(sq, gesture('fold', { grab: [0.02, 0.98], target: [0.18, 0.82], layers: 2 }))).frame
+    expect(layerAt(f, [0.08, 0.86])).toHaveLength(6)
+    const g = gesture('reverse', { grab: [0.08, 0.86], target: [0.08, 0.6], layers: 4 })
+    expect(reverseFold(f, g)).toEqual({ ok: false, reason: REVERSE_NO })
+  })
+})

@@ -24,18 +24,30 @@
  *      bottom layer B0 at grab must be joined by a spine: a line Λ such that
  *      removing F's folded edges along Λ splits F into exactly two halves,
  *      T0's and B0's (flood fill), stacked contiguously at grab (T-half above
- *      B-half), with a spine edge reaching the moving side of L. Else
- *      "This flap can't reverse-fold: it isn't folded in half.". (A flap
- *      folded in half has two layers here; a narrowed flap such as a crane's
- *      neck has more layers per half — the spine still joins the outermost.)
+ *      B-half), with a spine edge reaching the moving side of L.
+ *      Thick flaps (`thickHalves`, when no single line splits F that way): an
+ *      even number m ≥ 4 of F's layers at grab, the top m/2 the T-half and
+ *      the bottom m/2 the B-half (faces of F away from grab continue their
+ *      neighbour's half across open edges). The halves must be mirror images
+ *      through the flap's middle — each half's part beyond L covers the
+ *      other's (sampled) — and be joined by folded edges reaching the moving
+ *      side (they may lie on several lines). A crane's narrowed leg is the
+ *      case: 8 layers whose halves are joined along the leg's outer edge, but
+ *      each half is itself pleated — its layers are joined to each other
+ *      only in pairs, along the axis — so neither half is one connected
+ *      piece without the spine and the single-line test above fails. Λ is
+ *      the join line with the most joins. Anything else:
+ *      "This flap can't reverse-fold: it isn't folded in half.".
  *   2. inside iff the drag points into the flap's open side (from Λ toward
  *      grab): the tip goes in between the halves. Otherwise outside: it wraps
  *      around them.
  *   3. A plain valley fold of all of F along L (every tip layer reflected
  *      across L), then: the L-creases of one half flip V ↔ M — the T-half for
  *      inside (its tip turns down, into the middle), the B-half for outside —
- *      and every tip edge joining the two halves (the spine beyond L) flips
- *      V ↔ M. Same geometry as the plain fold; only the layering changes.
+ *      and every tip edge joining the two halves (the spine beyond L, on any
+ *      join line) flips V ↔ M. Same geometry as the plain fold; only the
+ *      layering changes, and the layer solve is the authority on whether the
+ *      reversed tip fits between (inside) or around (outside) the halves.
  *
  * SQUASH (grab on the flap, the drag opens it; the geometry is the flap's):
  *   1. U = top face at grab, D = the one below. They must share a folded
@@ -75,7 +87,7 @@
 import { progressToAngle } from './gesture'
 import { clipLineToPolygon, cross, sub } from './geometry'
 import type { Step } from './history'
-import { layerAt, withLayerOrder } from './layers'
+import { containsPoint, layerAt, withLayerOrder } from './layers'
 import {
   FLATTEN,
   MISS,
@@ -382,6 +394,7 @@ function buildReverse(frame: Frame, g: Gesture): Result<{ built: Built }> {
     )
     if (joins) found = { spine, half }
   }
+  if (!found) found = thickHalves(frame, F, stack, coords, facesOf, ff, movingSide, p.line)
   if (!found) return refuse(REVERSE_NO)
   const { spine, half } = found
 
@@ -437,6 +450,90 @@ function buildReverse(frame: Frame, g: Gesture): Result<{ built: Built }> {
     label: `${inside ? 'Inside' : 'Outside'} reverse fold · ${stack.length} layers`,
     params: { crease: p.line, inside },
   })
+}
+
+/**
+ * Thick flaps (the fallback when no single spine line splits the flap into
+ * two connected halves): the stack at grab, an even number m ≥ 4 of layers,
+ * splits into its top and bottom m/2 (the two halves). Faces of the flap
+ * away from grab join their neighbour's half across open (unfolded) edges.
+ * The halves' parts beyond the crease must cover the same folded footprint
+ * (mirror images through the flap's middle) and be joined by folded edges
+ * reaching the moving side, on one or more lines. The spine Λ is the join
+ * line with the most joins.
+ */
+function thickHalves(
+  frame: Frame,
+  F: Set<number>,
+  stack: number[],
+  coords: Vec2[],
+  facesOf: number[][],
+  ff: (e: number) => boolean,
+  movingSide: (e: number) => boolean,
+  crease: Line,
+): { spine: Line; half: Map<number, 0 | 1> } | null {
+  const m = stack.length
+  if (m < 4 || m % 2 !== 0) return null
+  const half = new Map<number, 0 | 1>()
+  stack.forEach((f, i) => half.set(f, i < m / 2 ? 0 : 1))
+  // faces of F not under grab: continue their layer across open edges
+  for (let grew = true; grew; ) {
+    grew = false
+    frame.edges_vertices.forEach((_, e) => {
+      if (!isInner(frame, e, facesOf) || !isOpen(frame, e)) return
+      const [a, b] = facesOf[e]
+      if (!F.has(a) || !F.has(b)) return
+      if (half.has(a) !== half.has(b)) {
+        const [known, other] = half.has(a) ? [a, b] : [b, a]
+        half.set(other, half.get(known)!)
+        grew = true
+      }
+    })
+  }
+  if ([...F].some(f => !half.has(f))) return null
+  // the same footprint beyond the crease (the part that reverses): sample
+  // points of each face's moving part lie on the other half's moving part
+  const polys = frame.faces_vertices.map(vs => vs.map(v => coords[v]))
+  const samples = (f: number): Vec2[] => {
+    const poly = clipToLeft(polys[f], crease)
+    if (poly.length < 3) return []
+    const c: Vec2 = [poly.reduce((t, p) => t + p[0], 0) / poly.length, poly.reduce((t, p) => t + p[1], 0) / poly.length]
+    return [c, ...poly.map(p => [c[0] + (p[0] - c[0]) * 0.9, c[1] + (p[1] - c[1]) * 0.9] as Vec2)]
+  }
+  const sides = [0, 1].map(h => [...F].filter(f => half.get(f) === h))
+  for (const h of [0, 1])
+    for (const f of sides[h])
+      for (const q of samples(f)) if (!sides[1 - h].some(o => containsPoint(polys[o], q))) return null
+  // folded joins between the halves, grouped by line
+  const joins = frame.edges_vertices
+    .map((_, e) => e)
+    .filter(e => ff(e) && movingSide(e) && half.get(facesOf[e][0]) !== half.get(facesOf[e][1]))
+  if (joins.length === 0) return null
+  const lines: { line: Line; n: number }[] = []
+  for (const e of joins) {
+    const seg = segOf(frame, e, coords)
+    const hit = lines.find(l => onLine(seg, l.line))
+    if (hit) hit.n++
+    else lines.push({ line: lineOf(seg), n: 1 })
+  }
+  lines.sort((a, b) => b.n - a.n)
+  return { spine: lines[0].line, half }
+}
+
+/** The part of a convex polygon on the left of `l` (Sutherland–Hodgman, one edge). */
+function clipToLeft(poly: readonly Vec2[], l: Line): Vec2[] {
+  const out: Vec2[] = []
+  poly.forEach((c, j) => {
+    const d = poly[(j + 1) % poly.length]
+    const sc = side(c, l)
+    const sd = side(d, l)
+    if (sc >= 0) out.push(c)
+    if ((sc > 0 && sd < 0) || (sc < 0 && sd > 0)) {
+      const t = sc / (sc - sd)
+      out.push([c[0] + (d[0] - c[0]) * t, c[1] + (d[1] - c[1]) * t])
+    }
+  })
+  return out
 }
 
 // ---- squash ----

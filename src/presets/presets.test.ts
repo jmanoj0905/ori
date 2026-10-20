@@ -1,6 +1,6 @@
 import { globSync, readFileSync } from 'node:fs'
 import { describe, expect, test } from 'vitest'
-import { PAPER_SIZES, layerAt, poses, type Frame, type History, type Vec2 } from '@engine'
+import { PAPER_SIZES, layerAt, poses, type Frame, type Gesture, type History, type Vec2 } from '@engine'
 import { PRESETS, runPreset, type Preset } from './index'
 
 // ---- helpers (public API only: folded positions come from `poses`) ----
@@ -323,7 +323,70 @@ describe('the crane', () => {
     // many layers: the crane is a real multi-step model, not a few folds
     expect(f.faces_vertices.length).toBeGreaterThan(60)
   })
+
+  test('neck, tail and head are inside reverse folds: each point goes between its flap\'s halves', () => {
+    const p = byId('crane')
+    const h = history(p)
+    const reverses = p.steps.map((s, i) => (s.tool === 'reverse' ? i : -1)).filter(i => i >= 0)
+    expect(reverses).toHaveLength(3)
+    for (const i of reverses) {
+      expect(h.steps[i].label).toMatch(/^Inside reverse fold · \d+ layers$/)
+      const g = p.steps[i] as Gesture
+      const before = h.frames[i]
+      const after = h.frames[i + 1]
+      const flap = new Set(layerAt(before, g.grab).slice(0, g.layers))
+      // each face of `after` descends from the face of `before` holding its paper centroid
+      const parent = after.faces_vertices.map(vs => {
+        const c = centroid(vs.map(v => after.vertices_coords[v]))
+        return before.faces_vertices.findIndex(ws => insideConvex(ws.map(w => before.vertices_coords[w]), c))
+      })
+      expect(parent.every(x => x >= 0)).toBe(true)
+      // the reversed point: flap faces that moved (their centroid's folded position changed)
+      const pb = poses(before)
+      const pa = poses(after)
+      const at = (m: number[], q: Vec2): Vec2 => [m[0] * q[0] + m[4] * q[1] + m[12], m[1] * q[0] + m[5] * q[1] + m[13]]
+      const moved = after.faces_vertices.map((vs, a) => {
+        const c = centroid(vs.map(v => after.vertices_coords[v]))
+        return dist(at(pa[a].matrix, c), at(pb[parent[a]].matrix, c)) > 1e-7
+      })
+      // wherever the point overlaps the flap's unmoved part, it lies strictly between that part's layers
+      const pts = foldedFaces(after).filter((_, f) => flap.has(parent[f])).flat()
+      const xs = pts.map(q => q[0])
+      const ys = pts.map(q => q[1])
+      let overlaps = 0
+      const N = 36
+      for (let a = 0; a < N; a++)
+        for (let b = 0; b < N; b++) {
+          const q: Vec2 = [
+            Math.min(...xs) + ((Math.max(...xs) - Math.min(...xs)) * (a + 0.371)) / N,
+            Math.min(...ys) + ((Math.max(...ys) - Math.min(...ys)) * (b + 0.613)) / N,
+          ]
+          const stack = layerAt(after, q).filter(f => flap.has(parent[f]))
+          const pattern = stack.map(f => (moved[f] ? 't' : 'b')).join('')
+          if (!pattern.includes('t') || !pattern.includes('b')) continue
+          overlaps++
+          expect(pattern, `step ${i + 1} at ${q}`).toMatch(/^b+t+b+$/)
+          const [, top, , bottom] = pattern.match(/^(b+)(t+)(b+)$/)!
+          expect(top.length, `step ${i + 1}: halves`).toBe(bottom.length)
+        }
+      expect(overlaps, `step ${i + 1}: the point overlaps its flap somewhere`).toBeGreaterThan(0)
+    }
+  }, 30_000)
 })
+
+/** Point in a convex polygon (either winding), boundary excluded. */
+function insideConvex(poly: Vec2[], p: Vec2): boolean {
+  let sign = 0
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]
+    const b = poly[(i + 1) % poly.length]
+    const c = (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0])
+    if (Math.abs(c) < 1e-12) return false
+    if (sign === 0) sign = Math.sign(c)
+    else if (Math.sign(c) !== sign) return false
+  }
+  return true
+}
 
 test('presets use the engine only through @engine', () => {
   const offenders = globSync('src/presets/**/*.ts')

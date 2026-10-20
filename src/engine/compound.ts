@@ -274,11 +274,12 @@ function cutFold(frame: Frame, line: Line, subset: Set<number>): Cut | null {
 /**
  * Apply edits to a cut and re-root it on a face that didn't move (R10).
  * Rabbit Ear's solver takes faceOrders as constraints, so only the orders
- * among faces outside `affected` are kept. `parent[f]` = the `frame` face
+ * among faces that didn't move (`from[f].moving` false) are kept — still
+ * true, including between unmoved parts of the subset and untouched layers. `parent[f]` = the `frame` face
  * that settled face f came from.
  */
-function settleCut(frame: Frame, { cut, from }: Cut, x: Edits, affected: Set<number>): Stepped | null {
-  const next: Frame = { ...apply(cut, x), faceOrders: inheritedAmong(frame, from, f => !affected.has(f)) }
+function settleCut(frame: Frame, { cut, from }: Cut, x: Edits): Stepped | null {
+  const next: Frame = { ...apply(cut, x), faceOrders: inheritedAmong(frame, from, o => !o.moving) }
   const s = settleBy(frame, next, from, false)
   if (!s.ok) return null
   const parent: number[] = []
@@ -286,7 +287,7 @@ function settleCut(frame: Frame, { cut, from }: Cut, x: Edits, affected: Set<num
   return { frame: s.frame, parent, moving: s.moving }
 }
 
-/** cutFold + optional edits + settleCut, `affected` = `subset`. */
+/** cutFold + optional edits + settleCut. */
 function step(
   frame: Frame,
   line: Line,
@@ -297,7 +298,7 @@ function step(
   if (!c) return null
   const x = editsOf(c.cut)
   if (edit && !edit(c.cut, c.from, x)) return null
-  return settleCut(frame, c, x, subset)
+  return settleCut(frame, c, x)
 }
 
 const ok = (built: Built): Result<{ built: Built }> => ({ ok: true, built })
@@ -542,7 +543,7 @@ function buildSquash(frame: Frame, g: Gesture): Result<{ built: Built }> {
         }
       }
     })
-    return settleCut(frame, cut, x, all)
+    return settleCut(frame, cut, x)
   }
   const first = variant(true, true)
   if (!first) return refuse(SQUASH_NO)

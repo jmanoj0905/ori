@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'vitest'
-import { petalFold, reverseFold, squashFold } from './compound'
+import { petalFold, previewCompound, reverseFold, squashFold } from './compound'
 import { reflect } from './geometry'
 import { layerAt } from './layers'
 import { commit, preview, type Gesture } from './ops'
 import { foldedCoords, layerOrders, makeSheet } from './rabbit'
+import { containsPoint } from './layers'
 import { area, base, doubleTriangle, halfFolded, preliminary, turnedOver } from './testkit'
 import type { Frame, Line, Tool, Vec2 } from './types'
 
@@ -53,6 +54,14 @@ const facesTouching = (frame: Frame, ps: Vec2[]) =>
   frame.faces_vertices
     .map((vs, f) => (vs.some(v => ps.some(p => near(frame.vertices_coords[v], p))) ? f : -1))
     .filter(f => f >= 0)
+
+/** For each face of `next`, the face of `old` whose paper polygon holds its paper centroid. */
+function parentsOf(old: Frame, next: Frame): number[] {
+  return next.faces_vertices.map(vs => {
+    const c: Vec2 = [0, 1].map(i => vs.reduce((t, v) => t + next.vertices_coords[v][i], 0) / vs.length) as unknown as Vec2
+    return old.faces_vertices.findIndex(ws => containsPoint(ws.map(w => old.vertices_coords[w]), c))
+  })
+}
 
 const REVERSE_NO = "This flap can't reverse-fold: it isn't folded in half."
 const FLATTEN = 'Flatten the model before this fold.'
@@ -117,6 +126,30 @@ describe('reverse fold', () => {
     const tip = new Set(frame.faces_vertices.map((vs, f) => (vs.some(v => corners.includes(v)) ? f : -1)).filter(f => f >= 0))
     expect(tip.has(stack[0])).toBe(false)
     expect(stack.slice(1, 3).every(f => tip.has(f))).toBe(true)
+  })
+
+  test('still-true orders survive: the unmoved part of the flap keeps its order against untouched layers', () => {
+    // waterbomb, front-left flap (2 layers) inside-reversed at its corner: the
+    // flap's unmoved part keeps its orders against the back flap's layers
+    const before = base('waterbomb')
+    const g = gesture('reverse', { grab: [0.1, 0.02], target: [0.3, 0.02], layers: 2 })
+    const flap = new Set(layerAt(before, [0.1, 0.02]).slice(0, 2))
+    const { preview: pv } = ok(previewCompound(before, g))
+    const after = pv.frame
+    const parent = parentsOf(before, after)
+    const moving = new Set(pv.moving)
+    const mixed = before.faceOrders.filter(([a, b]) => flap.has(a) !== flap.has(b))
+    expect(mixed.length).toBeGreaterThan(0)
+    // every such order is still in the (unsolved) result for the unmoved children
+    for (const [a, b, o] of mixed) {
+      const ca = after.faces_vertices.map((_, f) => f).filter(f => parent[f] === a && !moving.has(f))
+      const cb = after.faces_vertices.map((_, f) => f).filter(f => parent[f] === b && !moving.has(f))
+      for (const x of ca) for (const y of cb) expect(after.faceOrders).toContainEqual([x, y, o])
+    }
+    // and the committed stack away from the tip is the old one, face for face
+    const { frame } = ok(reverseFold(before, g))
+    const p2 = parentsOf(before, frame)
+    expect(layerAt(frame, [0.35, 0.3]).map(f => p2[f])).toEqual(layerAt(before, [0.35, 0.3]))
   })
 
   test('a single-layer flap is refused with the spec message', () => {
@@ -334,6 +367,15 @@ describe('the partial-fold rule (Review Focus 5)', () => {
 })
 
 describe('folding along an existing hinge (unfold)', () => {
+  test('a partial hinge commit carries the last solved orders unchanged (R2)', () => {
+    const before = halfFolded()
+    const g = gesture('fold', { grab: [0.1, 0.5], target: [0.9, 0.5], progress: 1 - Math.SQRT1_2 })
+    const { frame } = ok(commit(before, g))
+    expect(frame.edges_foldAngle.some(a => close(Math.abs(a), 90, 1e-6))).toBe(true)
+    expect(frame.faces_vertices).toEqual(before.faces_vertices) // no re-rooting: face ids unchanged
+    expect(frame.faceOrders).toEqual(before.faceOrders)
+  })
+
   test('lifting the top flap of a half fold back over its hinge unfolds it', () => {
     const g = gesture('fold', { grab: [0.1, 0.5], target: [0.9, 0.5] })
     const { preview: pv } = ok(preview(halfFolded(), g))

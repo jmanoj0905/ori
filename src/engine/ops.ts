@@ -356,12 +356,13 @@ function inherited(old: Frame, from: (Origin | null)[]): FaceOrder[] {
 }
 
 /**
- * `inherited`, restricted to faces whose parent passes `keep` (orders that a
- * fold leaves true). Rabbit Ear's layer solver takes a graph's faceOrders as
- * constraints, so a re-solve after an edit must not see stale ones.
+ * `inherited`, restricted to new faces whose origin passes `keep` (e.g. the
+ * faces that didn't move, whose orders the fold leaves true). Rabbit Ear's
+ * layer solver takes a graph's faceOrders as constraints, so a re-solve after
+ * an edit must not see stale ones.
  */
-export function inheritedAmong(old: Frame, from: (Origin | null)[], keep: (oldFace: number) => boolean): FaceOrder[] {
-  return inherited(old, from.map(o => (o && keep(o.oldFace) ? o : null)))
+export function inheritedAmong(old: Frame, from: (Origin | null)[], keep: (o: Origin) => boolean): FaceOrder[] {
+  return inherited(old, from.map(o => (o && keep(o) ? o : null)))
 }
 
 export const signed = (kind: FoldKind, deg: number) => (kind === 'valley' ? deg : -deg)
@@ -707,14 +708,16 @@ function commitHinge(frame: Frame, g: Gesture, h: Hinge): Result<{ frame: Frame;
     edges_assignment[e] = a === 0 ? 'F' : a > 0 ? 'V' : 'M'
   }
   const moving = new Set(h.faces)
-  // Rabbit Ear's solver treats existing faceOrders as constraints: keep only
-  // the orders among faces that don't move (still true), drop the flap's.
-  const faceOrders = frame.faceOrders.filter(([a, b]) => !moving.has(a) && !moving.has(b))
-  const next: Frame = { ...frame, edges_assignment, edges_foldAngle, faceOrders }
+  const next: Frame = { ...frame, edges_assignment, edges_foldAngle }
   const kept = settleBy(frame, next, originsBy(frame, next, f => moving.has(f)), false)
   if (!kept.ok) return kept
   let out = kept.frame
   if (isFlatFrame(out)) {
+    // Rabbit Ear's solver treats existing faceOrders as constraints: keep only
+    // the orders among faces that didn't move (still true), drop the flap's.
+    // A non-flat result instead carries the last solved orders unchanged (R2).
+    const still = new Set(kept.moving)
+    out = { ...out, faceOrders: out.faceOrders.filter(([a, b]) => !still.has(a) && !still.has(b)) }
     const solved = withLayerOrder(out)
     if (!solved.ok) return solved
     out = solved.frame

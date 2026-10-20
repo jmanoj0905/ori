@@ -41,6 +41,14 @@
  *    "didn't share an edge with at the start"). The first blocked step is
  *    refined by bisection (20 halvings) to the last free angle.
  *
+ * Caching (drag performance): everything that does not depend on `toDeg` —
+ * triangulation, axial classification, per-direction start-stack verdict and
+ * earliest axial contact angle, the sampled pair list with its start-contact
+ * exemptions — is computed once per (frame object, swing faces, axis,
+ * fromDeg) and kept in a WeakMap keyed by the (immutable) frame. A drag, in
+ * which only toDeg changes, then costs a comparison for flat models, plus the
+ * per-call sampling for 3D pairs.
+ *
  * `freeDeg` is the furthest angle (from `fromDeg` toward `toDeg`) reachable
  * without collision; `blocked` is true iff it is short of `toDeg`.
  */
@@ -218,8 +226,12 @@ const boxes3Meet = (a: Box3, b: Box3) =>
 const isFlat = (frame: Frame) =>
   frame.edges_foldAngle.every(a => Math.abs(a) < 1e-6 || Math.abs(Math.abs(a) - 180) < 1e-6)
 
-/** "f is above g" (world +z) by the layer order, transitively; null if unrelated. */
+const relationCache = new WeakMap<Frame, (f: number, g: number) => boolean | null>()
+
+/** "f is above g" (world +z) by the layer order, transitively; null if unrelated. Cached per frame. */
 function layerRelation(frame: Frame) {
+  const hit = relationCache.get(frame)
+  if (hit) return hit
   let below: Map<number, number[]> | null = null
   const memo = new Map<number, Set<number>>()
   const under = (f: number) => {
@@ -237,7 +249,169 @@ function layerRelation(frame: Frame) {
     memo.set(f, s)
     return s
   }
-  return (f: number, g: number): boolean | null => (under(f).has(g) ? true : under(g).has(f) ? false : null)
+  const rel = (f: number, g: number): boolean | null => (under(f).has(g) ? true : under(g).has(f) ? false : null)
+  relationCache.set(frame, rel)
+  return rel
+}
+
+/** Distance from the origin to a 2D triangle (0 if it contains the origin). */
+function originDistance(a: P2, b: P2, c: P2): number {
+  const side = (p: P2, q: P2) => p[0] * q[1] - p[1] * q[0] // sign of origin relative to p→q
+  const s1 = side(a, b)
+  const s2 = side(b, c)
+  const s3 = side(c, a)
+  if ((s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0)) {
+    // inside, or a degenerate triangle: fall through to segments only when degenerate
+    const area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    if (Math.abs(area) > EPS * EPS) return 0
+  }
+  const seg = (p: P2, q: P2) => {
+    const dx = q[0] - p[0]
+    const dy = q[1] - p[1]
+    const l2 = dx * dx + dy * dy
+    const t = l2 > 0 ? Math.max(0, Math.min(1, -(p[0] * dx + p[1] * dy) / l2)) : 0
+    return Math.hypot(p[0] + dx * t, p[1] + dy * t)
+  }
+  return Math.min(seg(a, b), seg(b, c), seg(c, a))
+}
+
+/** Cylindrical bounds of a triangle about the axis: t-range and radial range. */
+function cylBounds(t: Tri['p'], ax: AxisFrame) {
+  const proj = t.map(p => {
+    const rel = sub3(p, ax.o)
+    return { t: dot3(rel, ax.a), q: [dot3(rel, ax.u), rel[2]] as P2 }
+  })
+  const ts = proj.map(x => x.t)
+  return {
+    tmin: Math.min(...ts),
+    tmax: Math.max(...ts),
+    rmax: Math.max(...proj.map(x => Math.hypot(x.q[0], x.q[1]))),
+    rmin: originDistance(proj[0].q, proj[1].q, proj[2].q),
+  }
+}
+
+/**
+ * Everything about a sweep that depends only on (frame, swing faces, axis,
+ * fromDeg) — not on toDeg — so a drag (where only toDeg changes) reuses it.
+ */
+type Analysis = {
+  ax: AxisFrame
+  movAxial: Part[]
+  statAxial: Part[]
+  above: ((f: number, g: number) => boolean | null) | null
+  /** per direction (+1 / −1): blocked at the start, and the earliest axial contact angle */
+  dirs: Map<number, { startBlocked: boolean; minDelta: number }>
+  /** sampled-class data, built lazily */
+  sampled?: { local: Tri['p'][]; statP: Tri['p'][]; statBoxes: Box3[]; pairs: [number, number][] }
+  movTris: Tri[]
+  statTris: Tri[]
+  movOther: Set<Tri>
+  statOther: Set<Tri>
+}
+
+const analysisCache = new WeakMap<Frame, Map<string, Analysis>>()
+const CACHE_PER_FRAME = 16
+
+function analyse(frame: Frame, swing: { faces: number[]; axis: Line }, fromDeg: number): Analysis {
+  const key = `${[...swing.faces].sort((a, b) => a - b).join(',')}|${swing.axis.origin[0]},${swing.axis.origin[1]},${swing.axis.vector[0]},${swing.axis.vector[1]}|${fromDeg}`
+  let byKey = analysisCache.get(frame)
+  if (!byKey) analysisCache.set(frame, (byKey = new Map()))
+  const hit = byKey.get(key)
+  if (hit) return hit
+
+  const moving = new Set(swing.faces)
+  const tree = treePoses(frame)
+  const start = swingRigid(swing.axis, fromDeg)
+  const ax = axisFrame(swing.axis)
+  const movTris: Tri[] = []
+  const statTris: Tri[] = []
+  tree.forEach((m, f) => {
+    if (moving.has(f)) movTris.push(...triangles(frame, f, compose(start, m)))
+    else statTris.push(...triangles(frame, f, m))
+  })
+  const classify = (ts: Tri[]) => {
+    const axial: Part[] = []
+    const other = new Set<Tri>()
+    for (const t of ts) {
+      const parts = axialParts(t, ax)
+      if (parts) axial.push(...parts)
+      else other.add(t)
+    }
+    return { axial, other }
+  }
+  const mov = classify(movTris)
+  const stat = classify(statTris)
+  const orderKnown = isFlat(frame) && Math.abs(fromDeg) < ANG_EPS
+  const a: Analysis = {
+    ax,
+    movAxial: mov.axial,
+    statAxial: stat.axial,
+    above: orderKnown ? layerRelation(frame) : null,
+    dirs: new Map(),
+    movTris,
+    statTris,
+    movOther: mov.other,
+    statOther: stat.other,
+  }
+  if (byKey.size >= CACHE_PER_FRAME) byKey.delete(byKey.keys().next().value!)
+  byKey.set(key, a)
+  return a
+}
+
+/** Axial × axial analysis for one direction (exact; see class 1 above). */
+function axialFor(an: Analysis, dir: number) {
+  const cached = an.dirs.get(dir)
+  if (cached) return cached
+  let startBlocked = false
+  let minDelta = Infinity
+  outer: for (const pm of an.movAxial) {
+    // in the z = 0 plane (θ ≈ 0 or 180), increasing θ moves +z at θ = 0, −z at θ = 180
+    const zUp = dir * (pm.theta < 90 || pm.theta > 270 ? 1 : -1) > 0
+    for (const ps of an.statAxial) {
+      const delta = dir > 0 ? mod360(ps.theta - pm.theta) : mod360(pm.theta - ps.theta)
+      if (delta < ANG_EPS || delta > 360 - ANG_EPS) {
+        // stacked at the start: only a pair that departs into the static face matters
+        if (!an.above) continue
+        const staticAbove = an.above(ps.face, pm.face)
+        if (staticAbove === null || zUp !== staticAbove) continue
+        if (!boxesMeet(pm.box, ps.box) || overlapArea(pm.poly, ps.poly) <= AREA_EPS) continue
+        startBlocked = true
+        break outer
+      }
+      // only a pair that would be the earliest contact so far needs its overlap tested
+      if (delta >= minDelta) continue
+      if (!boxesMeet(pm.box, ps.box) || overlapArea(pm.poly, ps.poly) <= AREA_EPS) continue
+      minDelta = delta
+    }
+  }
+  const r = { startBlocked, minDelta }
+  an.dirs.set(dir, r)
+  return r
+}
+
+/** Sampled-class pairs (any non-axial triangle), with the start-contact exemption applied. */
+function sampledFor(an: Analysis) {
+  if (an.sampled) return an.sampled
+  const pairs: [number, number][] = []
+  const statP = an.statTris.map(t => t.p)
+  const statBoxes = statP.map(box3)
+  if (an.movOther.size || an.statOther.size) {
+    const statCyl = statP.map(p => cylBounds(p, an.ax))
+    an.movTris.forEach((m, mi) => {
+      const mAxial = !an.movOther.has(m)
+      const mc = cylBounds(m.p, an.ax)
+      an.statTris.forEach((s, si) => {
+        if (mAxial && !an.statOther.has(s)) return
+        // sound prune: a moving point keeps its t and its distance from the axis
+        const sc = statCyl[si]
+        if (sc.tmax < mc.tmin - EPS || mc.tmax < sc.tmin - EPS || sc.rmin > mc.rmax + EPS) return
+        if (trianglesPenetrate(m.p, s.p)) return // pre-existing contact: exempt
+        pairs.push([mi, si])
+      })
+    })
+  }
+  an.sampled = { local: an.movTris.map(t => t.p), statP, statBoxes, pairs }
+  return an.sampled
 }
 
 export function sweep(
@@ -249,98 +423,53 @@ export function sweep(
   const span = Math.abs(toDeg - fromDeg)
   if (span < ANG_EPS) return { freeDeg: toDeg, blocked: false }
   const dir = Math.sign(toDeg - fromDeg)
-  const moving = new Set(swing.faces)
-  const tree = treePoses(frame)
-  const start = swingRigid(swing.axis, fromDeg)
-  const ax = axisFrame(swing.axis)
-
-  const movTris: Tri[] = []
-  const statTris: Tri[] = []
-  tree.forEach((m, f) => {
-    if (moving.has(f)) movTris.push(...triangles(frame, f, compose(start, m)))
-    else statTris.push(...triangles(frame, f, m))
-  })
-  const classify = (ts: Tri[]) => {
-    const axial: Part[] = []
-    const other: Tri[] = []
-    for (const t of ts) {
-      const parts = axialParts(t, ax)
-      if (parts) axial.push(...parts)
-      else other.push(t)
-    }
-    return { axial, other }
-  }
-  const mov = classify(movTris)
-  const stat = classify(statTris)
+  const an = analyse(frame, swing, fromDeg)
 
   // progress (degrees travelled from fromDeg) at which the first collision occurs
   let hit = Infinity
 
   // 1. axial × axial: exact
-  const orderKnown = isFlat(frame) && Math.abs(fromDeg) < ANG_EPS
-  const above = orderKnown ? layerRelation(frame) : null
-  for (const pm of mov.axial)
-    for (const ps of stat.axial) {
-      if (!boxesMeet(pm.box, ps.box) || overlapArea(pm.poly, ps.poly) <= AREA_EPS) continue
-      const delta = dir > 0 ? mod360(ps.theta - pm.theta) : mod360(pm.theta - ps.theta)
-      if (delta < ANG_EPS || delta > 360 - ANG_EPS) {
-        if (!above) continue
-        // in the z = 0 plane (θ ≈ 0 or 180), increasing θ moves +z at θ = 0, −z at θ = 180
-        const thetaZero = pm.theta < 90 || pm.theta > 270
-        const zdir = dir * (thetaZero ? 1 : -1)
-        const staticAbove = above(ps.face, pm.face)
-        if (staticAbove === null) continue
-        if ((zdir > 0) === staticAbove) hit = 0
-      } else if (delta < span - ANG_EPS) hit = Math.min(hit, delta)
-    }
+  const axial = axialFor(an, dir)
+  if (axial.startBlocked) hit = 0
+  else if (axial.minDelta < span - ANG_EPS) hit = axial.minDelta
 
   // 2. pairs involving a non-axial triangle: sampled Möller tests
-  const pairs: [number, Tri][] = []
-  const statBoxes = statTris.map(t => box3(t.p))
-  const nonAxialStat = new Set(stat.other)
-  const nonAxialMov = new Set(mov.other)
-  movTris.forEach((m, mi) => {
-    statTris.forEach(s => {
-      if (!nonAxialMov.has(m) && !nonAxialStat.has(s)) return
-      if (trianglesPenetrate(m.p, s.p)) return // pre-existing contact: exempt
-      pairs.push([mi, s])
-    })
-  })
-  if (pairs.length && hit > 0) {
-    // a per-sample AABB test prunes far-apart pairs before the Möller test
-    const local = movTris.map(t => t.p)
-    const statIdx = new Map(statTris.map((t, i) => [t, i]))
-    const blockedAt = (progress: number) => {
-      const r = swingRigid(swing.axis, dir * progress)
-      const cache = new Map<number, Tri['p']>()
-      for (const [mi, s] of pairs) {
-        let p = cache.get(mi)
-        if (!p) {
-          p = local[mi].map(q => transform(r, q)) as Tri['p']
-          cache.set(mi, p)
+  if (hit > 0) {
+    const { local, statP, statBoxes, pairs } = sampledFor(an)
+    if (pairs.length) {
+      const blockedAt = (progress: number) => {
+        const r = swingRigid(swing.axis, dir * progress)
+        const moved = new Map<number, { p: Tri['p']; box: Box3 }>()
+        for (const [mi, si] of pairs) {
+          let m = moved.get(mi)
+          if (!m) {
+            const p = local[mi].map(q => transform(r, q)) as Tri['p']
+            m = { p, box: box3(p) }
+            moved.set(mi, m)
+          }
+          if (!boxes3Meet(m.box, statBoxes[si])) continue
+          if (trianglesPenetrate(m.p, statP[si])) return true
         }
-        if (!boxes3Meet(box3(p), statBoxes[statIdx.get(s)!])) continue
-        if (trianglesPenetrate(p, s.p)) return true
+        return false
       }
-      return false
-    }
-    const limit = Math.min(span, hit)
-    const n = Math.max(1, Math.ceil(limit / STEP))
-    let prev = 0
-    for (let k = 1; k <= n; k++) {
-      const a = (limit * k) / n
-      if (blockedAt(a)) {
-        let lo = prev
-        let hi = a
-        for (let i = 0; i < BISECT; i++) {
-          const mid = (lo + hi) / 2
-          if (blockedAt(mid)) hi = mid
-          else lo = mid
+      const limit = Math.min(span, hit)
+      const n = Math.max(1, Math.ceil(limit / STEP))
+      let prev = 0
+      for (let k = 1; k <= n; k++) {
+        const a = (limit * k) / n
+        if (blockedAt(a)) {
+          let lo = prev
+          let hi = a
+          for (let i = 0; i < BISECT; i++) {
+            const mid = (lo + hi) / 2
+            if (blockedAt(mid)) hi = mid
+            else lo = mid
+          }
+          hit = Math.min(hit, lo)
+          break
         }
-        hit = Math.min(hit, lo)
-        break
+        prev = a
       }
-      prev = a
     }
   }
 

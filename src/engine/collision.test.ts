@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import { sweep } from './collision'
 import { applyPose, poses } from './poses'
-import { foldThrough, makeSheet } from './rabbit'
-import { halfFolded } from './testkit'
+import { layerAt } from './layers'
+import { foldThrough, layerOrders, makeSheet } from './rabbit'
+import { accordion, halfFolded } from './testkit'
 import type { Frame, Line, Vec2 } from './types'
 
 const vertical = (x: number): Line => ({ origin: [x, 0], vector: [0, 1] })
@@ -102,6 +103,55 @@ describe('sweep', () => {
     test('swinging it the other way, over the wall top and out past the paper, is free', () => {
       const f = shelfFrame()
       expect(sweep(f, { faces: [shelfOf(f)], axis }, 0, -180)).toEqual({ freeDeg: -180, blocked: false })
+    })
+  })
+
+  describe('caching across drag frames', () => {
+    const shelf = () => {
+      const a = wall()
+      return foldThrough(a, vertical(0.1), [faceAt(a, [0.3, 0.5])], 'valley', 90)!
+    }
+    const cases: [string, () => Frame, (f: Frame) => number[], Line][] = [
+      ['half fold, lower layer', halfFolded, () => [0], vertical(0.5)],
+      ['half fold, upper layer', halfFolded, () => [1], vertical(0.5)],
+      ['wall', wall, f => [faceAt(f, [0.75, 0.5])], vertical(0.5)],
+      ['shelf (sampled)', shelf, f => [faceAt(f, [0.05, 0.5])], vertical(0.5)],
+    ]
+    test.each(cases)('a drag (many toDeg on one frame) matches fresh, uncached sweeps: %s', (_, make, facesOf, axis) => {
+      const f = make()
+      const faces = facesOf(f)
+      for (const to of [30, 90, -45, 180, -150, 75.9, 76.1, -180, 120, 0.5])
+        expect(sweep(f, { faces, axis }, 0, to)).toEqual(sweep(structuredClone(f), { faces, axis }, 0, to))
+    })
+  })
+
+  describe('performance on a fully stacked model', () => {
+    test('fixture: the accordion stack agrees with the layer solver', () => {
+      const f = accordion(8)
+      const solved = { ...f, faceOrders: layerOrders(f)! }
+      expect(layerAt(f, [0.06, 0.5])).toEqual([7, 6, 5, 4, 3, 2, 1, 0])
+      expect(layerAt(solved, [0.06, 0.5])).toEqual(layerAt(f, [0.06, 0.5]))
+    })
+
+    test('256 faces: correct verdicts, and a warm drag sweep is well under a 16 ms frame', () => {
+      const n = 256
+      const f = accordion(n)
+      // the top half (faces 128…255, above the rest) swings about the crease at folded x = 0
+      const faces = f.faces_vertices.map((_, k) => k).filter(k => k >= n / 2)
+      const axis = vertical(0)
+      // it lies right of the axis: positive drives it down into the lower half, negative lifts it off
+      expect(sweep(f, { faces, axis }, 0, 180)).toEqual({ freeDeg: 0, blocked: true })
+      expect(sweep(f, { faces, axis }, 0, -180)).toEqual({ freeDeg: -180, blocked: false })
+      for (const sign of [1, -1]) {
+        const times: number[] = []
+        for (let k = 1; k <= 9; k++) {
+          const t = performance.now()
+          sweep(f, { faces, axis }, 0, sign * 20 * k)
+          times.push(performance.now() - t)
+        }
+        times.sort((a, b) => a - b)
+        expect(times[4]).toBeLessThan(8)
+      }
     })
   })
 })

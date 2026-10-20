@@ -171,9 +171,9 @@ describe('preview', () => {
     expect(close(cr, 0, 1e-9)).toBe(true)
   })
 
-  test('other tools are not implemented yet and refuse', () => {
+  test('compound tools route to compound.ts: a single sheet cannot be squashed', () => {
     const r = preview(sheet(), fold({ grab: [1, 1], target: [0, 0], tool: 'squash' }))
-    expect(r.ok).toBe(false)
+    expect(r).toEqual({ ok: false, reason: "This flap can't squash-fold: it isn't folded in half." })
   })
 })
 

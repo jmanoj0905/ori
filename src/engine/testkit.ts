@@ -28,3 +28,6 @@ export function halfFolded(): Frame {
   if (!f) throw new Error('halfFolded fixture failed')
   return f
 }
+
+/** The unit square's corners, counter-clockwise from the origin. */
+export const unitSquare: Vec2[] = [[0, 0], [1, 0], [1, 1], [0, 1]]

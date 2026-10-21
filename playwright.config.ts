@@ -74,7 +74,9 @@ export default defineConfig({
     // GPU / rasteriser noise between runs (anti-aliased edges, washi grain).
     toHaveScreenshot: { maxDiffPixelRatio: 0.01, animations: 'disabled', caret: 'hide' },
   },
-  snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
+  // Baselines are per OS and project: other platforms record their own (GPU and font
+  // rasterisation differ) instead of failing against another machine's PNGs.
+  snapshotPathTemplate: '{testDir}/__screenshots__/{platform}/{projectName}/{testFilePath}/{arg}{ext}',
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     ...devices['Desktop Chrome'],

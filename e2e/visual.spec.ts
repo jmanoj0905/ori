@@ -2,10 +2,11 @@
 // paper plane, a live preview mid-drag, and a blocked preview.
 //
 // Stabilised: 1280×800 at deviceScaleFactor 1, reduced motion (no settle, no
-// framing tween), fonts loaded and two frames rendered before each shot, the
+// framing tween), self-hosted fonts loaded and two frames rendered before each shot, the
 // pointer parked off the paper (no hover ring), caret hidden. A small pixel
 // tolerance (playwright.config.ts) absorbs GPU anti-aliasing noise.
-// Baselines live in e2e/__screenshots__/; refresh them deliberately with
+// Baselines live in e2e/__screenshots__/<platform>/<project>/ (another OS records
+// its own on first run); refresh them deliberately with
 // `npm run e2e -- e2e/visual.spec.ts --update-snapshots`.
 //
 // The blocked preview is a real engine verdict, not a forced flag: after the
@@ -23,6 +24,12 @@ async function still(page: Page) {
 
 test.beforeEach(async ({ page }) => {
   await openStudio(page)
+  // The fonts are self-hosted (no network): the shots must be taken in the real faces.
+  expect(
+    await page.evaluate(() =>
+      ['16px "IBM Plex Sans"', '16px "IBM Plex Mono"', '32px "Instrument Serif"'].every(f => document.fonts.check(f)),
+    ),
+  ).toBe(true)
 })
 
 test('blank sheet', async ({ page }) => {

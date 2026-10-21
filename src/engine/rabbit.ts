@@ -44,7 +44,16 @@
  * `opts.solve: false` skips that solve even for a flat result (ops.ts uses it
  * for the 0° "edited" preview frame, and solves flat commits itself once).
  */
-import ear from 'rabbit-ear'
+// The functions we use, imported from their own modules rather than the package's
+// default `ear` object: that object references the whole library (SVG, WebGL,
+// diagrams, …), which would all ship in the bundle (R31, initial load < 300 KB).
+import { rectangle } from 'rabbit-ear/fold/primitives.js'
+import * as bases from 'rabbit-ear/fold/bases.js'
+import { simpleFoldLine } from 'rabbit-ear/graph/fold/simpleFold.js'
+import { makeVerticesCoordsFolded } from 'rabbit-ear/graph/vertices/folded.js'
+import { makeFacesWinding } from 'rabbit-ear/graph/faces/winding.js'
+import { populate } from 'rabbit-ear/graph/populate.js'
+import { layer } from 'rabbit-ear/layer/layer.js'
 import type { FOLD, FoldKind, Frame, Line, PaperSize, Vec2 } from './types'
 
 // ---- the untyped surface of rabbit-ear we use, contained here ----
@@ -85,7 +94,10 @@ type SolverNode = {
   orders: [number, number, number][]
   branches?: SolverNode[][]
 }
-const re = ear as unknown as RE
+const re = {
+  graph: { rectangle, simpleFoldLine, makeVerticesCoordsFolded, makeFacesWinding, populate, ...bases },
+  layer,
+} as unknown as RE
 
 export const BASE_NAMES = [
   'blintz',

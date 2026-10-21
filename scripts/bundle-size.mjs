@@ -1,15 +1,21 @@
-// Bundle-size gate (spec: main bundle < 300 KB gzip; Ruling R31).
+// Bundle-size gate (spec 00 quality bar: "First load under 300 KB of gzipped
+// JS"; Ruling R31, metric per Ruling R50).
 //
-// "Main bundle" = the JavaScript the browser must load before the app can
-// start: the entry script in dist/index.html, every chunk it modulepreloads,
-// and (transitively) every chunk those import statically. Lazy chunks
-// (import(): the Stage / three.js, the settings and shortcut sheets, the preset
-// player) and the engine Worker are reported but not counted.
+// Counted: all the JavaScript needed for the first interactive paint —
+//   - the entry script in dist/index.html, every chunk it modulepreloads, and
+//     (transitively) every chunk those import statically;
+//   - the chunks the app imports dynamically AT MOUNT (MOUNT_TIME: the Stage,
+//     i.e. three.js, loaded by App's first effect to draw the canvas), with
+//     their static imports.
+// Reported but not counted: chunks loaded on demand later (the settings and
+// shortcut sheets, the preset player) and the engine Worker (spawned on the
+// first commit).
 //
 // Also asserts that the shipped build carries no e2e test hook (window.__ori,
 // exposed only by `vite build --mode e2e`).
 //
-// Usage: npm run build && npm run size   (DIST=dist-e2e to inspect another build)
+// Runs after every `npm run build` (postbuild), so a build over budget fails;
+// `npm run size` re-runs it alone (DIST=dist-e2e to inspect another build).
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { gzipSync } from 'node:zlib'
@@ -31,6 +37,9 @@ const refs = [...page.matchAll(/<script[^>]*type="module"[^>]*src="\/([^"]+)"|<l
 
 // Static imports inside a chunk: `import ... from "./x.js"` / `import "./x.js"` / `export ... from "./x.js"`.
 const STATIC = /(?:^|[;\s}])(?:import|export)\s*(?:[\w$*{}\s,]+from\s*)?["'](\.\/[^"']+\.js)["']/g
+/** Source modules the app imports dynamically on mount (their chunks are named after them). */
+const MOUNT_TIME = ['Stage']
+
 const eager = new Set()
 const visit = file => {
   if (eager.has(file)) return
@@ -41,19 +50,27 @@ const visit = file => {
 refs.forEach(visit)
 
 const all = readdirSync(join(dist, 'assets')).filter(f => f.endsWith('.js')).map(f => join('assets', f))
+for (const name of MOUNT_TIME) {
+  const chunk = all.find(f => new RegExp(`^assets/${name}-[\\w-]+\\.js$`).test(f))
+  if (!chunk) {
+    console.error(`FAIL: no ${name}-*.js chunk (the mount-time import moved or was renamed): update MOUNT_TIME`)
+    process.exit(1)
+  }
+  visit(chunk)
+}
 let total = 0
-console.log(`Eager JS (${dist}):`)
+console.log(`Initial-load JS (${dist}): eager + mount-time ${MOUNT_TIME.join(', ')}`)
 for (const f of eager) {
   const n = gz(f)
   total += n
   console.log(`  ${f.padEnd(40)} ${kb(n).padStart(7)} KB gz`)
 }
-console.log('Lazy / worker JS (not counted):')
+console.log('On-demand / worker JS (not counted):')
 for (const f of all.filter(f => !eager.has(f))) console.log(`  ${f.padEnd(40)} ${kb(gz(f)).padStart(7)} KB gz`)
-console.log(`Main bundle: ${kb(total)} KB gzip (limit ${LIMIT_KB} KB)`)
+console.log(`First load: ${kb(total)} KB gzip of JS (limit ${LIMIT_KB} KB)`)
 
 let failed = total >= LIMIT_KB * 1024
-if (failed) console.error(`FAIL: main bundle ${kb(total)} KB ≥ ${LIMIT_KB} KB gzip`)
+if (failed) console.error(`FAIL: first-load JS ${kb(total)} KB ≥ ${LIMIT_KB} KB gzip`)
 
 if (dist === 'dist') {
   const hooked = all.filter(f => readFileSync(join(dist, f), 'utf8').includes('__ori'))

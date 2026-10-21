@@ -10,7 +10,8 @@
     "test": "tsc -p tsconfig.test.json --noEmit && vitest run",
     "build:e2e": "vite build --mode e2e --outDir dist-e2e",
     "e2e": "playwright test",
-    "size": "node scripts/bundle-size.mjs"
+    "size": "node scripts/bundle-size.mjs",
+    "postbuild": "node scripts/bundle-size.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

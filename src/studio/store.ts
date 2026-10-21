@@ -50,6 +50,14 @@ export const HINT_START = 'Grab a corner and drag it across.'
 /** Shown when the committer itself fails (worker crash), not an engine refusal. */
 export const COMMIT_FAILED = 'Something went wrong with that fold. Try again.'
 
+/**
+ * Where new sheets get their paper (the settings' paper defaults). Injected like
+ * the reduced-motion source (settings import this store, not the reverse); the
+ * app wires it at start-up. Unset: the sheet keeps the current paper.
+ */
+let paperDefaultsSource: (() => PaperSettings) | null = null
+export const setPaperDefaultsSource = (fn: (() => PaperSettings) | null): void => { paperDefaultsSource = fn }
+
 export const SWATCHES = Object.freeze({
   vermilion: '#D9472B',
   indigo: '#2F4A8A',
@@ -169,7 +177,12 @@ export type StudioState = {
   setLastFold(edit: NumericEdit): Promise<boolean>
   setTool(t: Tool): void
   setPaper(p: Partial<PaperSettings>): void
-  newSheet(size: SheetSize): void
+  /**
+   * Start a blank sheet. With an explicit `size` (the paper panel, a preset) only the size
+   * changes and the current paper look is kept. Without one, the settings' paper defaults
+   * (material, colours, size) apply.
+   */
+  newSheet(size?: SheetSize): void
 }
 
 export type StudioOptions = { committer?: Committer; reduced?: () => boolean }
@@ -447,13 +460,15 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       },
 
       newSheet(size) {
-        const s = sizeOf(size)
+        const defaults = size === undefined ? paperDefaultsSource?.() : undefined
+        const chosen = size ?? defaults?.size ?? get().paper.size
+        const s = sizeOf(chosen)
         if (!s) return
         endSettle()
         set({
           ...idle,
           history: startHistory(createPaper(s)),
-          paper: { ...get().paper, size },
+          paper: defaults ? { ...defaults } : { ...get().paper, size: chosen },
           hint: HINT_START,
         })
       },

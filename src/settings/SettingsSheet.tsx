@@ -275,7 +275,7 @@ export function SettingsSheet({ onClose }: { onClose(): void }) {
 
           <section aria-labelledby={`${id}-paper`} className="sheet-sec">
             <h3 id={`${id}-paper`}>Paper defaults</h3>
-            <p className="note">Used for new sheets.</p>
+            <p className="note">Used when the app opens and for each new sheet. The sheet you are folding keeps its paper.</p>
             <div className="field-grid">
               <label className="field">
                 <span>Material</span>

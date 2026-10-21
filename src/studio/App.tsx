@@ -6,7 +6,7 @@ import './App.css'
 import { useEffect, useRef, useState } from 'react'
 import { current, poses } from '@engine'
 import type { Stage } from '../render/Stage'
-import { useStudio, type StudioState } from './store'
+import { setPaperDefaultsSource, useStudio, type StudioState } from './store'
 import { useInput } from '../input/useInput'
 import { useSettings } from '../settings/store'
 import { prefersReducedMotion, setReducedMotionSource } from './motion'
@@ -23,6 +23,7 @@ import './islands/islands.css'
 
 // The store reads reduced motion lazily (settings import the store, not vice versa).
 setReducedMotionSource(() => prefersReducedMotion(useSettings.getState().reducedMotion))
+setPaperDefaultsSource(() => useSettings.getState().paperDefaults)
 
 /** Push the store's model, preview and paper into the Stage (only what changed). */
 export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
@@ -45,6 +46,10 @@ export function App() {
   const hostRef = useRef<HTMLDivElement>(null)
   const [stageReady, setStageReady] = useState<Stage | null>(null)
   useInput(stageReady)
+  // A blank studio opens on the user's paper defaults (settings, section 5).
+  useEffect(() => {
+    if (useStudio.getState().history.steps.length === 0) useStudio.getState().newSheet()
+  }, [])
   useEffect(() => {
     const host = hostRef.current
     if (!host) return

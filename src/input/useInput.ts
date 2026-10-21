@@ -34,7 +34,7 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
     const handlers: Handlers = {
       fold: e => {
         if (e.phase === 'start') {
-          kf.yield() // a pointer fold takes over from the keyboard cursor
+          kf.cancel() // a pointer fold replaces the keyboard one (and a miss must not leave it orphaned)
           if (!g.down({ pointerId: e.pointerId ?? 0, clientX: e.clientX ?? 0, clientY: e.clientY ?? 0 })) return false
           if (snapHeld && useSettings.getState().snap.angle) st.getState().setSnapAngle(true)
         } else if (e.phase === 'move') g.move({ pointerId: e.pointerId ?? 0, clientX: e.clientX ?? 0, clientY: e.clientY ?? 0 })

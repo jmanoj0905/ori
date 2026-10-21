@@ -157,6 +157,9 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
         announce(`${name}. ${previewWords()}`.trim())
         return
       }
+      // Back on the grab point: there is nothing to fold to. Drop the previous target's preview
+      // (a fresh begun gesture) so Enter cannot commit a fold to where the cursor no longer is.
+      store.getState().begin(grab)
     }
     announce(`${name}.`)
   }
@@ -210,7 +213,8 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
     /** The fold key: show the landmark cursor and wait for a grab point. */
     start(): void {
       if (phase !== 'idle') return
-      if (store.getState().pending) return
+      // Not while a fold is live (a mouse drag): begin() would clobber it under the pointer.
+      if (store.getState().pending || store.getState().gesture) return
       ls = landmarks(current(store.getState().history))
       if (ls.length === 0) return
       cursor = nextLandmark(ls, null, 'tab')
@@ -257,11 +261,6 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
     /** Leave the mode, cancelling any gesture it began. */
     cancel(): void {
       reset(true)
-    },
-
-    /** Leave the mode without touching the gesture (a pointer fold took over). */
-    yield(): void {
-      reset(false)
     },
 
     dispose(): void {

@@ -158,4 +158,28 @@ describe('keyboard fold flow', () => {
     store.getState().newSheet('a4')
     expect(kf.phase()).toBe('idle')
   })
+
+  test('moving the target cursor back onto the grab point clears the preview; Enter does not commit', async () => {
+    const { store, kf, press, said } = setup()
+    kf.start()
+    press('Enter')
+    press('ArrowRight')
+    expect(store.getState().preview).not.toBeNull()
+    press('ArrowLeft') // back on the grab landmark
+    expect(store.getState().preview).toBeNull()
+    expect(store.getState().gesture?.progress).toBe(0)
+    press('Enter')
+    await new Promise(r => setTimeout(r, 20))
+    expect(store.getState().history.steps).toHaveLength(0)
+    expect(said[said.length - 1]).toBe('Choose a point to fold to first.')
+  })
+
+  test('F does nothing while a gesture (a mouse drag) is already live', () => {
+    const { store, kf } = setup()
+    store.getState().begin([1, 1])
+    store.getState().drag([0, 0], 1)
+    kf.start()
+    expect(kf.phase()).toBe('idle')
+    expect(store.getState().gesture?.grab).toEqual([1, 1])
+  })
 })

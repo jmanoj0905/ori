@@ -3,6 +3,8 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, test } from 'vitest'
 import { App } from './App'
+import { useSettings, defaultSettings } from '../settings/store'
+import { useStudio } from './store'
 
 afterEach(cleanup)
 
@@ -29,4 +31,11 @@ test('the gear opens the settings sheet; Esc closes it and focus returns to the 
 test('the studio has a polite fold log', () => {
   render(<App />)
   expect(screen.getByRole('log', { name: 'Fold log' })).toHaveAttribute('aria-live', 'polite')
+})
+
+test('the studio opens on the paper defaults from settings', () => {
+  useSettings.setState({ ...defaultSettings(), paperDefaults: { ...defaultSettings().paperDefaults, front: '#2F4A8A', size: 'a4', mode: 'plain' } })
+  render(<App />)
+  expect(useStudio.getState().paper).toMatchObject({ front: '#2F4A8A', size: 'a4', mode: 'plain' })
+  useSettings.setState(defaultSettings())
 })

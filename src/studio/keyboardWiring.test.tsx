@@ -174,3 +174,34 @@ describe('keyboard-only fold through the real input wiring', () => {
     expect(canvas).toHaveAttribute('aria-label')
   })
 })
+
+describe('mouse and keyboard fold hand-over', () => {
+  const press = (init: Record<string, unknown> = {}) => {
+    const e = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1, clientX: 5, clientY: 5, ...init })
+    Object.defineProperty(e, 'pointerId', { value: 1 })
+    act(() => void canvas.dispatchEvent(e))
+  }
+  test('a pointer press that misses the paper while the keyboard target phase is on cancels everything', () => {
+    render(<Harness />)
+    key('KeyF')
+    key('Enter')
+    key('ArrowRight')
+    expect(useStudio.getState().gesture).not.toBeNull()
+    press() // stage.pick returns null: a miss
+    expect(useStudio.getState().gesture).toBeNull()
+    expect(useStudio.getState().preview).toBeNull()
+    expect(useUi.getState().kf).toBe('idle')
+  })
+
+  test('F during a mouse drag does not start the keyboard mode, so Enter cannot clobber the drag', () => {
+    render(<Harness />)
+    act(() => {
+      useStudio.getState().begin([1, 1])
+      useStudio.getState().drag([0, 0], 1)
+    })
+    key('KeyF')
+    expect(useUi.getState().kf).toBe('idle')
+    key('Enter')
+    expect(useStudio.getState().gesture?.grab).toEqual([1, 1])
+  })
+})

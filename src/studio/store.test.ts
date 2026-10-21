@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { PAPER_SIZES, canRedo, createPaper, current, preview } from '@engine'
 import type { Gesture } from '@engine'
 import { inProcessCommitter, type Committer, type CommitRequest } from './committer'
-import { HINT_START, createStudioStore, lastFold } from './store'
+import { DEFAULT_PAPER, HINT_START, createStudioStore, lastFold, setPaperDefaultsSource } from './store'
 
 const fresh = () => createStudioStore({ committer: inProcessCommitter })
 
@@ -496,5 +496,39 @@ describe('settle animation', () => {
     for (const c of during) expect(c.style).toMatchObject({ kind: 'mountain', tool: 'fold' })
     flush(400)
     expect(calls.at(-1)!.p).toBeNull()
+  })
+})
+
+describe('paper defaults (R43)', () => {
+  const defaults = { ...DEFAULT_PAPER, mode: 'plain' as const, front: '#2F4A8A', size: 'a4' as const, thickness: 0.9 }
+  afterEach(() => setPaperDefaultsSource(null))
+
+  test('newSheet() without a size takes the settings defaults, size included', () => {
+    setPaperDefaultsSource(() => defaults)
+    const s = fresh()
+    s.getState().setPaper({ front: '#000000' })
+    s.getState().newSheet()
+    expect(s.getState().paper).toEqual(defaults)
+    expect(current(s.getState().history).vertices_coords.length).toBeGreaterThan(0)
+    const f = current(s.getState().history).vertices_coords
+    const w = Math.max(...f.map(v => v[0])) - Math.min(...f.map(v => v[0]))
+    const h = Math.max(...f.map(v => v[1])) - Math.min(...f.map(v => v[1]))
+    expect(w / h).toBeCloseTo(PAPER_SIZES.a4.width / PAPER_SIZES.a4.height)
+  })
+
+  test('an explicit size wins and keeps the current paper look', () => {
+    setPaperDefaultsSource(() => defaults)
+    const s = fresh()
+    s.getState().setPaper({ front: '#123456' })
+    s.getState().newSheet('square')
+    expect(s.getState().paper.size).toBe('square')
+    expect(s.getState().paper.front).toBe('#123456')
+  })
+
+  test('without a source it keeps the current paper', () => {
+    const s = fresh()
+    s.getState().setPaper({ front: '#123456' })
+    s.getState().newSheet()
+    expect(s.getState().paper.front).toBe('#123456')
   })
 })

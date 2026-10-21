@@ -228,28 +228,59 @@ const isFlat = (frame: Frame) =>
 
 const relationCache = new WeakMap<Frame, (f: number, g: number) => boolean | null>()
 
-/** "f is above g" (world +z) by the layer order, transitively; null if unrelated. Cached per frame. */
+/**
+ * "f is above g" (world +z) by the layer order, transitively; null if unrelated. Cached per frame.
+ *
+ * Both answers are read from closures of `g` alone: f is above g iff f is
+ * reachable upward from g (f ∈ over(g)), below it iff reachable downward
+ * (f ∈ under(g)). The sweep always asks with g = a moving face, so only the
+ * few moving faces' closures are ever built, not one per static face (on a
+ * deep stack that was most of a drag's preview time).
+ */
 function layerRelation(frame: Frame) {
   const hit = relationCache.get(frame)
   if (hit) return hit
   let below: Map<number, number[]> | null = null
-  const memo = new Map<number, Set<number>>()
-  const under = (f: number) => {
-    let s = memo.get(f)
-    if (s) return s
-    below ??= aboveGraph(frame)
-    s = new Set<number>()
-    const stack = [...(below.get(f) ?? [])]
+  let aboveOf: Map<number, number[]> | null = null
+  const downMemo = new Map<number, Set<number>>()
+  const upMemo = new Map<number, Set<number>>()
+  /** Every face other than `f` reachable from `f` along `graph`. */
+  const closure = (f: number, graph: Map<number, number[]>) => {
+    const s = new Set<number>()
+    const stack = [...(graph.get(f) ?? [])]
     while (stack.length) {
       const x = stack.pop()!
       if (s.has(x) || x === f) continue
       s.add(x)
-      stack.push(...(below.get(x) ?? []))
+      for (const y of graph.get(x) ?? []) stack.push(y)
     }
-    memo.set(f, s)
     return s
   }
-  const rel = (f: number, g: number): boolean | null => (under(f).has(g) ? true : under(g).has(f) ? false : null)
+  const under = (g: number) => {
+    let s = downMemo.get(g)
+    if (!s) downMemo.set(g, (s = closure(g, (below ??= aboveGraph(frame)))))
+    return s
+  }
+  const over = (g: number) => {
+    let s = upMemo.get(g)
+    if (!s) {
+      if (!aboveOf) {
+        below ??= aboveGraph(frame)
+        const up = new Map<number, number[]>()
+        for (const [top, bottoms] of below) {
+          for (const b of bottoms) {
+            const list = up.get(b)
+            if (list) list.push(top)
+            else up.set(b, [top])
+          }
+        }
+        aboveOf = up
+      }
+      upMemo.set(g, (s = closure(g, aboveOf)))
+    }
+    return s
+  }
+  const rel = (f: number, g: number): boolean | null => (over(g).has(f) ? true : under(g).has(f) ? false : null)
   relationCache.set(frame, rel)
   return rel
 }

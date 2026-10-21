@@ -101,8 +101,18 @@ export function layerRanks(frame: Frame): number[] {
   const below = aboveGraph(frame)
   const aboveCount = new Array<number>(n).fill(0)
   const edges = new Map<number, number[]>()
+  // Dedupe each face's list in first-seen order with a stamp array (no Set per
+  // face: on a deep stack there are tens of thousands of orders per frame).
+  const seen = new Int32Array(n)
+  let stamp = 0
   for (const [top, bottoms] of below) {
-    const uniq = [...new Set(bottoms)].filter(b => b !== top && b >= 0 && b < n)
+    stamp++
+    const uniq: number[] = []
+    for (const b of bottoms) {
+      if (b === top || !(b >= 0 && b < n) || seen[b] === stamp) continue
+      seen[b] = stamp
+      uniq.push(b)
+    }
     edges.set(top, uniq)
     for (const b of uniq) aboveCount[b]++
   }

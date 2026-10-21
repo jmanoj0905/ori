@@ -54,12 +54,16 @@ const eventMods = (e: { ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; a
 })
 const sameMods = (a: Mods, b: Mods) => a.mod === b.mod && a.shift === b.shift && a.alt === b.alt
 
-function isTypingTarget(t: EventTarget | null): boolean {
+/** <input> types that take typed text; sliders, checkboxes, colour pickers etc. do not. */
+const TEXT_INPUTS = new Set(['', 'text', 'number', 'search', 'email', 'url', 'password', 'tel'])
+
+export function isTypingTarget(t: EventTarget | null): boolean {
   const els: (Element | null)[] = [t instanceof Element ? t : null, document.activeElement]
   return els.some(n => {
     if (!n) return false
     const tag = n.tagName
-    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (n as HTMLElement).isContentEditable === true
+    if (tag === 'INPUT') return TEXT_INPUTS.has(((n as HTMLInputElement).type || '').toLowerCase())
+    return tag === 'TEXTAREA' || tag === 'SELECT' || (n as HTMLElement).isContentEditable === true
   })
 }
 
@@ -99,6 +103,10 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
   }
 
   const onPointerDown = (e: PointerEvent) => {
+    // A press on the canvas takes focus back from any island control (a slider, a
+    // field), so the shortcuts are never left dead behind a stale focus.
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active !== document.body && !el.contains(active)) active.blur()
     const b = getBindings()
     if (drag) {
       if (drag.id === e.pointerId) return // another button of the same pointer

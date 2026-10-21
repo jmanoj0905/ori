@@ -27,6 +27,8 @@ export interface GestureStage {
   projectToPaperPlane(clientX: number, clientY: number): Vec2
   /** CSS pixels per paper unit at the current zoom. */
   pxPerUnit(): number
+  /** Highlight the landmark under the cursor while hovering (null clears it). */
+  setHoverMarker?(p: Vec2 | null): void
 }
 
 type StoreLike = { getState(): StudioState }
@@ -69,10 +71,16 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
   let active: { id: number; grab: Vec2; moved: boolean } | null = null
   const radiusPx = opts.snapRadiusPx ?? (() => useSettings.getState().snapRadiusPx)
 
-  const snap = (p: Vec2): Vec2 => {
+  /** Landmarks the user has snapping switched on for (Tools island / settings). */
+  const enabled = () => {
+    const sn = useSettings.getState().snap
     const ls = landmarks(current(store.getState().history), { edges: true })
-    return snapPoint(p, ls, snapRadiusPaper(radiusPx(), stage.pxPerUnit())).p
+    return ls.filter(l =>
+      l.kind === 'corner' ? sn.corners : l.kind === 'midpoint' ? sn.midpoints : l.kind === 'intersection' ? sn.intersections : sn.edges)
   }
+
+  const snapTo = (p: Vec2) => snapPoint(p, enabled(), snapRadiusPaper(radiusPx(), stage.pxPerUnit()))
+  const snap = (p: Vec2): Vec2 => snapTo(p).p
 
   const setCursor = (c: string) => {
     stage.canvas.style.cursor = c
@@ -94,13 +102,25 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
       const grab = snap(hit.folded)
       store.getState().begin(grab, hit.face)
       active = { id: e.pointerId, grab, moved: false }
+      stage.setHoverMarker?.(null)
       setCursor('grabbing')
       return true
     },
 
     /** Hover feedback while no drag is active. */
     hover(e: { clientX: number; clientY: number }): void {
-      if (!active) setCursor(stage.pick(e.clientX, e.clientY) ? 'grab' : '')
+      if (active) return
+      const hit = stage.pick(e.clientX, e.clientY)
+      setCursor(hit ? 'grab' : '')
+      // Spec 03 step 1: the nearest landmark highlights.
+      const near = hit ? snapTo(hit.folded) : null
+      stage.setHoverMarker?.(near?.snapped ? near.p : null)
+    },
+
+    /** The pointer left the canvas: drop the hover feedback. */
+    leave(): void {
+      if (!active) setCursor('')
+      stage.setHoverMarker?.(null)
     },
 
     /** Cancel the gesture as if Esc was pressed (also the pointercancel / blur path). */

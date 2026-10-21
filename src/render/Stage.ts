@@ -64,6 +64,7 @@ type Ghost = {
 }
 
 const VIEW_ANIM_MS = 300
+const ISLAND_AIR = 1.22
 const LIGHT_DIR = new THREE.Vector3(-2.2, -1.6, 4.5).normalize()
 
 export class Stage {
@@ -107,6 +108,8 @@ export class Stage {
   private dirty = true
   private raf = 0
   private disposed = false
+  /** Hover landmark marker (spec 03 step 1): a thin ring of constant screen size. */
+  private marker: THREE.Mesh | null = null
 
   constructor(host: HTMLElement) {
     this.host = host
@@ -195,6 +198,35 @@ export class Stage {
       if (this.preview) tintGhost(this.ghostMats, sideColors(s), this.preview.blocked, this.ghostFade())
     }
     this.invalidate()
+  }
+
+  /** Show a small ring at a folded-space landmark (null hides it). */
+  setHoverMarker(p: Vec2 | null): void {
+    if (!p) {
+      if (this.marker?.visible) {
+        this.marker.visible = false
+        this.invalidate()
+      }
+      return
+    }
+    if (!this.marker) {
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color('#2B2A28'), transparent: true, opacity: 0.9, depthTest: false, depthWrite: false,
+      })
+      this.marker = new THREE.Mesh(new THREE.RingGeometry(0.68, 1, 40), mat)
+      this.marker.renderOrder = 50
+      this.scene.add(this.marker)
+    }
+    this.marker.position.set(p[0], p[1], 0.01)
+    this.marker.visible = true
+    this.updateMarkerScale()
+    this.invalidate()
+  }
+
+  private updateMarkerScale(): void {
+    if (!this.marker?.visible) return
+    const ppu = this.pxPerUnit()
+    this.marker.scale.setScalar(ppu > 0 ? 8 / ppu : 0.02) // 8 css px radius
   }
 
   // ---- queries -----------------------------------------------------------
@@ -322,6 +354,10 @@ export class Stage {
     disposeMaterials(this.materials)
     disposeGhost(this.ghostMats)
     this.shadeMat.dispose()
+    if (this.marker) {
+      this.marker.geometry.dispose()
+      ;(this.marker.material as THREE.Material).dispose()
+    }
     this.scene.traverse(o => {
       const m = o as THREE.Mesh
       if (m.geometry) m.geometry.dispose()
@@ -505,7 +541,8 @@ export class Stage {
   }
 
   private fitDistance(): number {
-    return frameBounds(this.sheet, FOV_DEG, this.width / this.height).distance
+    // Extra air around the sheet so the floating islands (fold bar, hint) never sit on its edges.
+    return frameBounds(this.sheet, FOV_DEG, this.width / this.height).distance * ISLAND_AIR
   }
 
   private applyCamera(c: CamState): void {
@@ -518,6 +555,7 @@ export class Stage {
     this.camera.far = 400 // the desk plane reaches 100 units; precision is set by near
     this.camera.updateProjectionMatrix()
     this.camera.updateMatrixWorld(true)
+    this.updateMarkerScale()
     this.invalidate()
   }
 

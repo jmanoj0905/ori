@@ -131,6 +131,33 @@ describe('createFoldGesture on the blank square', () => {
     expect(store.getState().history.steps.length).toBe(1)
   })
 
+  test('hovering near a landmark shows the marker on it; away from one (or off the paper) clears it', () => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    const marks: (readonly [number, number] | null)[] = []
+    const stage: GestureStage = { ...stageFor(), setHoverMarker: p => void marks.push(p) }
+    const g = createFoldGesture(stage, store)
+    g.hover({ clientX: 97, clientY: 3 }) // near the top-right corner
+    expect(marks.at(-1)).toEqual([1, 1])
+    g.hover({ clientX: 50, clientY: 50 }) // the middle of a blank square: no landmark within 12px
+    expect(marks.at(-1)).toBeNull()
+    g.hover({ clientX: 500, clientY: 500 }) // off the paper
+    expect(marks.at(-1)).toBeNull()
+    g.hover({ clientX: 3, clientY: 97 })
+    g.leave()
+    expect(marks.at(-1)).toBeNull()
+  })
+
+  test('the marker is hidden while a drag is active', () => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    const marks: (readonly [number, number] | null)[] = []
+    const g = createFoldGesture({ ...stageFor(), setHoverMarker: p => void marks.push(p) }, store)
+    g.hover({ clientX: 97, clientY: 3 })
+    g.down(ev(97, 3))
+    expect(marks.at(-1)).toBeNull()
+    g.hover({ clientX: 3, clientY: 97 })
+    expect(marks.at(-1)).toBeNull()
+  })
+
   // Button filtering moved to the input router (router.test.ts: right-drag is orbit, not fold).
   test('a press off the paper begins nothing and reports false; a press on it reports true', () => {
     const store = createStudioStore({ committer: inProcessCommitter })

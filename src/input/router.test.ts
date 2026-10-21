@@ -168,6 +168,41 @@ describe('keyboard', () => {
     input.remove(); area.remove(); ce.remove()
   })
 
+  test('sliders, checkboxes and buttons do not count as typing, so shortcuts keep working after touching them', () => {
+    const log = setup(['valley'])
+    for (const type of ['range', 'checkbox', 'color', 'radio']) {
+      const input = document.createElement('input')
+      input.type = type
+      document.body.append(input)
+      input.focus()
+      const e = key('KeyV', {}, 'keydown', input)
+      expect(e.defaultPrevented).toBe(true)
+      input.remove()
+    }
+    expect(log).toHaveLength(4)
+    for (const type of ['text', 'number', 'search']) {
+      const input = document.createElement('input')
+      input.type = type
+      document.body.append(input)
+      input.focus()
+      key('KeyV', {}, 'keydown', input)
+      input.remove()
+    }
+    expect(log).toHaveLength(4)
+  })
+
+  test('a canvas press blurs a focused island control', () => {
+    setup()
+    const slider = document.createElement('input')
+    slider.type = 'range'
+    document.body.append(slider)
+    slider.focus()
+    expect(document.activeElement).toBe(slider)
+    ptr('pointerdown')
+    expect(document.activeElement).not.toBe(slider)
+    slider.remove()
+  })
+
   test('Escape emits cancel and ends an active fold drag so later moves are ignored', () => {
     const log = setup()
     ptr('pointerdown')

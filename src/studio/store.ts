@@ -32,7 +32,7 @@ import {
   startHistory,
   undo as undoHistory,
 } from '@engine'
-import type { FoldKind, Gesture, History, PaperSize, Preview, Tool, Vec2 } from '@engine'
+import type { FoldKind, Gesture, History, Line, PaperSize, Preview, Tool, Vec2 } from '@engine'
 import { createWorkerCommitter, type CommitRequest, type Committer } from './committer'
 
 export const HINT_START = 'Grab a corner and drag it across.'
@@ -68,6 +68,40 @@ export const DEFAULT_PAPER: PaperSettings = Object.freeze({
   size: 'square',
 })
 
+/** The recorded parameters of the fold step the cursor sits on, if it is a fold. */
+export type LastFold = {
+  tool: Tool
+  grab: Vec2
+  target: Vec2
+  layers: number
+  kind: FoldKind
+  angleDeg: number
+  crease: Line
+  snapAngle: boolean
+  face?: number
+}
+
+export function lastFold(h: History): LastFold | null {
+  const step = h.cursor > 0 ? h.steps[h.cursor - 1] : undefined
+  if (!step || step.kind !== 'fold') return null
+  const p = step.params as Partial<LastFold> | null
+  if (!p || !p.grab || !p.target || !p.crease || typeof p.angleDeg !== 'number') return null
+  return {
+    tool: p.tool ?? 'fold',
+    grab: p.grab,
+    target: p.target,
+    layers: p.layers ?? 1,
+    kind: p.kind ?? 'valley',
+    angleDeg: p.angleDeg,
+    crease: p.crease,
+    snapAngle: p.snapAngle ?? false,
+    ...(p.face === undefined ? {} : { face: p.face }),
+  }
+}
+
+/** Exact numeric input (spec 03): a crease line and/or a fold angle in degrees. */
+export type NumericEdit = { crease?: Line; angleDeg?: number; kind?: FoldKind }
+
 export type StudioState = {
   history: History
   tool: Tool
@@ -93,6 +127,20 @@ export type StudioState = {
   redo(): void
   jumpTo(i: number): void
   turnOver(): Promise<boolean>
+  /**
+   * Numeric input / angle slider. While a gesture is active it sets
+   * Gesture.crease / Gesture.angleDeg and re-runs the preview. Otherwise it
+   * re-commits the last fold with those values (R28), see setLastFold.
+   */
+  setNumeric(edit: NumericEdit): void
+  /**
+   * R28: replace the last history entry with the same fold re-committed at a
+   * new angle and/or crease, against the frame before it (one undo step).
+   * Calls made while one is in flight are coalesced (latest wins), so a slider
+   * drag sends the Worker at most one request at a time. Refused: history is
+   * unchanged and the refusal shows in the hint line. Resolves true on success.
+   */
+  setLastFold(edit: NumericEdit): Promise<boolean>
   setTool(t: Tool): void
   setPaper(p: Partial<PaperSettings>): void
   newSheet(size: SheetSize): void
@@ -146,6 +194,42 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
 
     /** History navigation: drops any gesture, then moves the cursor. */
     const navigate = (h: History) => set({ ...idle, history: h })
+
+    /** At most one re-commit in flight; later edits merge into `queued` (latest wins). */
+    let recommitting: Promise<boolean> | null = null
+    let queued: NumericEdit | null = null
+
+    const recommit = async (edit: NumericEdit): Promise<boolean> => {
+      const { gesture, pending, history } = get()
+      const last = lastFold(history)
+      if (gesture || pending || !last) return false
+      const prev = undoHistory(history)
+      const g: Gesture = {
+        tool: last.tool, grab: last.grab, target: last.target, layers: last.layers, kind: edit.kind ?? last.kind,
+        progress: 1, snapAngle: last.snapAngle, crease: edit.crease ?? last.crease,
+        angleDeg: edit.angleDeg ?? last.angleDeg,
+        ...(last.face === undefined ? {} : { face: last.face }),
+      }
+      set({ pending: true })
+      let result
+      try {
+        result = await committer({ frame: current(prev), gesture: g })
+      } catch {
+        if (get().history === history) set({ refusal: COMMIT_FAILED })
+        set({ pending: false })
+        return false
+      }
+      if (get().history !== history) {
+        set({ pending: false })
+        return false
+      }
+      if (!result.ok) {
+        set({ refusal: result.reason, pending: false })
+        return false
+      }
+      set({ refusal: null, history: push(prev, result.step, result.frame), pending: false })
+      return true
+    }
 
     return {
       history: startHistory(createPaper(PAPER_SIZES.square)),
@@ -219,6 +303,39 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
         if (get().pending) return Promise.resolve(false)
         set(idle)
         return runCommit({ frame: current(get().history), turnOver: true })
+      },
+
+      setNumeric(edit) {
+        const { gesture, pending } = get()
+        if (!gesture) {
+          void get().setLastFold(edit)
+          return
+        }
+        if (pending) return
+        if (edit.angleDeg !== undefined && !Number.isFinite(edit.angleDeg)) return
+        const g = { ...gesture }
+        if (edit.crease) g.crease = edit.crease
+        if (edit.angleDeg !== undefined) g.angleDeg = edit.angleDeg
+        runPreview(g)
+      },
+
+      setLastFold(edit) {
+        if (edit.angleDeg !== undefined && !Number.isFinite(edit.angleDeg)) return Promise.resolve(false)
+        if (recommitting) {
+          queued = { ...queued, ...edit }
+          return recommitting
+        }
+        recommitting = (async () => {
+          let ok = await recommit(edit)
+          while (queued) {
+            const next: NumericEdit = queued
+            queued = null
+            ok = await recommit(next)
+          }
+          recommitting = null
+          return ok
+        })()
+        return recommitting
       },
 
       setTool(tool) {

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 import { PAPER_SIZES, createPaper, current, preview } from '@engine'
 import type { Gesture } from '@engine'
 import { inProcessCommitter, type Committer, type CommitRequest } from './committer'
-import { HINT_START, createStudioStore } from './store'
+import { HINT_START, createStudioStore, lastFold } from './store'
 
 const fresh = () => createStudioStore({ committer: inProcessCommitter })
 
@@ -215,5 +215,106 @@ describe('useStudio store', () => {
     expect(s.getState().refusal).toBeTruthy()
     expect(s.getState().pending).toBe(false)
     expect(s.getState().history.steps).toHaveLength(0)
+  })
+
+  describe('R28 post-release angle and numeric input', () => {
+    /** Fold the top-right corner to the bottom-left one, but only 90 degrees of the way. */
+    async function foldTo90(s: ReturnType<typeof fresh>) {
+      s.getState().begin([1, 1])
+      s.getState().drag([0, 0], 1)
+      s.getState().setNumeric({ angleDeg: 90 })
+      return s.getState().release()
+    }
+
+    test('lastFold reads the recorded params of the step under the cursor', async () => {
+      const s = fresh()
+      expect(lastFold(s.getState().history)).toBeNull()
+      await foldCorner(s)
+      const last = lastFold(s.getState().history)
+      expect(last?.grab).toEqual([1, 1])
+      expect(last?.angleDeg).toBeCloseTo(180)
+      s.getState().undo()
+      expect(lastFold(s.getState().history)).toBeNull()
+    })
+
+    test('during a gesture setNumeric sets Gesture.angleDeg and re-previews', () => {
+      const s = fresh()
+      s.getState().begin([1, 1])
+      s.getState().drag([0, 0], 1)
+      s.getState().setNumeric({ angleDeg: 60 })
+      expect(s.getState().gesture?.angleDeg).toBe(60)
+      expect(s.getState().preview?.angleDeg).toBeCloseTo(60)
+    })
+
+    test('during a gesture setNumeric takes an exact crease', () => {
+      const s = fresh()
+      s.getState().begin([1, 0.5])
+      s.getState().setNumeric({ crease: { origin: [0.75, 0], vector: [0, 1] }, angleDeg: 180 })
+      expect(s.getState().preview?.crease[0].map(p => p[0])).toEqual([0.75, 0.75])
+    })
+
+    test('setLastFold replaces the last history entry: one step, one undo', async () => {
+      const s = fresh()
+      await foldTo90(s)
+      expect(s.getState().history.steps).toHaveLength(1)
+      const before = s.getState().history.frames[1]
+      await expect(s.getState().setLastFold({ angleDeg: 45 })).resolves.toBe(true)
+      const h = s.getState().history
+      expect(h.steps).toHaveLength(1)
+      expect(h.cursor).toBe(1)
+      expect(h.frames[1]).not.toBe(before)
+      expect(lastFold(h)?.angleDeg).toBeCloseTo(45)
+      expect(s.getState().pending).toBe(false)
+      s.getState().undo()
+      expect(s.getState().history.cursor).toBe(0)
+      expect(s.getState().history.frames[0]).toBe(h.frames[0])
+    })
+
+    test('a refused re-commit leaves history alone and shows the reason', async () => {
+      const s = fresh()
+      await foldTo90(s)
+      const h = s.getState().history
+      await expect(s.getState().setLastFold({ angleDeg: 270 })).resolves.toBe(false)
+      expect(s.getState().history).toBe(h)
+      expect(s.getState().refusal).toBe('The fold angle must be between 0° and 180°.')
+    })
+
+    test('setLastFold is a no-op while a gesture is active or with no fold', async () => {
+      const s = fresh()
+      await expect(s.getState().setLastFold({ angleDeg: 30 })).resolves.toBe(false)
+      await foldTo90(s)
+      s.getState().begin([0, 1])
+      const h = s.getState().history
+      await expect(s.getState().setLastFold({ angleDeg: 30 })).resolves.toBe(false)
+      expect(s.getState().history).toBe(h)
+    })
+
+    test('without a gesture setNumeric re-commits the last fold', async () => {
+      const s = fresh()
+      await foldTo90(s)
+      s.getState().setNumeric({ angleDeg: 30 })
+      await vi.waitFor(() => expect(lastFold(s.getState().history)?.angleDeg).toBeCloseTo(30))
+    })
+
+    test('rapid slider moves are coalesced: one request at a time, the latest value wins', async () => {
+      const { committer, calls } = deferredCommitter()
+      const s = createStudioStore({ committer })
+      s.getState().begin([1, 1])
+      s.getState().drag([0, 0], 1)
+      const rel = s.getState().release()
+      calls[0].resolve()
+      await rel
+      const first = s.getState().setLastFold({ angleDeg: 120 })
+      const second = s.getState().setLastFold({ angleDeg: 100 })
+      const third = s.getState().setLastFold({ angleDeg: 80 })
+      expect(calls).toHaveLength(2) // the commit plus ONE re-commit in flight
+      calls[1].resolve()
+      await vi.waitFor(() => expect(calls).toHaveLength(3))
+      expect(calls[2].req).toMatchObject({ gesture: { angleDeg: 80 } })
+      calls[2].resolve()
+      await Promise.all([first, second, third])
+      expect(lastFold(s.getState().history)?.angleDeg).toBeCloseTo(80)
+      expect(s.getState().history.steps).toHaveLength(1)
+    })
   })
 })

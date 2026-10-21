@@ -1,12 +1,19 @@
 // The studio shell: a full-bleed ivory canvas hosting the Stage, with the
-// wordmark island and the hint line. The Stage follows the store (model,
-// preview, paper); later tasks add the islands.
+// floating islands around it (top bar, tools, fold bar, paper panel) and the
+// hint line. The Stage follows the store (model, preview, paper). Islands fade
+// to 40% while a fold gesture is active (App.css, [data-folding]).
 import './App.css'
 import { useEffect, useRef, useState } from 'react'
 import { current, poses } from '@engine'
 import type { Stage } from '../render/Stage'
 import { useStudio, type StudioState } from './store'
 import { useInput } from '../input/useInput'
+import { TopBar } from './islands/TopBar'
+import { Tools } from './islands/Tools'
+import { FoldBar } from './islands/FoldBar'
+import { HintLine } from './islands/HintLine'
+import { PaperPanel } from './islands/PaperPanel'
+import './islands/islands.css'
 
 /** Push the store's model, preview and paper into the Stage (only what changed). */
 function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
@@ -22,8 +29,8 @@ function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
 }
 
 export function App() {
-  const hint = useStudio(s => s.hint)
-  const refusal = useStudio(s => s.refusal)
+  const folding = useStudio(s => s.gesture !== null)
+  const [paperOpen, setPaperOpen] = useState(false)
   const hostRef = useRef<HTMLDivElement>(null)
   const [stageReady, setStageReady] = useState<Stage | null>(null)
   useInput(stageReady)
@@ -54,14 +61,15 @@ export function App() {
     }
   }, [])
   return (
-    <main className="studio">
+    <main className="studio" data-folding={folding ? '' : undefined}>
       <div className="stage-host" data-stage-host ref={hostRef} />
-      <header className="island topbar">
-        <h1 className="wordmark">ori · 折り</h1>
-      </header>
-      <p className="hint" role="status" aria-live="polite" data-refusal={refusal ? '' : undefined}>
-        {refusal ?? hint}
-      </p>
+      <TopBar paperOpen={paperOpen} onTogglePaper={() => setPaperOpen(o => !o)} />
+      <Tools />
+      {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
+      <div className="bottom">
+        <FoldBar />
+        <HintLine />
+      </div>
     </main>
   )
 }

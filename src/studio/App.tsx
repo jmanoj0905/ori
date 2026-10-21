@@ -77,8 +77,12 @@ export function App() {
         setStageReady(st)
         syncStage(st, useStudio.getState())
         unsubscribe = useStudio.subscribe((s, prev) => syncStage(st, s, prev))
-        // Dev-only hook for manual and browser checks (stripped from production builds).
-        if (import.meta.env.DEV) Object.assign(window, { __ori: { store: useStudio, stage: st } })
+        // Dev / e2e-only hook for manual and browser checks. VITE_ORI_E2E is set only by
+        // `npm run build:e2e`; in a production build both conditions are constant false and
+        // the hook is dropped from the bundle (scripts/bundle-size.mjs asserts it).
+        if (import.meta.env.DEV || import.meta.env.VITE_ORI_E2E === '1') {
+          Object.assign(window, { __ori: { store: useStudio, stage: st, ui: useUi, settings: useSettings } })
+        }
       })
       .catch(err => console.warn('Stage unavailable:', err))
     return () => {

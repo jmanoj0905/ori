@@ -7,4 +7,9 @@ export default defineConfig({
   resolve: {
     alias: { '@engine': fileURLToPath(new URL('./src/engine', import.meta.url)) },
   },
+  // Unit tests only: the Playwright specs in e2e/ run through `npm run e2e`.
+  test: {
+    include: ['src/**/*.test.{ts,tsx}'],
+    exclude: ['e2e/**', 'node_modules/**', 'dist/**', 'dist-e2e/**'],
+  },
 })

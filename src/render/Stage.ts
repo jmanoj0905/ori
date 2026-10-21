@@ -10,7 +10,7 @@
 // moving faces as the translucent ghost, plus the accent live crease. The
 // stationary part is rebuilt only when Preview.frame changes; each pointer
 // move rebuilds just the ghost and the live crease.
-import { clientToPlane, pxPerUnit, toNdc } from './pickMath'
+import { clientToPlane, planeToClient, pxPerUnit, toNdc } from './pickMath'
 import * as THREE from 'three'
 import type { FacePose, FoldKind, Frame, Preview, Tool, Vec2 } from '@engine'
 import { DEFAULT_PAPER, type PaperSettings } from '../studio/store'
@@ -294,6 +294,11 @@ export class Stage {
   /** Intersect the view ray with the z = 0 plane; paper coordinates (x, y). */
   projectToPaperPlane(clientX: number, clientY: number): Vec2 {
     return clientToPlane(this.camera, this.renderer.domElement.getBoundingClientRect(), clientX, clientY) ?? [this.cam.tx, this.cam.ty]
+  }
+
+  /** Folded-space point on the z = 0 plane → client coords (the inverse of projectToPaperPlane). */
+  clientOf(p: Vec2): Vec2 {
+    return planeToClient(this.camera, this.renderer.domElement.getBoundingClientRect(), p)
   }
 
   /** CSS pixels per paper unit at the view target, at the current zoom. */

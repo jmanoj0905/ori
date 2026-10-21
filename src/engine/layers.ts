@@ -20,7 +20,7 @@
  */
 import { layerOrders, foldedCoords, windings } from './rabbit'
 import { cross, sub } from './geometry'
-import type { Frame, Line, Result, Vec2 } from './types'
+import type { Frame, Line, Refusal, Result, Vec2 } from './types'
 
 const EPS = 1e-9
 
@@ -369,8 +369,85 @@ function sideIndex(frame: Frame): SideIndex {
 export const NO_ORDER = 'No valid layer order exists for this fold.'
 
 export function withLayerOrder(frame: Frame): Result<{ frame: Frame }> {
+  const over = layerBudget(frame)
+  if (over) return over
   const orders = layerOrders(frame)
   if (!orders) return { ok: false, reason: NO_ORDER }
   const next = structuredClone(frame) as Frame
   return { ok: true, frame: { ...next, faceOrders: orders } }
+}
+
+// ---- the layer budget (R52) ----
+
+/**
+ * Refused before the layer solve: the solver's cost grows steeply with the
+ * number of overlapping face pairs (one order each). Measured on repeated
+ * halving of a square, every layer folded (Node 24 / Chromium):
+ *   fold 7: 128 faces, 128 layers, 8 128 orders: 1.9 s / 0.9 s
+ *   fold 8: 256 faces, 256 layers, 32 640 orders: 16.9 s / 8.3 s
+ */
+export const TOO_MANY_LAYERS = 'Too many layers to fold here.'
+
+export type LayerBudget = { maxLayers: number; maxOrders: number }
+
+/** The limits: the 7th halving (128 layers, 8 128 orders) passes, the 8th is refused. */
+export const LAYER_BUDGET: Readonly<LayerBudget> = Object.freeze({ maxLayers: 128, maxOrders: 10_000 })
+
+const AXIS_EPS = 1e-9
+
+/** True when an edge normal of `a` separates the two convex polygons (touching counts as apart). */
+function separates(a: readonly Vec2[], b: readonly Vec2[]): boolean {
+  for (let i = 0; i < a.length; i++) {
+    const p = a[i]
+    const q = a[(i + 1) % a.length]
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1])
+    if (len < AXIS_EPS) continue
+    const nx = (p[1] - q[1]) / len
+    const ny = (q[0] - p[0]) / len
+    let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity
+    for (const v of a) {
+      const d = v[0] * nx + v[1] * ny
+      if (d < a0) a0 = d
+      if (d > a1) a1 = d
+    }
+    for (const v of b) {
+      const d = v[0] * nx + v[1] * ny
+      if (d < b0) b0 = d
+      if (d > b1) b1 = d
+    }
+    if (a1 <= b0 + AXIS_EPS || b1 <= a0 + AXIS_EPS) return true
+  }
+  return false
+}
+
+/**
+ * Whether the layer solve of flat `frame` fits the budget: a cheap,
+ * pure pre-check (box-pruned pair scan, O(faces²) at worst), refused with
+ * TOO_MANY_LAYERS when the folded faces overlap in more than `maxOrders`
+ * pairs (the orders the solver must find) or more than `maxLayers` of them
+ * stack at one point (counted at each face's centre). Faces are convex (cut
+ * from a convex sheet by straight creases), so overlap is a separating-axis
+ * test; faces that only touch along an edge do not overlap.
+ */
+export function layerBudget(frame: Frame, limits: LayerBudget = LAYER_BUDGET): Refusal | null {
+  const { polys, boxes } = foldedPolygons(frame)
+  const n = polys.length
+  const refused: Refusal = { ok: false, reason: TOO_MANY_LAYERS }
+  let pairs = 0
+  for (let f = 0; f < n; f++) {
+    const bf = boxes[f]
+    for (let g = f + 1; g < n; g++) {
+      const bg = boxes[g]
+      if (bf[2] <= bg[0] + AXIS_EPS || bg[2] <= bf[0] + AXIS_EPS || bf[3] <= bg[1] + AXIS_EPS || bg[3] <= bf[1] + AXIS_EPS) continue
+      if (separates(polys[f], polys[g]) || separates(polys[g], polys[f])) continue
+      if (++pairs > limits.maxOrders) return refused
+    }
+  }
+  // Stack depth at each face's centre (convex, so the vertex mean is inside it).
+  for (let f = 0; f < n; f++) {
+    const poly = polys[f]
+    const c: Vec2 = [poly.reduce((s, p) => s + p[0], 0) / poly.length, poly.reduce((s, p) => s + p[1], 0) / poly.length]
+    if (facesAt(frame, c).length > limits.maxLayers) return refused
+  }
+  return null
 }

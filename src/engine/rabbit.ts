@@ -187,17 +187,59 @@ export function baseFrame(name: BaseName): Frame {
   return toFrame(g)
 }
 
+// Per-frame caches (frames are immutable): the folded form and face windings
+// are read many times per pointer move (layerAt, selectFlap, plan, hinge
+// checks, the sweep's layer relation). The cached arrays are frozen.
+const foldedCache = new WeakMap<Frame, Vec2[]>()
+const windingCache = new WeakMap<Frame, boolean[]>()
+
+const frozenCoords = (pts: readonly (readonly number[])[]): Vec2[] =>
+  Object.freeze(pts.map(p => Object.freeze([p[0], p[1]]) as Vec2)) as Vec2[]
+
+/** The root-face-0 folded form, z dropped. Cached per frame; the array is frozen (read-only). */
 export function foldedCoords(frame: Frame): Vec2[] {
-  return re.graph
-    .makeVerticesCoordsFolded(clone(frame), [0])
-    .map(p => [p[0], p[1]] as Vec2)
+  const hit = foldedCache.get(frame)
+  if (hit) return hit
+  // makeVerticesCoordsFolded reads (and may fill) adjacency: give it a private
+  // shallow graph of copied arrays rather than structuredClone-ing the frame
+  // (whose faceOrders alone can be tens of thousands of entries).
+  const g: REGraph = {
+    vertices_coords: frame.vertices_coords.map(p => [p[0], p[1]]),
+    edges_vertices: frame.edges_vertices.map(([u, v]) => [u, v] as [number, number]),
+    edges_assignment: [...frame.edges_assignment],
+    edges_foldAngle: [...frame.edges_foldAngle],
+    faces_vertices: frame.faces_vertices.map(vs => [...vs]),
+  }
+  for (const k of DERIVED) {
+    const a = frame[k] as unknown[][] | undefined
+    if (a) (g as Record<string, unknown>)[k] = a.map(x => [...x])
+  }
+  const out = frozenCoords(re.graph.makeVerticesCoordsFolded(g, [0]))
+  foldedCache.set(frame, out)
+  return out
 }
 
+/**
+ * Seed `foldedCoords(frame)` with a folded form the caller already knows
+ * exactly (ops.ts's preview fast path, which builds a frame whose folded form
+ * is its parent's plus points on the crease). Ignored if already cached.
+ */
+export function primeFoldedCoords(frame: Frame, coords: readonly Vec2[]): void {
+  if (!foldedCache.has(frame)) foldedCache.set(frame, frozenCoords(coords))
+}
+
+/** Per face: counter-clockwise in the folded form. Cached per frame; frozen. */
 export function windings(frame: Frame): boolean[] {
-  return re.graph.makeFacesWinding({
-    vertices_coords: foldedCoords(frame).map(p => [p[0], p[1]]),
-    faces_vertices: frame.faces_vertices,
-  })
+  const hit = windingCache.get(frame)
+  if (hit) return hit
+  const out = Object.freeze(
+    re.graph.makeFacesWinding({
+      vertices_coords: foldedCoords(frame).map(p => [p[0], p[1]]),
+      faces_vertices: frame.faces_vertices,
+    }),
+  ) as boolean[]
+  windingCache.set(frame, out)
+  return out
 }
 
 /** A full layer solve of a flat frame; null if non-flat or unsolvable. */

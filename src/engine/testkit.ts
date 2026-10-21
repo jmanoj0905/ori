@@ -113,3 +113,37 @@ export function preliminary(): Frame {
   if (!orders) throw new Error('preliminary fixture has no layer order')
   return { ...f, faceOrders: orders }
 }
+
+/**
+ * A flat unit square pre-creased into a `cols` × `rows` grid of square-ish
+ * cells by flat ('F', 0°) creases: `cols · rows` faces, nothing folded. Face
+ * c + r·cols is cell column c, row r; face 0 is the root at the origin.
+ */
+export function grid(cols: number, rows: number = cols): Frame {
+  const vertices_coords: Vec2[] = []
+  const id = (c: number, r: number) => r * (cols + 1) + c
+  for (let r = 0; r <= rows; r++) for (let c = 0; c <= cols; c++) vertices_coords.push([c / cols, r / rows])
+  const edges_vertices: [number, number][] = []
+  const edges_assignment: string[] = []
+  for (let r = 0; r <= rows; r++)
+    for (let c = 0; c < cols; c++) {
+      edges_vertices.push([id(c, r), id(c + 1, r)])
+      edges_assignment.push(r === 0 || r === rows ? 'B' : 'F')
+    }
+  for (let c = 0; c <= cols; c++)
+    for (let r = 0; r < rows; r++) {
+      edges_vertices.push([id(c, r), id(c, r + 1)])
+      edges_assignment.push(c === 0 || c === cols ? 'B' : 'F')
+    }
+  const faces_vertices: number[][] = []
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) faces_vertices.push([id(c, r), id(c + 1, r), id(c + 1, r + 1), id(c, r + 1)])
+  return rebuildAdjacency({
+    vertices_coords,
+    edges_vertices,
+    edges_assignment,
+    edges_foldAngle: edges_assignment.map(() => 0),
+    faces_vertices,
+    faceOrders: [],
+  })
+}

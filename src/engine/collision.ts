@@ -358,31 +358,133 @@ function analyse(frame: Frame, swing: { faces: number[]; axis: Line }, fromDeg: 
   return a
 }
 
-/** Axial × axial analysis for one direction (exact; see class 1 above). */
+/** Static axial parts sorted by θ, for `axialFor` (built once per analysis). */
+type ByTheta = {
+  parts: Part[]
+  thetas: number[]
+  /** next[i]: the first index after i with a different θ; prev[i]: the last before i */
+  next: Int32Array
+  prev: Int32Array
+}
+const byThetaCache = new WeakMap<Analysis, ByTheta>()
+
+function staticByTheta(an: Analysis): ByTheta {
+  const hit = byThetaCache.get(an)
+  if (hit) return hit
+  const parts = [...an.statAxial].sort((a, b) => a.theta - b.theta)
+  const thetas = parts.map(p => p.theta)
+  const n = parts.length
+  const next = new Int32Array(n)
+  const prev = new Int32Array(n)
+  for (let i = n - 1; i >= 0; i--) next[i] = i + 1 < n && thetas[i + 1] === thetas[i] ? next[i + 1] : i + 1
+  for (let i = 0; i < n; i++) prev[i] = i > 0 && thetas[i - 1] === thetas[i] ? prev[i - 1] : i - 1
+  const out = { parts, thetas, next, prev }
+  byThetaCache.set(an, out)
+  return out
+}
+
+/** First index whose θ is ≥ x (sorted ascending). */
+function lowerBound(xs: number[], x: number): number {
+  let lo = 0
+  let hi = xs.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (xs[mid] < x) lo = mid + 1
+    else hi = mid
+  }
+  return lo
+}
+
+/** Half-width of the θ band around a moving part whose pairs are all tested (≫ ANG_EPS). */
+const BAND = 1e-6
+
+/**
+ * Axial × axial analysis for one direction (exact; see class 1 above).
+ *
+ * The verdict is, over all (moving, static) part pairs: `startBlocked` iff
+ * some pair stacked at the start (Δθ ≈ 0) departs into the static face and
+ * overlaps it; else `minDelta`, the least Δθ (in the swing direction) of an
+ * overlapping pair. Rather than test every pair, the static parts are sorted
+ * by θ. For each moving part, the parts within BAND of its θ (every stacked
+ * pair, and any near one) are tested one by one; the rest are scanned in two
+ * runs over which the computed Δθ is non-decreasing (θ beyond pm's up to the
+ * wrap, then from the wrap back toward pm's θ), each stopping at the first
+ * Δθ above the best contact so far and skipping runs of equal θ at it: every
+ * pair left out would fail the `delta >= minDelta` test anyway. The per-pair
+ * arithmetic and tests are unchanged, so is the verdict.
+ */
 function axialFor(an: Analysis, dir: number) {
   const cached = an.dirs.get(dir)
   if (cached) return cached
   let startBlocked = false
   let minDelta = Infinity
+  const { parts, thetas, next, prev } = staticByTheta(an)
+  const n = parts.length
+  const inBand = new Uint8Array(n)
+  const banded: number[] = []
   outer: for (const pm of an.movAxial) {
     // in the z = 0 plane (θ ≈ 0 or 180), increasing θ moves +z at θ = 0, −z at θ = 180
     const zUp = dir * (pm.theta < 90 || pm.theta > 270 ? 1 : -1) > 0
-    for (const ps of an.statAxial) {
-      const delta = dir > 0 ? mod360(ps.theta - pm.theta) : mod360(pm.theta - ps.theta)
+    const deltaOf = (ps: Part) => (dir > 0 ? mod360(ps.theta - pm.theta) : mod360(pm.theta - ps.theta))
+    /** the original per-pair step; true = blocked at the start */
+    const pair = (ps: Part, delta: number): boolean => {
       if (delta < ANG_EPS || delta > 360 - ANG_EPS) {
         // stacked at the start: only a pair that departs into the static face matters
-        if (!an.above) continue
+        if (!an.above) return false
         const staticAbove = an.above(ps.face, pm.face)
-        if (staticAbove === null || zUp !== staticAbove) continue
-        if (!boxesMeet(pm.box, ps.box) || overlapArea(pm.poly, ps.poly) <= AREA_EPS) continue
-        startBlocked = true
-        break outer
+        if (staticAbove === null || zUp !== staticAbove) return false
+        return boxesMeet(pm.box, ps.box) && overlapArea(pm.poly, ps.poly) > AREA_EPS
       }
       // only a pair that would be the earliest contact so far needs its overlap tested
-      if (delta >= minDelta) continue
-      if (!boxesMeet(pm.box, ps.box) || overlapArea(pm.poly, ps.poly) <= AREA_EPS) continue
+      if (delta >= minDelta) return false
+      if (!boxesMeet(pm.box, ps.box) || overlapArea(pm.poly, ps.poly) <= AREA_EPS) return false
       minDelta = delta
+      return false
     }
+    // 1. the band around pm's θ (wrapping at 0/360)
+    for (const off of [0, 360, -360]) {
+      const lo = pm.theta + off - BAND
+      const hi = pm.theta + off + BAND
+      if (hi < 0 || lo >= 360) continue
+      for (let i = lowerBound(thetas, lo); i < n && thetas[i] <= hi; i++) {
+        if (inBand[i]) continue
+        inBand[i] = 1
+        banded.push(i)
+        if (pair(parts[i], deltaOf(parts[i]))) {
+          startBlocked = true
+          break outer
+        }
+      }
+    }
+    // 2. two monotone runs (see above); `step` walks toward larger Δθ
+    const up = lowerBound(thetas, pm.theta + BAND) // first θ past the band
+    const down = lowerBound(thetas, pm.theta - BAND) - 1 // last θ before it
+    const runs: [number, number, 1 | -1][] =
+      dir > 0
+        ? [[up, n, 1], [0, down + 1, 1]] // θ ascending to 360, then from 0
+        : [[down, -1, -1], [n - 1, up - 1, -1]] // θ descending to 0, then from 360
+    for (const [from, to, step] of runs) {
+      for (let i = from; step > 0 ? i < to : i > to; ) {
+        if (inBand[i]) {
+          i += step
+          continue
+        }
+        const delta = deltaOf(parts[i])
+        if (delta > minDelta) break
+        if (delta === minDelta) {
+          // every part with this θ has this Δθ: none can improve on it
+          i = step > 0 ? next[i] : prev[i]
+          continue
+        }
+        if (pair(parts[i], delta)) {
+          startBlocked = true
+          break outer
+        }
+        i += step
+      }
+    }
+    for (const i of banded) inBand[i] = 0
+    banded.length = 0
   }
   const r = { startBlocked, minDelta }
   an.dirs.set(dir, r)
@@ -400,12 +502,14 @@ function sampledFor(an: Analysis) {
     an.movTris.forEach((m, mi) => {
       const mAxial = !an.movOther.has(m)
       const mc = cylBounds(m.p, an.ax)
+      const mb = box3(m.p)
       an.statTris.forEach((s, si) => {
         if (mAxial && !an.statOther.has(s)) return
         // sound prune: a moving point keeps its t and its distance from the axis
         const sc = statCyl[si]
         if (sc.tmax < mc.tmin - EPS || mc.tmax < sc.tmin - EPS || sc.rmin > mc.rmax + EPS) return
-        if (trianglesPenetrate(m.p, s.p)) return // pre-existing contact: exempt
+        // pre-existing contact is exempt; disjoint boxes can't be in contact (skip the Möller test)
+        if (boxes3Meet(mb, statBoxes[si]) && trianglesPenetrate(m.p, s.p)) return
         pairs.push([mi, si])
       })
     })

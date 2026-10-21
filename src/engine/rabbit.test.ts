@@ -155,7 +155,7 @@ describe('foldThrough contract', () => {
 })
 
 test('windings: half fold has one face flipped', () => {
-  expect(windings(halfFolded()).sort()).toEqual([false, true])
+  expect([...windings(halfFolded())].sort()).toEqual([false, true])
   expect(windings(makeSheet({ width: 1, height: 1 }))).toEqual([true])
 })
 

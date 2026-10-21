@@ -50,6 +50,10 @@
  * and `Preview.frame` is the edited frame (`moving` and `poses` index its
  * faces — the input frame has fewer). The edited frame is cached per input
  * frame for the last (crease, faces, kind), so progress-only moves are cheap.
+ * On a flat model the preview builds that frame directly (`cutFlat`, the
+ * fast path: only the selected faces the crease crosses are cut, no
+ * foldThrough), the same frame up to face/vertex/edge numbering and minus
+ * the derived adjacency arrays; commit always takes the foldThrough path.
  * `Preview.valid` (see `Validity`): a preview whose commit would be a flat
  * fold of a flat model runs that commit's fold and layer solve (`flatFold`,
  * cached the same way and reused by commit) when the result has at most
@@ -111,7 +115,7 @@ import type { Step } from './history'
 import { petalFold, previewCompound, reverseFold, squashFold } from './compound'
 import { NO_ORDER, containsPoint, selectFlap, withLayerOrder } from './layers'
 import { poses, transform, treePoses, type FacePose, type Rigid } from './poses'
-import { foldThrough, foldedCoords, makeSheet, rebuildAdjacency } from './rabbit'
+import { foldThrough, foldedCoords, makeSheet, primeFoldedCoords, rebuildAdjacency } from './rabbit'
 import type { FaceOrder, FoldKind, Frame, Line, Ok, PaperSize, Refusal, Result, Tool, Vec2 } from './types'
 
 export type Gesture = {
@@ -472,6 +476,196 @@ function edited(frame: Frame, p: Plan, kind: FoldKind): Edit {
 }
 
 /**
+ * The preview fast path (Plan 2 Task 0): the same edited frame as `edited`,
+ * built directly for a flat model instead of by `foldThrough` (a full Rabbit
+ * Ear fold of the whole graph plus dissolving every split outside the flap —
+ * ~15 ms at 289 faces, seconds on a 300-layer stack, per pointer move).
+ *
+ * On a flat frame every face lies in the plane, so its folded polygon is its
+ * paper polygon under a planar pose and the crease line meets it in the same
+ * parameters along each side. Only the selected faces the line strictly
+ * crosses are cut (exactly what foldThrough keeps):
+ *   - each side whose folded endpoints lie strictly on opposite sides of the
+ *     line gets one new vertex (shared by both faces on that side, so an
+ *     unselected neighbour gains it on its boundary, as after foldThrough's
+ *     dissolve), and the side's edge is split in two (same assignment/angle);
+ *   - each cut face becomes two: the half on the stationary side keeps the
+ *     face id, the grab-side half is appended; a new open crease edge ('F',
+ *     0°) joins the two cut points.
+ * Then, as `edited`: origins (known exactly here: each new face's parent),
+ * inherited face orders, and `settleBy` (re-rooting when face 0 moves). The
+ * folded form is known exactly and seeds `foldedCoords`.
+ *
+ * Differences from the `foldThrough` frame (same faces, vertices, edges and
+ * geometry; same `moving` set and poses in world space): face, vertex and
+ * edge numbering, and the derived adjacency arrays (vertices_vertices,
+ * edges_faces, faces_edges, …), which are omitted unless re-rooting rebuilt
+ * them — they're optional in FOLD and nothing in the preview reads them.
+ *
+ * Returns null (use `edited`) when the case isn't plainly a cut through
+ * face interiors: a non-flat frame, a folded vertex within the ambiguous
+ * band [CUT_ON, CUT_BAND) of the line (Rabbit Ear's own tolerance decides),
+ * a selected face with a side along the line (foldThrough reassigns such
+ * edges), a cut face that isn't met in exactly two points, or a missing edge.
+ * Commit never uses this: it keeps `edited`/`flatFold` (the authority).
+ */
+const CUT_ON = 1e-10
+const CUT_BAND = 1e-6
+const fastCache = new WeakMap<Frame, { key: string; edit: Edit | null }>()
+
+function editedFast(frame: Frame, p: Plan): Edit | null {
+  const key = JSON.stringify([p.line, p.faces])
+  const hit = fastCache.get(frame)
+  if (hit && hit.key === key) return hit.edit
+  const edit = cutFlat(frame, p)
+  fastCache.set(frame, { key, edit })
+  return edit
+}
+
+const pairKey = (u: number, v: number) => (u < v ? u * 4194304 + v : v * 4194304 + u)
+const pairCache = new WeakMap<Frame, Map<number, number>>()
+
+/** Vertex pair → edge id, cached per frame. */
+function edgeByPair(frame: Frame): Map<number, number> {
+  const hit = pairCache.get(frame)
+  if (hit) return hit
+  const m = new Map<number, number>()
+  frame.edges_vertices.forEach(([u, v], e) => m.set(pairKey(u, v), e))
+  pairCache.set(frame, m)
+  return m
+}
+
+const DERIVED_KEYS = ['vertices_vertices', 'vertices_edges', 'vertices_faces', 'edges_faces', 'faces_edges', 'faces_faces']
+
+function cutFlat(frame: Frame, p: Plan): Edit | null {
+  if (!isFlatFrame(frame) || frame.vertices_coords.length >= 4194304) return null
+  const coords = foldedCoords(frame)
+  const line = p.line
+  const sel = new Set(p.faces)
+
+  // signed distances (folded space) of the selected faces' vertices; 0 = on the line
+  const dist = new Map<number, number>()
+  for (const f of p.faces)
+    for (const v of frame.faces_vertices[f]) {
+      if (dist.has(v)) continue
+      const d = side(coords[v], line)
+      const a = Math.abs(d)
+      if (a >= CUT_ON && a < CUT_BAND) return null
+      dist.set(v, a < CUT_ON ? 0 : d)
+    }
+  const ds = (v: number) => dist.get(v)!
+
+  const pairs = edgeByPair(frame)
+  const vertices_coords: Vec2[] = [...frame.vertices_coords]
+  const folded: Vec2[] = [...coords]
+  const edges_vertices: [number, number][] = [...frame.edges_vertices]
+  const edges_assignment = [...frame.edges_assignment]
+  const edges_foldAngle = [...frame.edges_foldAngle]
+  const faces_vertices: number[][] = [...frame.faces_vertices]
+  const parent: number[] = faces_vertices.map((_, f) => f)
+  const cutFaces = new Set<number>()
+  /** split edge id → its new vertex */
+  const splits = new Map<number, number>()
+
+  const splitEdge = (u: number, w: number): number | null => {
+    const e = pairs.get(pairKey(u, w))
+    if (e === undefined) return null
+    const s = splits.get(e)
+    if (s !== undefined) return s
+    const t = ds(u) / (ds(u) - ds(w))
+    const lerp = (a: Vec2, b: Vec2): Vec2 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]
+    const nv = vertices_coords.length
+    vertices_coords.push(lerp(frame.vertices_coords[u], frame.vertices_coords[w]))
+    folded.push(lerp(coords[u], coords[w]))
+    const [a, b] = frame.edges_vertices[e]
+    edges_vertices[e] = [a, nv]
+    edges_vertices.push([nv, b])
+    edges_assignment.push(frame.edges_assignment[e])
+    edges_foldAngle.push(frame.edges_foldAngle[e])
+    splits.set(e, nv)
+    return nv
+  }
+
+  for (const f of p.faces) {
+    const vs = frame.faces_vertices[f]
+    for (let i = 0; i < vs.length; i++) if (ds(vs[i]) === 0 && ds(vs[(i + 1) % vs.length]) === 0) return null
+    if (!vs.some(v => ds(v) > 0) || !vs.some(v => ds(v) < 0)) continue
+    const aug: number[] = []
+    const zeros: number[] = []
+    for (let i = 0; i < vs.length; i++) {
+      const u = vs[i]
+      const w = vs[(i + 1) % vs.length]
+      if (ds(u) === 0) zeros.push(aug.length)
+      aug.push(u)
+      if (ds(u) * ds(w) < 0) {
+        const nv = splitEdge(u, w)
+        if (nv === null) return null
+        zeros.push(aug.length)
+        aug.push(nv)
+      }
+    }
+    if (zeros.length !== 2) return null
+    const [i, j] = zeros
+    const a = aug.slice(i, j + 1)
+    const b = [...aug.slice(j), ...aug.slice(0, i + 1)]
+    // a's interior vertices (between the two cut points) are all on one side
+    const aMoves = ds(a[1]) > 0
+    faces_vertices[f] = aMoves ? b : a
+    faces_vertices.push(aMoves ? a : b)
+    parent.push(f)
+    cutFaces.add(f)
+    edges_vertices.push([aug[i], aug[j]])
+    edges_assignment.push('F')
+    edges_foldAngle.push(0)
+  }
+  if (cutFaces.size === 0) return null
+
+  // faces that weren't cut gain the new vertex on each of their split sides
+  for (const [e, nv] of splits) {
+    const [a, b] = frame.edges_vertices[e]
+    for (const f of edgeFaces(frame)[e] ?? []) {
+      if (cutFaces.has(f)) continue
+      const vs = [...faces_vertices[f]]
+      const k = vs.findIndex((x, i) => {
+        const y = vs[(i + 1) % vs.length]
+        return (x === a && y === b) || (x === b && y === a)
+      })
+      if (k < 0) return null
+      vs.splice(k + 1, 0, nv)
+      faces_vertices[f] = vs
+    }
+  }
+
+  // origins as originsBy computes them, with each face's parent known
+  const tree = treePoses(frame)
+  const from: Origin[] = faces_vertices.map((vs, nf) => {
+    const oldFace = parent[nf]
+    const pose = tree[oldFace]
+    const c = centroid(vs.map(v => vertices_coords[v]))
+    const w = transform(pose, [c[0], c[1], 0])
+    return { oldFace, pose, moving: sel.has(oldFace) && side(w, line) > 0 }
+  })
+
+  const rest: Record<string, unknown> = { ...frame }
+  for (const k of DERIVED_KEYS) delete rest[k]
+  const next: Frame = {
+    ...rest,
+    vertices_coords,
+    edges_vertices,
+    // as `edited`: an open (0°) V/M crease would read as folded flat
+    edges_assignment: edges_assignment.map((x, e) => (/^[VMvm]$/.test(x) && Math.abs(edges_foldAngle[e]) < EPS ? 'F' : x)),
+    edges_foldAngle,
+    faces_vertices,
+    faceOrders: frame.faceOrders,
+  }
+  const s = settleBy(frame, next, from, true)
+  if (!s.ok) return s
+  if (s.moving.length === 0) return refuse(MISS)
+  primeFoldedCoords(s.frame, folded)
+  return { ok: true, frame: s.frame, moving: s.moving }
+}
+
+/**
  * Inherited layer order: every face of `next` takes its old parent's orders
  * (children of the same parent are side by side, so get none). Exact for the
  * 0° edited frame, and "the last solved order, carried" (R2) for partial
@@ -505,13 +699,29 @@ export const signed = (kind: FoldKind, deg: number) => (kind === 'valley' ? deg 
 
 // ---- fold ----
 
+let previewFastPath = true
+
+/**
+ * Testing hook (not part of @engine): run `fn` with the preview fast path
+ * off, i.e. every fold preview through `edited` (foldThrough), to compare.
+ */
+export function withoutFastPath<T>(fn: () => T): T {
+  const was = previewFastPath
+  previewFastPath = false
+  try {
+    return fn()
+  } finally {
+    previewFastPath = was
+  }
+}
+
 function previewFold(frame: Frame, g: Gesture): Result<{ preview: Preview }> {
   const h = hingePlan(frame, g)
   if (h) return h.ok ? previewHinge(frame, g, h.hinge) : h
   const r = plan(frame, g)
   if (!r.ok) return r
   const p = r.plan
-  const edit = edited(frame, p, g.kind)
+  const edit = (previewFastPath && editedFast(frame, p)) || edited(frame, p, g.kind)
   if (!edit.ok) return edit
   const requested = requestedAngle(g)
   const want = signed(g.kind, requested)

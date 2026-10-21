@@ -52,19 +52,29 @@ export function containsPoint(poly: readonly Vec2[], p: Vec2): boolean {
   return inside
 }
 
-/** above[f] = faces directly known to lie below f (world +z ordering). */
+const aboveCache = new WeakMap<Frame, Map<number, number[]>>()
+
+/**
+ * above[f] = faces directly known to lie below f (world +z ordering).
+ * Cached per frame (frames are immutable); treat the map as read-only (its
+ * lists are frozen).
+ */
 export function aboveGraph(frame: Frame): Map<number, number[]> {
+  const hit = aboveCache.get(frame)
+  if (hit) return hit
   const w = windings(frame)
   const below = new Map<number, number[]>()
   const add = (top: number, bottom: number) => {
-    const list = below.get(top) ?? []
-    list.push(bottom)
-    below.set(top, list)
+    const list = below.get(top)
+    if (list) list.push(bottom)
+    else below.set(top, [bottom])
   }
   for (const [f, g, s] of frame.faceOrders) {
     if (s * (w[g] ? 1 : -1) > 0) add(f, g)
     else add(g, f)
   }
+  for (const list of below.values()) Object.freeze(list)
+  aboveCache.set(frame, below)
   return below
 }
 
@@ -81,7 +91,8 @@ export function aboveGraph(frame: Frame): Map<number, number[]> {
  * (a cycle) fall back to the lowest remaining id. Faces the orders don't
  * relate (side by side, or a partial frame's carried orders) still get
  * distinct ranks. `layerAt` sorts by these ranks, so the two always agree.
- * Cached per frame (frames are immutable); treat the array as read-only.
+ * Cached per frame (frames are immutable); the array is frozen (read-only).
+ * O((F + orders) log F): Kahn's algorithm with a min-heap of ready ids.
  */
 export function layerRanks(frame: Frame): number[] {
   const hit = rankCache.get(frame)
@@ -97,19 +108,114 @@ export function layerRanks(frame: Frame): number[] {
   }
   const done = new Array<boolean>(n).fill(false)
   const ranks = new Array<number>(n)
+  const ready = new MinHeap()
+  for (let f = 0; f < n; f++) if (aboveCount[f] === 0) ready.push(f)
+  let low = 0 // every id below `low` is done
   for (let placed = 0; placed < n; placed++) {
     let next = -1
-    for (let f = 0; f < n && next < 0; f++) if (!done[f] && aboveCount[f] === 0) next = f
-    if (next < 0) next = done.indexOf(false) // a cycle: the lowest remaining id
+    while (ready.size && next < 0) {
+      const f = ready.pop()
+      if (!done[f]) next = f
+    }
+    if (next < 0) {
+      // a cycle: the lowest remaining id
+      while (done[low]) low++
+      next = low
+    }
     done[next] = true
     ranks[next] = n - 1 - placed
-    for (const b of edges.get(next) ?? []) aboveCount[b]--
+    for (const b of edges.get(next) ?? []) if (--aboveCount[b] === 0 && !done[b]) ready.push(b)
   }
+  Object.freeze(ranks)
   rankCache.set(frame, ranks)
   return ranks
 }
 
 const rankCache = new WeakMap<Frame, number[]>()
+
+/** A binary min-heap of integers. */
+class MinHeap {
+  private a: number[] = []
+  get size() {
+    return this.a.length
+  }
+  push(x: number) {
+    const a = this.a
+    let i = a.push(x) - 1
+    while (i > 0) {
+      const p = (i - 1) >> 1
+      if (a[p] <= x) break
+      a[i] = a[p]
+      i = p
+    }
+    a[i] = x
+  }
+  pop(): number {
+    const a = this.a
+    const top = a[0]
+    const last = a.pop()!
+    if (a.length) {
+      let i = 0
+      for (;;) {
+        const l = 2 * i + 1
+        if (l >= a.length) break
+        const c = l + 1 < a.length && a[l + 1] < a[l] ? l + 1 : l
+        if (a[c] >= last) break
+        a[i] = a[c]
+        i = c
+      }
+      a[i] = last
+    }
+    return top
+  }
+}
+
+/** [minX, minY, maxX, maxY, margin]: margin bounds containsPoint's boundary tolerance outside the box. */
+type Box = readonly [number, number, number, number, number]
+const polyCache = new WeakMap<Frame, { polys: Vec2[][]; boxes: Box[] }>()
+
+/** Each face's folded polygon and its bounding box, cached per frame. */
+export function foldedPolygons(frame: Frame): { polys: Vec2[][]; boxes: Box[] } {
+  const hit = polyCache.get(frame)
+  if (hit) return hit
+  const coords = foldedCoords(frame)
+  const polys = frame.faces_vertices.map(vs => vs.map(v => coords[v]))
+  const boxes = polys.map(poly => {
+    let x0 = Infinity
+    let y0 = Infinity
+    let x1 = -Infinity
+    let y1 = -Infinity
+    let m = EPS
+    poly.forEach(([x, y], i) => {
+      if (x < x0) x0 = x
+      if (y < y0) y0 = y
+      if (x > x1) x1 = x
+      if (y > y1) y1 = y
+      // containsPoint accepts points within EPS·max(1, len)/len of a side (plus EPS·len along it)
+      const q = poly[(i + 1) % poly.length]
+      const len = Math.hypot(q[0] - x, q[1] - y)
+      if (len > EPS) m = Math.max(m, (EPS * Math.max(1, len)) / len + EPS * len)
+    })
+    return [x0, y0, x1, y1, 2 * m] as Box
+  })
+  const out = { polys, boxes }
+  polyCache.set(frame, out)
+  return out
+}
+
+/** Faces whose folded polygon contains `p` (boundary included), ascending. */
+export function facesAt(frame: Frame, p: Vec2): number[] {
+  const { polys, boxes } = foldedPolygons(frame)
+  const out: number[] = []
+  // the box (grown by the face's boundary tolerance) only skips faces containsPoint would reject
+  for (let f = 0; f < polys.length; f++) {
+    const b = boxes[f]
+    const m = b[4]
+    if (p[0] < b[0] - m || p[1] < b[1] - m || p[0] > b[2] + m || p[1] > b[3] + m) continue
+    if (containsPoint(polys[f], p)) out.push(f)
+  }
+  return out
+}
 
 /**
  * Face ids under the folded-space point `p`, top to bottom: sorted by
@@ -117,12 +223,11 @@ const rankCache = new WeakMap<Frame, number[]>()
  * not under `p`; ties among unrelated faces resolve by the global order,
  * lowest id first where nothing else decides). A point on a boundary (vertex
  * or crease) shared by unordered faces therefore resolves deterministically.
+ * The ranks are computed once per frame (cached), so a warm call is a
+ * box-pruned point-in-polygon scan plus a sort of the faces at `p`.
  */
 export function layerAt(frame: Frame, p: Vec2): number[] {
-  const coords = foldedCoords(frame)
-  const here = frame.faces_vertices
-    .map((vs, f) => (containsPoint(vs.map(v => coords[v]), p) ? f : -1))
-    .filter(f => f >= 0)
+  const here = facesAt(frame, p)
   if (here.length < 2) return here
   const ranks = layerRanks(frame)
   return here.sort((a, b) => ranks[b] - ranks[a])
@@ -185,21 +290,10 @@ export function selectFlap(
   if (grabSide !== 0) {
     const reachesMovingSide = (u: number, v: number) => side(u) * grabSide > EPS || side(v) * grabSide > EPS
 
-    // edge key → assignment, and edge key → incident faces
-    const key = (u: number, v: number) => (u < v ? `${u} ${v}` : `${v} ${u}`)
-    const assignment = new Map<string, string>()
-    frame.edges_vertices.forEach(([u, v], e) => assignment.set(key(u, v), frame.edges_assignment[e]))
-    const edgeFaces = new Map<string, number[]>()
-    frame.faces_vertices.forEach((vs, f) =>
-      vs.forEach((u, i) => {
-        const kf = key(u, vs[(i + 1) % vs.length])
-        edgeFaces.set(kf, [...(edgeFaces.get(kf) ?? []), f])
-      }),
-    )
-
+    const { key, assignment, edgeFaces } = sideIndex(frame)
     const queue = [...chosen]
-    while (queue.length) {
-      const f = queue.shift()!
+    for (let qi = 0; qi < queue.length; qi++) {
+      const f = queue[qi]
       const vs = frame.faces_vertices[f]
       vs.forEach((u, i) => {
         const v = vs[(i + 1) % vs.length]
@@ -216,6 +310,36 @@ export function selectFlap(
     }
   }
   return { faces: [...chosen].sort((a, b) => a - b), k: kk }
+}
+
+type SideIndex = {
+  key: (u: number, v: number) => string
+  /** edge key → assignment */
+  assignment: Map<string, string>
+  /** edge key → incident faces (by consecutive vertices) */
+  edgeFaces: Map<string, number[]>
+}
+const sideCache = new WeakMap<Frame, SideIndex>()
+const sideKey = (u: number, v: number) => (u < v ? `${u} ${v}` : `${v} ${u}`)
+
+/** selectFlap's edge lookups, cached per frame. */
+function sideIndex(frame: Frame): SideIndex {
+  const hit = sideCache.get(frame)
+  if (hit) return hit
+  const assignment = new Map<string, string>()
+  frame.edges_vertices.forEach(([u, v], e) => assignment.set(sideKey(u, v), frame.edges_assignment[e]))
+  const edgeFaces = new Map<string, number[]>()
+  frame.faces_vertices.forEach((vs, f) =>
+    vs.forEach((u, i) => {
+      const kf = sideKey(u, vs[(i + 1) % vs.length])
+      const list = edgeFaces.get(kf)
+      if (list) list.push(f)
+      else edgeFaces.set(kf, [f])
+    }),
+  )
+  const out = { key: sideKey, assignment, edgeFaces }
+  sideCache.set(frame, out)
+  return out
 }
 
 /** Re-solve the layer order; refuse if the fold has no valid one. */

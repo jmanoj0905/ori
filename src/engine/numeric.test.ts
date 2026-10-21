@@ -160,7 +160,9 @@ describe('Gesture.face: the hit face starts the top-k selection', () => {
     const pv = ok(preview(f, g)).preview
     expect(pv.layers).toBe(1)
     const top = ok(preview(f, { ...g, face: undefined })).preview
-    expect(pv.moving).not.toEqual(top.moving)
+    // a different piece of paper moves (face ids alone may coincide: each preview numbers its own frame)
+    const paper = (q: typeof pv) => q.moving.map(m => q.frame.faces_vertices[m].map(v => q.frame.vertices_coords[v]))
+    expect(paper(pv)).not.toEqual(paper(top))
     const { step } = ok(commit(f, g))
     expect((step.params as { face: number }).face).toBe(0)
   })

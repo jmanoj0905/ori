@@ -149,7 +149,7 @@ describe('layerRanks (final review 4a)', () => {
     expect(layerRanks(f)).toBe(r)
   })
   test("agrees with layerAt's top-to-bottom order at every point", () => {
-    const frames: Frame[] = [halfFolded(), doubleTriangle(), preliminary(), base('waterbomb'), base('bird'), base('frog')]
+    const frames: Frame[] = [halfFolded(), doubleTriangle(), preliminary(), base('waterbomb'), base('bird'), baseFrame('frog')]
     for (const f of frames) {
       const r = layerRanks(f)
       for (let i = 0; i <= 20; i++)

@@ -18,7 +18,7 @@ export function detectShadowMapSize(): 1024 | 2048 {
   return shadowMapSizeFor({ cores: nav?.hardwareConcurrency, memoryGB: nav?.deviceMemory })
 }
 
-const FIBRE_GLSL = /* glsl */ `
+export const FIBRE_GLSL = /* glsl */ `
 float wHash(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }
 float wNoise(vec2 p){
   vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);

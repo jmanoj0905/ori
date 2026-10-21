@@ -20,7 +20,7 @@ import {
   frameBounds,
   offsetFor,
 } from './camera'
-import { buildCreaseLines, buildCreaseShade, buildLiveCrease, INK, makeShadeMaterial, type CreaseLines } from './creases'
+import { buildCreaseLines, buildCreaseShade, buildLiveCrease, CREASE_LIFT, INK, makeShadeMaterial, type CreaseLines } from './creases'
 import {
   ACCENT,
   disposeGhost,
@@ -355,9 +355,10 @@ export class Stage {
     front.castShadow = true // shadowSide = DoubleSide: one caster is enough
     front.receiveShadow = true
     back.receiveShadow = true
-    const shade = new THREE.Mesh(buildCreaseShade(frame, poses, { offsets: lo.offsets, faces }), this.shadeMat)
+    const lift = CREASE_LIFT * this.gap()
+    const shade = new THREE.Mesh(buildCreaseShade(frame, poses, { offsets: lo.offsets, up: lo.up, lift, faces }), this.shadeMat)
     shade.renderOrder = 2
-    const { valley, mountain } = buildCreaseLines(frame, poses, { offsets: lo.offsets, levels: lo.levels, faces })
+    const { valley, mountain } = buildCreaseLines(frame, poses, { offsets: lo.offsets, levels: lo.levels, up: lo.up, lift, faces })
     this.inkLines(valley, mountain)
     const group = new THREE.Group()
     group.add(front, back, shade, valley, mountain)
@@ -403,7 +404,7 @@ export class Stage {
     front.renderOrder = back.renderOrder = 10
     xray.renderOrder = 11
     const { valley, mountain } = buildCreaseLines(p.frame, p.poses, {
-      offsets: lo.offsets, levels: lo.levels, faces: p.moving, opacity: 0.55,
+      offsets: lo.offsets, levels: lo.levels, up: lo.up, lift: CREASE_LIFT * this.gap(), faces: p.moving, opacity: 0.55,
     })
     this.inkLines(valley, mountain)
     valley.renderOrder = mountain.renderOrder = 12
@@ -506,7 +507,7 @@ export class Stage {
     this.camera.lookAt(c.tx, c.ty, 0)
     // Depth precision follows the zoom, so the tiny layer gaps never z-fight.
     this.camera.near = Math.max(0.01, c.distance * 0.04)
-    this.camera.far = c.distance * 40 + 20
+    this.camera.far = 400 // the desk plane reaches 100 units; precision is set by near
     this.camera.updateProjectionMatrix()
     this.camera.updateMatrixWorld(true)
     this.invalidate()

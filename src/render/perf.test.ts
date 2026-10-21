@@ -53,14 +53,14 @@ describe('render build cost at 300 faces', () => {
     const committed = time(() => {
       const lo = layerOffsets(frame, ps, LAYER_GAP)
       buildPaperGeometry(frame, ps, LAYER_GAP, { offsets: lo.offsets })
-      buildCreaseShade(frame, ps, { offsets: lo.offsets })
-      buildCreaseLines(frame, ps, { offsets: lo.offsets, levels: lo.levels })
+      buildCreaseShade(frame, ps, { offsets: lo.offsets, up: lo.up })
+      buildCreaseLines(frame, ps, { offsets: lo.offsets, up: lo.up, levels: lo.levels })
     })
     const moving = Array.from({ length: 150 }, (_, i) => 150 + i)
     const perMove = time(() => {
       const lo = layerOffsets(frame, ps, LAYER_GAP, { moving, above: true })
       buildPaperGeometry(frame, ps, LAYER_GAP, { offsets: lo.offsets, faces: moving })
-      buildCreaseLines(frame, ps, { offsets: lo.offsets, levels: lo.levels, faces: moving })
+      buildCreaseLines(frame, ps, { offsets: lo.offsets, up: lo.up, levels: lo.levels, faces: moving })
       buildLiveCrease([[[0, 0.5], [1, 0.5]]], 'valley', '#B23A22')
     })
     // A drag usually changes the crease, so Preview.frame is a new object on
@@ -70,10 +70,10 @@ describe('render build cost at 300 faces', () => {
       const f = { ...frame }
       const lo = layerOffsets(f, ps, LAYER_GAP, { moving, above: true })
       buildPaperGeometry(f, ps, LAYER_GAP, { offsets: lo.offsets, faces: stationary })
-      buildCreaseShade(f, ps, { offsets: lo.offsets, faces: stationary })
-      buildCreaseLines(f, ps, { offsets: lo.offsets, levels: lo.levels, faces: stationary })
+      buildCreaseShade(f, ps, { offsets: lo.offsets, up: lo.up, faces: stationary })
+      buildCreaseLines(f, ps, { offsets: lo.offsets, up: lo.up, levels: lo.levels, faces: stationary })
       buildPaperGeometry(f, ps, LAYER_GAP, { offsets: lo.offsets, faces: moving })
-      buildCreaseLines(f, ps, { offsets: lo.offsets, levels: lo.levels, faces: moving })
+      buildCreaseLines(f, ps, { offsets: lo.offsets, up: lo.up, levels: lo.levels, faces: moving })
       buildLiveCrease([[[0, 0.5], [1, 0.5]]], 'valley', '#B23A22')
     })
     console.log(

@@ -36,6 +36,13 @@ export const DASH = Object.freeze({
 
 export const INK = '#2B2A28'
 
+/**
+ * Creases (and crease shading) sit this fraction of the layer gap above their
+ * face, along its stack up: above their own face, still well under the next
+ * layer, so hidden creases stay hidden at any tilt.
+ */
+export const CREASE_LIFT = 0.3
+
 export type CreaseStyle = {
   /** Ink over the paper's front (and over its back, unless colorBack). */
   color?: string
@@ -60,9 +67,11 @@ varying float vSide;
 varying float vFront;
 void main() {
   vec4 mv0 = modelViewMatrix * vec4(aStart, 1.0);
-  vFront = dot(normalMatrix * aNormal, -mv0.xyz) >= 0.0 ? 1.0 : 0.0;
-  vec4 c0 = projectionMatrix * modelViewMatrix * vec4(aStart, 1.0);
-  vec4 c1 = projectionMatrix * modelViewMatrix * vec4(aEnd, 1.0);
+  vec3 nView = normalize(normalMatrix * aNormal);
+  vFront = dot(nView, -mv0.xyz) >= 0.0 ? 1.0 : 0.0;
+  vec4 mv1 = modelViewMatrix * vec4(aEnd, 1.0);
+  vec4 c0 = projectionMatrix * mv0;
+  vec4 c1 = projectionMatrix * mv1;
   vec2 hres = 0.5 * uResolution;
   vec2 s0 = c0.xy / c0.w * hres;
   vec2 s1 = c1.xy / c1.w * hres;
@@ -72,9 +81,30 @@ void main() {
   vec2 nrm = vec2(-dir.y, dir.x);
   float t = position.x;
   float side = position.y;
-  vec4 c = mix(c0, c1, t);
   float halfW = 0.5 * uWidth * uPixelRatio + 0.75; // + AA feather
-  c.xy += nrm * side * halfW / hres * c.w;
+  vec4 mv = mix(mv0, mv1, t);
+  vec4 c = projectionMatrix * mv;
+  // Widen the ribbon IN THE FACE'S PLANE (so its depth matches the paper's:
+  // a screen-parallel ribbon would poke through the layer above at a steep
+  // tilt), scaled to halfW pixels across the line on screen.
+  vec3 segV = mv1.xyz - mv0.xyz;
+  vec3 inPlane = cross(nView, segV);
+  float ipLen = length(inPlane);
+  float k = 1e-3 * max(-mv.z, 1e-3);
+  bool done = false;
+  if (ipLen > 1e-9) {
+    vec3 sv = inPlane / ipLen * k;
+    vec4 cs = projectionMatrix * vec4(mv.xyz + sv, 1.0);
+    float perp = dot(cs.xy / cs.w * hres - c.xy / c.w * hres, nrm); // px across the line per k
+    // px a screen-parallel step of k would give; below ~15% of it the face is
+    // within ~9° of edge-on and the in-plane width would blow up.
+    float flatPx = 1e-3 * projectionMatrix[1][1] * hres.y;
+    if (abs(perp) > 0.15 * flatPx) {
+      c = projectionMatrix * vec4(mv.xyz + sv * (halfW / perp) * side, 1.0);
+      done = true;
+    }
+  }
+  if (!done) c.xy += nrm * side * halfW / hres * c.w; // edge-on: screen-space expansion
   // Perspective-correct interpolation of (dist * w) and w gives a ratio that is
   // linear in screen space: the dash length stays constant in pixels.
   vDistW = t * len * c.w;
@@ -170,9 +200,11 @@ export function makeCreaseLines(
     depthWrite: false,
     depthTest: !onTop,
     side: DoubleSide,
+    // No slope factor: at a steep tilt it would outgrow the layer gap and let
+    // creases on lower layers bleed through. The 0.3 × gap lift does the work.
     polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -4,
+    polygonOffsetFactor: 0,
+    polygonOffsetUnits: -2,
   })
   const mesh = new CreaseLines(g, material)
   mesh.frustumCulled = false
@@ -184,6 +216,10 @@ export type CreaseOptions = CreaseStyle & {
   /** Per-face offsets from layerOffsets (computed if absent). */
   offsets?: Float32Array
   levels?: readonly number[]
+  /** Per-face stack up (from layerOffsets); creases are lifted `lift` along it. */
+  up?: Float32Array
+  /** World lift off the face (default CREASE_LIFT × LAYER_GAP). */
+  lift?: number
   /** Only edges touching these faces. */
   faces?: readonly number[]
 }
@@ -198,7 +234,11 @@ export function buildCreaseLines(
   opts: CreaseOptions = {},
 ): { valley: CreaseLines; mountain: CreaseLines } {
   const table = poseTable(frame, poses)
-  const lo = opts.offsets && opts.levels ? { offsets: opts.offsets, levels: opts.levels } : layerOffsets(frame, poses, LAYER_GAP)
+  const lo =
+    opts.offsets && opts.levels && opts.up
+      ? { offsets: opts.offsets, levels: opts.levels, up: opts.up }
+      : layerOffsets(frame, poses, LAYER_GAP)
+  const lift = opts.lift ?? CREASE_LIFT * LAYER_GAP
   const ef = edgeFaces(frame)
   const only = opts.faces ? new Set(opts.faces) : null
   const valley: number[] = []
@@ -221,9 +261,9 @@ export function buildCreaseLines(
     for (const v of [a, b]) {
       const [x, y] = c[v]!
       out.push(
-        m[0]! * x + m[4]! * y + m[12]! + lo.offsets[3 * f]!,
-        m[1]! * x + m[5]! * y + m[13]! + lo.offsets[3 * f + 1]!,
-        m[2]! * x + m[6]! * y + m[14]! + lo.offsets[3 * f + 2]!,
+        m[0]! * x + m[4]! * y + m[12]! + lo.offsets[3 * f]! + lift * lo.up[3 * f]!,
+        m[1]! * x + m[5]! * y + m[13]! + lo.offsets[3 * f + 1]! + lift * lo.up[3 * f + 1]!,
+        m[2]! * x + m[6]! * y + m[14]! + lo.offsets[3 * f + 2]! + lift * lo.up[3 * f + 2]!,
       )
     }
   })
@@ -248,10 +288,12 @@ export function buildLiveCrease(crease: readonly (readonly [Vec2, Vec2])[], kind
 export function buildCreaseShade(
   frame: Frame,
   poses: readonly FacePose[],
-  opts: { offsets?: Float32Array; faces?: readonly number[]; strength?: number } = {},
+  opts: { offsets?: Float32Array; up?: Float32Array; lift?: number; faces?: readonly number[]; strength?: number } = {},
 ): BufferGeometry {
   const table = poseTable(frame, poses)
-  const offsets = opts.offsets ?? layerOffsets(frame, poses, LAYER_GAP).offsets
+  const lo = opts.offsets && opts.up ? { offsets: opts.offsets, up: opts.up } : layerOffsets(frame, poses, LAYER_GAP)
+  const offsets = lo.offsets
+  const lift = opts.lift ?? CREASE_LIFT * LAYER_GAP
   const only = opts.faces ? new Set(opts.faces) : null
   const { width, height } = paperSize(frame)
   const reach = 0.035 * Math.min(width, height)
@@ -274,7 +316,11 @@ export function buildCreaseShade(
       for (const v of loop) { cx += c[v]![0]; cy += c[v]![1] }
       cx /= loop.length; cy /= loop.length
       const m = table[f]!
-      const ox = offsets[3 * f]!, oy = offsets[3 * f + 1]!, oz = offsets[3 * f + 2]!
+      // lifted off the face like the creases (just under them)
+      const l = 0.8 * lift
+      const ox = offsets[3 * f]! + l * lo.up[3 * f]!
+      const oy = offsets[3 * f + 1]! + l * lo.up[3 * f + 1]!
+      const oz = offsets[3 * f + 2]! + l * lo.up[3 * f + 2]!
       const world = (x: number, y: number) => [
         m[0]! * x + m[4]! * y + m[12]! + ox,
         m[1]! * x + m[5]! * y + m[13]! + oy,
@@ -318,7 +364,7 @@ export function makeShadeMaterial(): MeshBasicMaterial {
     depthWrite: false,
     side: DoubleSide,
     polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -2,
+    polygonOffsetFactor: 0,
+    polygonOffsetUnits: -1,
   })
 }

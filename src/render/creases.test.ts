@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'vitest'
 import { commit, createPaper, PAPER_SIZES, poses } from '@engine'
 import type { Frame, Gesture, Vec2 } from '@engine'
-import { buildCreaseLines, buildCreaseShade, DASH } from './creases'
+import { buildCreaseLines, buildCreaseShade, CREASE_LIFT, DASH } from './creases'
+import { LAYER_GAP } from './paperMesh'
 
 const fold = (frame: Frame, grab: Vec2, target: Vec2, kind: 'valley' | 'mountain'): Frame => {
   const g: Gesture = { tool: 'fold', grab, target, layers: 1, kind, progress: 1, snapAngle: false }
@@ -46,6 +47,25 @@ describe('buildCreaseLines', () => {
       corners.add(`${pos.getX(v)},${pos.getY(v)}`)
     }
     expect([...corners].sort()).toEqual(['0,-1', '0,1', '1,-1', '1,1'])
+  })
+
+  test('creases sit 0.3 × gap above their face: over it, but under the next layer (hidden creases stay hidden at any tilt)', () => {
+    const half = fold(createPaper(PAPER_SIZES.square), [0.9, 0.5], [0.1, 0.5], 'valley')
+    const quartered = fold(half, [0.25, 0.95], [0.25, 0.05], 'valley')
+    const { valley, mountain } = buildCreaseLines(quartered, poses(quartered))
+    expect(CREASE_LIFT).toBe(0.3)
+    let n = 0
+    for (const set of [valley, mountain]) {
+      for (const name of ['aStart', 'aEnd']) {
+        const a = set.geometry.getAttribute(name)
+        for (let i = 0; i < a.count; i++) {
+          const layers = a.getZ(i) / LAYER_GAP // flat model: up = +z, face at level × gap
+          expect(layers - Math.floor(layers)).toBeCloseTo(CREASE_LIFT, 4)
+          n++
+        }
+      }
+    }
+    expect(n).toBeGreaterThan(0)
   })
 
   test('an unfolded sheet has no creases', () => {

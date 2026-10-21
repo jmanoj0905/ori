@@ -95,8 +95,9 @@ function material(look: Look, side: typeof FrontSide | typeof BackSide, aspect: 
     roughness: look.roughness,
     metalness: 0,
     side,
+    // Units only (no slope factor), see creases.ts.
     polygonOffset: true,
-    polygonOffsetFactor: 1,
+    polygonOffsetFactor: 0,
     polygonOffsetUnits: 1,
   })
   m.shadowSide = DoubleSide
@@ -155,7 +156,7 @@ export function makeGhostMaterials(): GhostMaterials {
       opacity: 0.6,
       depthWrite: false,
       polygonOffset: true,
-      polygonOffsetFactor: -1,
+      polygonOffsetFactor: 0,
       polygonOffsetUnits: -1,
     })
   const xray = new MeshBasicMaterial({ color: new Color(ACCENT), transparent: true, opacity: 0.14, depthTest: false, depthWrite: false, side: DoubleSide })

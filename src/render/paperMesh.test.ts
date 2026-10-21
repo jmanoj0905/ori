@@ -122,4 +122,35 @@ describe('buildPaperGeometry', () => {
     const below = layerOffsets(p.frame, p.poses, LAYER_GAP, { moving: p.moving, above: false })
     for (const f of p.moving) expect(below.offsets[3 * f + 2]!).toBeLessThan(0)
   })
+
+  test('a partly opened multi-layer flap keeps its 180° layer order in its own frame, also across 90°', () => {
+    // A half-folded sheet (2 layers), then the top half of both layers folded at 180°, 120° and 60°.
+    const half = fold(createPaper(PAPER_SIZES.square), [0.9, 0.5], [0.1, 0.5])
+    const at = (angleDeg: number) => {
+      const g: Gesture = { tool: 'fold', grab: [0.25, 0.95], target: [0.25, 0.05], layers: 2, kind: 'valley', progress: 1, snapAngle: false, angleDeg }
+      const r = commit(half, g)
+      if (!r.ok) throw new Error(r.reason)
+      return r.frame
+    }
+    /** The flap's two faces (paper y > 0.5) and the sign of (a − b) along a's front normal: fixed in the flap's frame. */
+    const order = (frame: Frame) => {
+      const ps = poses(frame)
+      const lo = layerOffsets(frame, ps)
+      const flap = frame.faces_vertices
+        .map((vs, f) => ({ f, y: vs.reduce((s, v) => s + frame.vertices_coords[v]![1], 0) / vs.length }))
+        .filter(x => x.y > 0.5)
+        .map(x => x.f)
+        .sort((p, q) => p - q)
+      expect(flap).toHaveLength(2)
+      const [a, b] = flap as [number, number]
+      const m = ps.find(p => p.face === a)!.matrix
+      const n = [m[8]!, m[9]!, m[10]!]
+      const d = [0, 1, 2].map(k => lo.offsets[3 * a + k]! - lo.offsets[3 * b + k]!)
+      return Math.sign(d[0]! * n[0]! + d[1]! * n[1]! + d[2]! * n[2]!)
+    }
+    const flat = order(at(180))
+    expect(flat).not.toBe(0)
+    expect(order(at(120))).toBe(flat)
+    expect(order(at(60))).toBe(flat)
+  })
 })

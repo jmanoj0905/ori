@@ -119,7 +119,16 @@ export const edgeKey = (frame: Frame, a: number, b: number): number => {
 
 const parityCache = new WeakMap<Frame, Int8Array>()
 
-/** +1 / −1 per face: mirrored (an odd number of > 90° folds from root face 0) in the flat state. */
+/**
+ * +1 / −1 per face: mirrored in the folded form the engine ranks against (an
+ * odd number of creases folded past 90° between it and root face 0). This
+ * matches the engine: layerRanks reads faceOrders through `windings` of
+ * `foldedCoords`, and RE's makeVerticesCoordsFolded folds each edge by its
+ * edges_foldAngle, so a face's winding flips exactly when its crease passes
+ * 90° (checked: a flap committed at 60° keeps its windings, at 120° they
+ * flip). Up = parity × normal then always points to higher ranks, and the
+ * flap's internal order stays put in its own frame across 90°.
+ */
 export function faceParity(frame: Frame): Int8Array {
   const hit = parityCache.get(frame)
   if (hit) return hit

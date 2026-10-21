@@ -7,7 +7,7 @@ export type TopBarProps = {
   onTogglePaper(): void
   /** Wired by Task 11 (PNG export); the button is disabled until then. */
   onExport?: () => void
-  /** Wired by Task 10 (settings sheet); the button is disabled until then. */
+  /** Opens the settings sheet (the gear). */
   onSettings?: () => void
 }
 

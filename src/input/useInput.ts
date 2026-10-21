@@ -5,7 +5,9 @@ import { useStudio } from '../studio/store'
 import { createFoldGesture, type GestureOptions, type GestureStage } from '../studio/useFoldGesture'
 import { useSettings } from '../settings/store'
 import { prefersReducedMotion } from '../studio/motion'
-import { createRouter, type Handlers } from './router'
+import { createKeyboardFold } from '../studio/keyboardFold'
+import { useUi } from '../studio/ui'
+import { createRouter, inModal, isTypingTarget, type Handlers } from './router'
 
 /** What the input wiring needs from the Stage. */
 export interface InputStage extends GestureStage {
@@ -28,9 +30,11 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
       const gs = st.getState().gesture
       if (gs) st.getState().setLayers(gs.layers + d)
     }
+    const kf = createKeyboardFold({ stage, store: st })
     const handlers: Handlers = {
       fold: e => {
         if (e.phase === 'start') {
+          kf.yield() // a pointer fold takes over from the keyboard cursor
           if (!g.down({ pointerId: e.pointerId ?? 0, clientX: e.clientX ?? 0, clientY: e.clientY ?? 0 })) return false
           if (snapHeld && useSettings.getState().snap.angle) st.getState().setSnapAngle(true)
         } else if (e.phase === 'move') g.move({ pointerId: e.pointerId ?? 0, clientX: e.clientX ?? 0, clientY: e.clientY ?? 0 })
@@ -53,18 +57,53 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
       turnOver: () => void st.getState().turnOver(),
       undo: () => st.getState().undo(),
       redo: () => st.getState().redo(),
-      cancel: () => g.cancel(),
+      cancel: () => {
+        kf.cancel()
+        g.cancel()
+      },
+      keyboardFold: () => kf.start(),
+      shortcuts: () => useUi.getState().toggle('shortcuts'),
+      settings: () => useUi.getState().open('settings'),
       topView: () => stage.view('top', animateViews()),
       resetView: () => stage.view('reset', animateViews()),
     }
     const el = stage.canvas
     const dispose = createRouter(el, () => useSettings.getState().bindings, handlers)
-    const hover = (e: PointerEvent) => g.hover(e)
-    const leave = () => g.leave()
+    // While the keyboard cursor is up it owns the marker: pointer hover must not fight it.
+    const hover = (e: PointerEvent) => {
+      if (kf.phase() === 'idle') g.hover(e)
+    }
+    const leave = () => {
+      if (kf.phase() === 'idle') g.leave()
+    }
+    // The cursor's own keys (Tab, arrows, Enter, + -, Esc) are modal: they only exist
+    // while the mode is on, and are taken before the router so Tab never leaves the canvas.
+    const onKey = (e: KeyboardEvent) => {
+      if (kf.phase() === 'idle' || e.ctrlKey || e.metaKey || e.altKey) return
+      if (isTypingTarget(e.target) || inModal(e.target)) return
+      if (kf.key(e)) {
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    // The canvas is a real tab stop, so the keyboard path starts without a pointer.
+    const prev = {
+      tabindex: el.getAttribute('tabindex'), role: el.getAttribute('role'), label: el.getAttribute('aria-label'),
+    }
+    el.tabIndex = 0
+    el.setAttribute('role', 'application')
+    el.setAttribute('aria-label', 'Origami sheet. Press F to fold with the keyboard, ? for all shortcuts.')
     el.addEventListener('pointermove', hover)
     el.addEventListener('pointerleave', leave)
     return () => {
       dispose()
+      kf.dispose()
+      window.removeEventListener('keydown', onKey, true)
+      for (const [name, v] of [['tabindex', prev.tabindex], ['role', prev.role], ['aria-label', prev.label]] as const) {
+        if (v === null) el.removeAttribute(name)
+        else el.setAttribute(name, v)
+      }
       el.removeEventListener('pointermove', hover)
       el.removeEventListener('pointerleave', leave)
       stage.setHoverMarker?.(null)

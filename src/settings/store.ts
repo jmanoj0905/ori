@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { DEFAULT_PAPER } from '../studio/store'
+import { DEFAULT_PAPER, type PaperSettings } from '../studio/store'
 import { DEFAULT_BINDINGS, cloneBindings, findConflicts } from './bindings'
 import {
   ACTIONS, SETTINGS_KEY, SETTINGS_VERSION,
@@ -39,6 +39,34 @@ function validBinding(b: unknown): b is Binding {
     default: return false
   }
 }
+
+const HEX = /^#[0-9a-f]{6}$/i
+const MODES = ['kami', 'washi', 'plain', 'custom'] as const
+const unit = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d)
+const dim = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 1000
+
+/** Any value -> a valid PaperSettings: each field is checked and falls back to the default on its own. */
+export function cleanPaper(raw: unknown): PaperSettings {
+  const d = defaultSettings().paperDefaults
+  if (!isObj(raw)) return d
+  const size = raw.size
+  const out: PaperSettings = {
+    mode: MODES.find(m => m === raw.mode) ?? d.mode,
+    front: typeof raw.front === 'string' && HEX.test(raw.front) ? raw.front : d.front,
+    back: typeof raw.back === 'string' && HEX.test(raw.back) ? raw.back : d.back,
+    thickness: unit(raw.thickness, d.thickness),
+    translucency: unit(raw.translucency, d.translucency),
+    size:
+      size === 'square' || size === 'a4' ? size
+      : isObj(size) && dim(size.width) && dim(size.height) ? { width: size.width, height: size.height }
+      : d.size,
+  }
+  if (raw.pattern === 'seigaiha' || raw.pattern === 'asanoha') out.pattern = raw.pattern
+  return out
+}
+
+export const clampRadius = (r: unknown, fallback: number): number =>
+  typeof r === 'number' && Number.isFinite(r) ? Math.min(40, Math.max(2, r)) : fallback
 
 function cleanBindings(raw: unknown): Bindings {
   const out = cloneBindings(DEFAULT_BINDINGS)
@@ -98,10 +126,10 @@ export function migrate(raw: unknown): Settings {
       angle: bool(snap.angle, d.snap.angle),
       axioms: bool(snap.axioms, d.snap.axioms),
     },
-    snapRadiusPx: typeof r === 'number' && Number.isFinite(r) ? Math.min(40, Math.max(2, r)) : d.snapRadiusPx,
+    snapRadiusPx: clampRadius(r, d.snapRadiusPx),
     toolReturnsToFold: bool(src.toolReturnsToFold, d.toolReturnsToFold),
     confirmPresetReplace: bool(src.confirmPresetReplace, d.confirmPresetReplace),
-    paperDefaults: isObj(src.paperDefaults) ? { ...d.paperDefaults, ...src.paperDefaults } : d.paperDefaults,
+    paperDefaults: cleanPaper(src.paperDefaults),
   }
 }
 
@@ -126,11 +154,12 @@ export type Prefs = Omit<Settings, 'bindings' | 'version'>
 export type SaveResult = { ok: true } | { ok: false; conflicts: [Action, Action][] }
 
 export type SettingsState = Settings & {
-  /** Replace one action's bindings. Refused (state unchanged) if it creates a conflict. */
+  /** Replace one action's bindings (the list is copied). Refused (state unchanged) if it creates a conflict. */
   setBinding: (action: Action, list: Binding[]) => SaveResult
   /** Replace the whole map (settings-sheet Save). Refused on any conflict. */
   setBindings: (b: Bindings) => SaveResult
-  resetBinding: (action: Action) => void
+  /** Restore one action's default. Refused (state unchanged) if the default now clashes with another action. */
+  resetBinding: (action: Action) => SaveResult
   resetAllBindings: () => void
   update: (patch: Partial<Prefs>) => void
 }
@@ -154,12 +183,16 @@ export const useSettings = create<SettingsState>()((set, get) => {
   }
   return {
     ...load(),
-    setBinding: (action, list) => trySet({ ...get().bindings, [action]: list }),
-    setBindings: b => trySet(b),
-    resetBinding: action =>
-      commit({ bindings: { ...get().bindings, [action]: cloneBindings(DEFAULT_BINDINGS)[action] } }),
+    setBinding: (action, list) => trySet({ ...get().bindings, [action]: structuredClone(list) }),
+    setBindings: b => trySet(cloneBindings(b)),
+    resetBinding: action => trySet({ ...get().bindings, [action]: cloneBindings(DEFAULT_BINDINGS)[action] }),
     resetAllBindings: () => commit({ bindings: cloneBindings(DEFAULT_BINDINGS) }),
-    update: patch => commit(patch),
+    update: patch => {
+      const next: Partial<Settings> = { ...patch }
+      if (patch.snapRadiusPx !== undefined) next.snapRadiusPx = clampRadius(patch.snapRadiusPx, get().snapRadiusPx)
+      if (patch.paperDefaults !== undefined) next.paperDefaults = cleanPaper(patch.paperDefaults)
+      commit(next)
+    },
   }
 })
 

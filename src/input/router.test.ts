@@ -191,6 +191,26 @@ describe('keyboard', () => {
     expect(log).toHaveLength(4)
   })
 
+  test('keys do nothing while focus is inside a modal dialog, Esc included (Task 7 carry)', () => {
+    const log = setup(['cancel', 'valley', 'undo'])
+    // A dialog that, unlike ConfirmDialog, does not stop the key itself: the router must stand down.
+    const dialog = document.createElement('div')
+    dialog.setAttribute('role', 'dialog')
+    dialog.setAttribute('aria-modal', 'true')
+    const btn = document.createElement('button')
+    dialog.append(btn)
+    document.body.append(dialog)
+    btn.focus()
+    for (const [code, init] of [['Escape', {}], ['KeyV', {}], ['KeyZ', { ctrlKey: true }]] as const) {
+      const e = key(code, init, 'keydown', btn)
+      expect(e.defaultPrevented).toBe(false)
+    }
+    expect(log).toHaveLength(0)
+    dialog.remove()
+    key('Escape')
+    expect(phases(log, 'cancel')).toEqual(['tap']) // back to normal once it is gone
+  })
+
   test('a canvas press blurs a focused island control', () => {
     setup()
     const slider = document.createElement('input')

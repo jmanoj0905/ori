@@ -16,6 +16,9 @@ import { FoldBar } from './islands/FoldBar'
 import { HintLine } from './islands/HintLine'
 import { Steps } from './islands/Steps'
 import { PaperPanel } from './islands/PaperPanel'
+import { LiveLog } from './LiveLog'
+import { SheetHost } from './SheetHost'
+import { useUi } from './ui'
 import './islands/islands.css'
 
 // The store reads reduced motion lazily (settings import the store, not vice versa).
@@ -71,7 +74,7 @@ export function App() {
   return (
     <main className="studio" data-folding={folding ? '' : undefined}>
       <div className="stage-host" data-stage-host ref={hostRef} />
-      <TopBar paperOpen={paperOpen} onTogglePaper={() => setPaperOpen(o => !o)} />
+      <TopBar paperOpen={paperOpen} onTogglePaper={() => setPaperOpen(o => !o)} onSettings={() => useUi.getState().open('settings')} />
       <Tools />
       <Steps />
       {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
@@ -79,6 +82,8 @@ export function App() {
         <FoldBar />
         <HintLine />
       </div>
+      <LiveLog />
+      <SheetHost />
     </main>
   )
 }

@@ -7,7 +7,7 @@ const wheel = (): Binding => ({ type: 'wheel', mods: { ...NONE } })
 
 /**
  * Spec 04 default table. Unbound by default (the table has no entry): topView,
- * resetView, settings. Wheel: zoom and layersLess/layersMore all hold a plain
+ * resetView, settings. `keyboardFold` (F) is the only addition to the table. Wheel: zoom and layersLess/layersMore all hold a plain
  * wheel; the router picks the meaning by context (folding -> layers).
  */
 export const DEFAULT_BINDINGS: Bindings = {
@@ -31,6 +31,8 @@ export const DEFAULT_BINDINGS: Bindings = {
   resetView: [],
   shortcuts: [key('Slash', { shift: true })],
   settings: [],
+  // Not in the spec 04 table: the keyboard-only entry point (Task 10). Remappable.
+  keyboardFold: [key('KeyF')],
 }
 
 export const cloneBindings = (b: Bindings): Bindings =>

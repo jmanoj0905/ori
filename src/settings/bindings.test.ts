@@ -129,3 +129,62 @@ describe('useSettings', () => {
     }
   })
 })
+
+describe('Task 10 carried fixes', () => {
+  test('keyboardFold is a remappable action, F by default, with no conflict', () => {
+    expect(DEFAULT_BINDINGS.keyboardFold).toEqual([{ type: 'key', code: 'KeyF', mods: { mod: false, shift: false, alt: false } }])
+  })
+
+  test('migrate validates and clamps paperDefaults field by field', () => {
+    const d = defaultSettings().paperDefaults
+    const m = migrate({
+      version: 1,
+      paperDefaults: {
+        mode: 'rainbow', front: 'red; background:url(x)', back: '#112233', thickness: 7, translucency: -3,
+        pattern: 'zigzag', size: { width: -1, height: 2 }, evil: true,
+      },
+    }).paperDefaults
+    expect(m).toEqual({ ...d, back: '#112233', thickness: 1, translucency: 0 })
+    expect(m).not.toHaveProperty('evil')
+    expect(m).not.toHaveProperty('pattern')
+    const ok = migrate({ version: 1, paperDefaults: { mode: 'washi', pattern: 'asanoha', size: { width: 2, height: 3 }, front: '#AABBCC' } }).paperDefaults
+    expect(ok).toMatchObject({ mode: 'washi', pattern: 'asanoha', size: { width: 2, height: 3 }, front: '#AABBCC' })
+    expect(migrate({ version: 1, paperDefaults: { size: 'a4', thickness: 'x' } }).paperDefaults).toMatchObject({ size: 'a4', thickness: d.thickness })
+    expect(migrate({ version: 1, paperDefaults: 5 }).paperDefaults).toEqual(d)
+  })
+
+  test('update() clamps snapRadiusPx to 2..40 and ignores NaN', () => {
+    useSettings.getState().update({ snapRadiusPx: 500 })
+    expect(useSettings.getState().snapRadiusPx).toBe(40)
+    useSettings.getState().update({ snapRadiusPx: -4 })
+    expect(useSettings.getState().snapRadiusPx).toBe(2)
+    useSettings.getState().update({ snapRadiusPx: Number.NaN })
+    expect(useSettings.getState().snapRadiusPx).toBe(2)
+    useSettings.getState().update({ snapRadiusPx: 12 })
+  })
+
+  test('update() sanitises paperDefaults too', () => {
+    useSettings.getState().update({ paperDefaults: { ...defaultSettings().paperDefaults, thickness: 99, front: 'nope' } })
+    expect(useSettings.getState().paperDefaults.thickness).toBe(1)
+    expect(useSettings.getState().paperDefaults.front).toBe(defaultSettings().paperDefaults.front)
+    useSettings.getState().update({ paperDefaults: defaultSettings().paperDefaults })
+  })
+
+  test('setBinding clones the list it is given', () => {
+    const list: Binding[] = [{ type: 'key', code: 'KeyB', mods: { mod: false, shift: false, alt: false } }]
+    expect(useSettings.getState().setBinding('valley', list).ok).toBe(true)
+    const first = list[0]
+    if (first?.type !== 'key') throw new Error('unreachable')
+    first.code = 'KeyQ'
+    list.push(mouse(0))
+    expect(useSettings.getState().bindings.valley).toEqual([{ type: 'key', code: 'KeyB', mods: { mod: false, shift: false, alt: false } }])
+  })
+
+  test('resetBinding refuses when the default now clashes with another action', () => {
+    useSettings.getState().setBinding('valley', [{ type: 'key', code: 'KeyB', mods: { mod: false, shift: false, alt: false } }])
+    useSettings.getState().setBinding('reverse', [{ type: 'key', code: 'KeyV', mods: { mod: false, shift: false, alt: false } }])
+    const r = useSettings.getState().resetBinding('valley') // default V is now held by reverse
+    expect(r.ok).toBe(false)
+    expect(useSettings.getState().bindings.valley[0]).toMatchObject({ code: 'KeyB' })
+  })
+})

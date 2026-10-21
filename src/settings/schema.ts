@@ -5,11 +5,12 @@ export type Action =
   | 'layersLess' | 'layersMore' | 'angleSnap'
   | 'valley' | 'mountain' | 'reverse' | 'squash' | 'petal' | 'turnOver'
   | 'undo' | 'redo' | 'cancel' | 'topView' | 'resetView' | 'shortcuts' | 'settings'
+  | 'keyboardFold'
 
 export const ACTIONS: readonly Action[] = [
   'fold', 'orbit', 'pan', 'zoom', 'layersLess', 'layersMore', 'angleSnap',
   'valley', 'mountain', 'reverse', 'squash', 'petal', 'turnOver',
-  'undo', 'redo', 'cancel', 'topView', 'resetView', 'shortcuts', 'settings',
+  'undo', 'redo', 'cancel', 'topView', 'resetView', 'shortcuts', 'settings', 'keyboardFold',
 ]
 
 /**

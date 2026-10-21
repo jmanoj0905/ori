@@ -19,7 +19,7 @@ const sizeKey = (s: SheetSize): 'square' | 'a4' | 'custom' => (s === 'square' ||
 
 export const CONFIRM_RESIZE = 'Changing the size starts a new sheet and clears your folds.'
 
-function Swatches({ value, onPick }: { value: string; onPick(c: string): void }) {
+export function Swatches({ value, onPick }: { value: string; onPick(c: string): void }) {
   return (
     <div className="swatches" role="group" aria-label="Colour">
       {Object.entries(SWATCHES).map(([name, hex]) => (

@@ -21,7 +21,9 @@
 //    Mouse and wheel matching ignores modifiers that are themselves bound as
 //    hold-modifiers (Shift for angleSnap), so holding Shift never blocks a fold.
 //  - Key events are ignored while focus is in an input, textarea, select or
-//    contenteditable element.
+//    contenteditable element, and while focus is inside a modal dialog
+//    ([aria-modal="true"]: the confirm dialog, the settings and shortcut
+//    sheets), so Esc / Z / V never reach the fold underneath.
 import type { Action, Bindings, Mods } from '../settings/schema'
 
 export interface ActionEvent {
@@ -65,6 +67,16 @@ export function isTypingTarget(t: EventTarget | null): boolean {
     if (tag === 'INPUT') return TEXT_INPUTS.has(((n as HTMLInputElement).type || '').toLowerCase())
     return tag === 'TEXTAREA' || tag === 'SELECT' || (n as HTMLElement).isContentEditable === true
   })
+}
+
+/**
+ * A modal dialog is open ([aria-modal="true"]: confirm dialog, settings or
+ * shortcut sheet). While one is, nothing underneath is operable, so the router
+ * stands down for every key, wherever focus happens to be (it can briefly sit on
+ * <body> when a focused control unmounts).
+ */
+export function inModal(_target?: EventTarget | null): boolean {
+  return document.querySelector('[aria-modal="true"]') !== null
 }
 
 export function createRouter(el: HTMLElement, getBindings: () => Bindings, handlers: Handlers): () => void {
@@ -183,7 +195,7 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (isTypingTarget(e.target)) return
+    if (isTypingTarget(e.target) || inModal(e.target)) return
     const b = getBindings()
     const mk = MODIFIER_CODES[e.code]
     if (mk) {

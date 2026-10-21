@@ -1,0 +1,63 @@
+/* Ori design tokens (spec 02/03). The design pass may tune the values; the
+   names are the contract. Text colours meet WCAG AA on --ivory and --frost. */
+:root {
+  /* canvas and ink */
+  --ivory: #F4EFE6;
+  --ink: #2B2A28;
+  --ink-soft: #5C5850;
+  --ink-faint: rgba(43, 42, 40, 0.12);
+
+  /* live crease / interactive accent, and the muted refusal red */
+  --accent: #B23A22;
+  --refusal: #A8463A;
+
+  /* frosted control islands */
+  --frost: rgba(250, 247, 241, 0.72);
+  --frost-border: rgba(43, 42, 40, 0.12);
+  --frost-blur: 14px;
+
+  /* kami swatches (front colours; the back of kami is white) */
+  --swatch-vermilion: #D9472B;
+  --swatch-indigo: #2F4A8A;
+  --swatch-matcha: #7A9A57;
+  --swatch-ochre: #C9962B;
+  --swatch-sumi: #2B2A28;
+  --paper-back: #FFFFFF;
+
+  /* type */
+  --font-display: 'Instrument Serif', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-ui: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* shape and motion */
+  --radius-island: 14px;
+  --space: 16px;
+  --settle-ms: 250ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --settle-ms: 0ms;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--ivory);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}

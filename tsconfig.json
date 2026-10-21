@@ -13,5 +13,5 @@
     "paths": { "@engine": ["./src/engine"], "@engine/*": ["./src/engine/*"] }
   },
   "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts", "src/**/*.test.tsx"]
 }

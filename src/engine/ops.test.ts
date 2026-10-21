@@ -178,6 +178,17 @@ describe('preview', () => {
 })
 
 describe('commit', () => {
+  test('a drag released a hair short of the mirror (float noise) is a flat fold with a solved layer order', () => {
+    // progress 0.99999996 is what the pointer maths gives for a release on the mirror point
+    const { frame, step } = ok(commit(sheet(), fold({ grab: [0, 1], target: [1, 0], progress: 0.99999996 })))
+    expect(frame.edges_foldAngle.filter(a => a !== 0)).toEqual([180])
+    expect(frame.faceOrders.length).toBeGreaterThan(0)
+    expect((step.params as { angleDeg: number }).angleDeg).toBe(180)
+    // a real partial fold is still partial
+    const partial = ok(commit(sheet(), fold({ grab: [0, 1], target: [1, 0], progress: 0.99 }))).frame
+    expect(partial.edges_foldAngle.some(a => a !== 0 && Math.abs(a) < 180)).toBe(true)
+  })
+
   test('area is conserved and every frame carries a valid faceOrders', () => {
     let f = sheet()
     const gestures: Gesture[] = [

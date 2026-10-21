@@ -263,8 +263,17 @@ function checkGesture(g: Gesture): Refusal | null {
   return null
 }
 
-/** The fold angle the gesture asks for, in [0, 180]: `angleDeg` if given, else from progress. */
-export const requestedAngle = (g: Gesture): number => g.angleDeg ?? progressToAngle(g.progress)
+/**
+ * The fold angle the gesture asks for, in [0, 180]: `angleDeg` if given, else from progress.
+ * Within 1e-6 of 180 it is 180: a drag released on the mirror point comes out of the
+ * pointer maths a hair short (progress 0.99999996 → 179.99999999999994°), and every
+ * other part of the engine (isFlatAngle) already calls that angle flat; without this
+ * the commit took the partial path and skipped the layer solve.
+ */
+export const requestedAngle = (g: Gesture): number => {
+  const a = g.angleDeg ?? progressToAngle(g.progress)
+  return Math.abs(a - 180) < 1e-6 ? 180 : a
+}
 
 /** Gesture params a step records beyond the common ones (only those given). */
 export const extraParams = (g: Gesture) => (g.face === undefined ? {} : { face: g.face })

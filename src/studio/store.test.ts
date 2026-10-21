@@ -372,8 +372,15 @@ describe('settle animation', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  const released = async (reduced: boolean) => {
-    const s = createStudioStore({ committer: inProcessCommitter, reduced: () => reduced })
+  /** Commit that reports a different committed angle than the preview showed (R13-style divergence). */
+  const committingAt = (angle: number): Committer => async req => {
+    const r = await inProcessCommitter(req)
+    if (!r.ok) return r
+    return { ...r, step: { ...r.step, params: { ...(r.step.params as object), angleDeg: angle } } }
+  }
+
+  const released = async (reduced: boolean, committed = 170) => {
+    const s = createStudioStore({ committer: committingAt(committed), reduced: () => reduced })
     const seen: (number | null)[] = []
     s.subscribe(st => seen.push(st.settling ? st.settling.angleDeg : null))
     s.getState().begin([1, 1])
@@ -384,7 +391,7 @@ describe('settle animation', () => {
   }
 
   test('commits immediately; the flap then eases from the released angle to the committed one', async () => {
-    const { s, startAngle } = await released(false)
+    const { s, startAngle } = await released(false, 170)
     expect(s.getState().history.steps).toHaveLength(1)
     expect(s.getState().preview).toBeNull()
     expect(s.getState().settling?.angleDeg).toBeCloseTo(startAngle)
@@ -392,9 +399,29 @@ describe('settle animation', () => {
     flush(100)
     const mid = s.getState().settling!.angleDeg
     expect(mid).toBeGreaterThan(startAngle)
-    expect(mid).toBeLessThan(180)
+    expect(mid).toBeLessThan(170)
     flush(400)
     expect(s.getState().settling).toBeNull()
+  })
+
+  test('the last settle frame is the committed angle: no overshoot, no backward pop', async () => {
+    const { s } = await released(false, 170)
+    const angles: number[] = []
+    s.subscribe(st => st.settling && angles.push(st.settling.angleDeg))
+    for (let i = 0; i < 40; i++) flush(10)
+    expect(angles.length).toBeGreaterThan(1)
+    expect(Math.max(...angles)).toBeLessThanOrEqual(170 + 1e-6)
+    expect(angles).toEqual([...angles].sort((a, b) => a - b))
+    expect(s.getState().settling).toBeNull()
+  })
+
+  test('released at the committed angle (the usual case) there is nothing to settle', async () => {
+    const s = createStudioStore({ committer: inProcessCommitter, reduced: () => false })
+    s.getState().begin([1, 1])
+    s.getState().drag([0, 0], 0.6)
+    await s.getState().release()
+    expect(s.getState().settling).toBeNull()
+    expect(queue.size).toBe(0)
   })
 
   test('reduced motion: no intermediate frame is ever shown', async () => {
@@ -429,19 +456,28 @@ describe('settle animation', () => {
     }
   })
 
-  test('a release without angleDeg commits the flat fold, whatever progress it was released at', async () => {
-    const flat = async (progress: number) => {
+  test('R41: a release commits the fold at the previewed angle (edges_foldAngle), 180 only at progress 1', async () => {
+    const fold = async (progress: number) => {
       const s = createStudioStore({ committer: inProcessCommitter, reduced: () => true })
       s.getState().begin([1, 1])
       s.getState().drag([0, 0], progress)
+      const shown = s.getState().preview!.angleDeg
       await s.getState().release()
-      return current(s.getState().history).vertices_coords
+      const f = current(s.getState().history)
+      const creased = f.edges_foldAngle!.filter(a => a !== 0)
+      return { shown, creased, params: (s.getState().history.steps[0]!.params as { angleDeg: number }).angleDeg }
     }
-    expect(await flat(0.6)).toEqual(await flat(1))
+    const partial = await fold(0.6)
+    expect(partial.shown).toBeLessThan(180)
+    expect(partial.creased).toEqual([partial.shown])
+    expect(partial.params).toBe(partial.shown)
+    const full = await fold(1)
+    expect(full.creased).toEqual([180])
+    expect(full.params).toBe(180)
   })
 
   test('the settle keeps the released gesture style (mountain) for the Stage', async () => {
-    const s = createStudioStore({ committer: inProcessCommitter, reduced: () => false })
+    const s = createStudioStore({ committer: committingAt(170), reduced: () => false })
     const calls: { p: unknown; style: Record<string, unknown> }[] = []
     const stage = {
       setPaper() {}, setFrame() {},

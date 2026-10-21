@@ -13,8 +13,9 @@
 //
 // Settle (spec 03 step 4): the commit lands in `history` at once, so the final
 // state is always correct. The release preview then lives on as `settling`, a
-// purely visual Preview that eases from the released progress to 1 over
-// SETTLE_MS (re-running the synchronous preview each frame); the Stage shows it
+// purely visual Preview that eases from the released angle to the committed one
+// (R41: a release commits at the previewed angle, so usually there is nothing
+// to ease) over SETTLE_MS (re-running the synchronous preview each frame); the Stage shows it
 // in place of the committed paper, then reveals the committed frame. Reduced
 // motion skips it entirely. Anything that touches the model or starts a gesture
 // (begin, undo / redo / jumpTo, turnOver, newSheet, tool change, re-commit)
@@ -180,20 +181,26 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
     }
 
     /** Ease the just-committed flap from its released progress to 1 (see header). */
-    const startSettle = (base: History, g: Gesture | undefined, shown: Preview | null, isReduced: boolean) => {
-      if (!g || !shown || g.tool !== 'fold' || g.angleDeg !== undefined || g.progress >= 1) return
+    const startSettle = (
+      base: History, g: Gesture | undefined, shown: Preview | null, committed: number, isReduced: boolean,
+    ) => {
+      // R41: a release commits at the previewed angle, so the settle runs from the
+      // release pose to the COMMITTED angle (never past it) and is a no-op when
+      // they match (the usual case).
+      if (!g || !shown || g.tool !== 'fold' || !Number.isFinite(committed)) return
+      if (Math.abs(shown.angleDeg - committed) < 1e-6) return
       const style = { kind: g.kind, tool: g.tool, progress: g.progress }
       if (!isReduced) set({ settling: shown, settleStyle: style })
       const ctl = (settleCtl = new AbortController())
-      void tween(g.progress, 1, SETTLE_MS, p => {
+      void tween(shown.angleDeg, committed, SETTLE_MS, a => {
         if (ctl.signal.aborted) return
-        if (p >= 1) {
+        if (a === committed) {
           settleCtl = null
           set({ settling: null, settleStyle: null })
           return
         }
-        const r = previewFold(current(base), { ...g, progress: p })
-        if (r.ok) set({ settling: r.preview, settleStyle: { ...style, progress: p } })
+        const r = previewFold(current(base), { ...g, angleDeg: a })
+        if (r.ok) set({ settling: r.preview, settleStyle: style })
       }, isReduced, ctl.signal)
     }
 
@@ -231,7 +238,8 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
         return false
       }
       set({ ...idle, history: push(base, result.step, result.frame), pending: false })
-      startSettle(base, 'gesture' in req ? req.gesture : undefined, shown, isReduced)
+      const angle = (result.step.params as { angleDeg?: number } | null)?.angleDeg
+      startSettle(base, 'gesture' in req ? req.gesture : undefined, shown, angle ?? NaN, isReduced)
       return true
     }
 

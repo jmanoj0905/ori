@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
+// TZ is pinned before anything reads a Date (the file's pngName test is unconditional).
+process.env.TZ = 'UTC'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { current } from '@engine'
+import { PRESETS, runPreset } from '../presets'
 import { inProcessCommitter } from '../studio/committer'
 import { DEFAULT_PAPER, createStudioStore } from '../studio/store'
 import { bootStudio } from '../studio/boot'
@@ -166,8 +169,102 @@ describe('pngName', () => {
     expect(pngName(new Date(2026, 9, 20), 4)).toBe('ori-2026-10-20-4.png')
     expect(pngName(new Date(2026, 0, 5, 23, 59), 0)).toBe('ori-2026-01-05-0.png')
   })
-  test('the ISO-date example holds where local time is not behind UTC', () => {
-    const d = new Date('2026-10-20')
-    if (d.getTimezoneOffset() <= 0) expect(pngName(d, 4)).toBe('ori-2026-10-20-4.png')
+  test('the ISO-date example holds with the timezone pinned to UTC', () => {
+    expect(process.env.TZ).toBe('UTC')
+    expect(pngName(new Date('2026-10-20'), 4)).toBe('ori-2026-10-20-4.png')
+  })
+})
+
+/** Frames compared on everything the engine builds geometry from. */
+const geometry = (h: { frames: readonly unknown[] }) =>
+  h.frames.map(f => {
+    const g = f as Record<string, unknown>
+    return JSON.parse(JSON.stringify({
+      fv: g.faces_vertices, ea: g.edges_assignment, fa: g.edges_foldAngle, ev: g.edges_vertices, vc: g.vertices_coords,
+    }))
+  })
+
+describe('replay is exact', () => {
+  const roundTrip = (h: Parameters<typeof saveHistory>[0], paper: typeof DEFAULT_PAPER = DEFAULT_PAPER) => {
+    saveHistory(h, paper)
+    flushSave()
+    return loadHistory()
+  }
+
+  for (const preset of PRESETS) {
+    test(`preset ${preset.id}: every frame survives save and load`, () => {
+      const r = runPreset(preset)
+      if (!r.ok) throw new Error(r.reason)
+      const loaded = roundTrip(r.history, { ...DEFAULT_PAPER, size: preset.paper })
+      expect(useNotice.getState().message).toBeNull()
+      expect(loaded).not.toBeNull()
+      expect(loaded!.history.steps.map(s => s.kind)).toEqual(r.history.steps.map(s => s.kind))
+      expect(loaded!.history.cursor).toBe(r.history.cursor)
+      const approx = (a: unknown): unknown[] => JSON.parse(JSON.stringify(a, (_k, v) => (typeof v === 'number' ? Math.round(v * 1e9) / 1e9 : v)))
+      const want = approx(geometry(r.history))
+      const got = approx(geometry(loaded!.history))
+      expect(got).toHaveLength(want.length)
+      for (let i = 0; i < want.length; i++) expect(got[i]).toEqual(want[i])
+    })
+  }
+
+  test('the presets cover compound tools', () => {
+    const kinds = new Set<string>()
+    for (const p of PRESETS) {
+      const r = runPreset(p)
+      if (r.ok) r.history.steps.forEach(s => kinds.add(s.kind))
+    }
+    expect([...kinds].some(k => k !== 'fold' && k !== 'turnOver')).toBe(true)
+  })
+
+  test('a partial 90 degree fold and an R28 re-commit both restore exactly', async () => {
+    const s = fresh()
+    s.getState().begin([1, 1])
+    s.getState().drag([0, 0], 1)
+    s.getState().setNumeric({ angleDeg: 90 })
+    expect(await s.getState().release()).toBe(true)
+    expect((s.getState().history.steps[0].params as { angleDeg: number }).angleDeg).toBe(90)
+    let loaded = roundTrip(s.getState().history)!
+    expect(geometry(loaded.history)).toEqual(geometry(s.getState().history))
+    expect(await s.getState().setLastFold({ angleDeg: 45 })).toBe(true)
+    expect(s.getState().history.steps).toHaveLength(1)
+    loaded = roundTrip(s.getState().history)!
+    expect((loaded.history.steps[0].params as { angleDeg: number }).angleDeg).toBe(45)
+    expect(geometry(loaded.history)).toEqual(geometry(s.getState().history))
+  })
+})
+
+describe('PNG export', () => {
+  test('success: anchor click with the right name, revoked after a delay', async () => {
+    vi.useFakeTimers()
+    const { exportPng, REVOKE_MS } = await import('./png')
+    const create = vi.fn(() => 'blob:x')
+    const revoke = vi.fn()
+    Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke })
+    const names: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      names.push(this.download)
+    })
+    const stage = { snapshot: vi.fn(async () => new Blob(['x'])) }
+    try {
+      await exportPng(stage as never, 3, true)
+      expect(stage.snapshot).toHaveBeenCalledWith(2, true)
+      expect(names).toEqual([pngName(new Date(), 3)])
+      expect(revoke).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(REVOKE_MS)
+      expect(revoke).toHaveBeenCalledWith('blob:x')
+      expect(REVOKE_MS).toBeGreaterThanOrEqual(1000)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('failure: a notice, no throw, no download', async () => {
+    const { exportPng } = await import('./png')
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const stage = { snapshot: vi.fn(async () => { throw new Error('boom') }) }
+    await expect(exportPng(stage as never, 1, false)).resolves.toBeUndefined()
+    expect(click).not.toHaveBeenCalled()
+    expect(useNotice.getState().message).toBe("Couldn't export the image.")
   })
 })

@@ -8,7 +8,8 @@
 // first paint; a few hundred ms on a long history is acceptable). Each fold is
 // re-committed from its recorded {tool, grab, target, layers, kind, crease,
 // angleDeg, face} with snapAngle off and progress 1; crease + angleDeg make the
-// replay exact. Any refusal, throw or malformed field means the save is corrupt:
+// replay exact for plain folds (compound tools record neither and replay from
+// grab / target / layers / kind). Any refusal, throw or malformed field means the save is corrupt:
 // loadHistory returns null and shows RESTORE_FAILED once.
 import { PAPER_SIZES, commit, createPaper, jumpTo, push, startHistory, turnOver } from '@engine'
 import type { Gesture, History, Line, Step, Tool, Vec2 } from '@engine'
@@ -52,10 +53,16 @@ function gestureOf(params: unknown): Gesture | null {
   if (!isObj(params)) return null
   const { tool, grab, target, layers, kind, angleDeg, crease, face } = params
   if (typeof tool !== 'string' || !TOOLS.includes(tool) || !vec(grab) || !vec(target)) return null
-  if (!num(layers) || (kind !== 'valley' && kind !== 'mountain') || !num(angleDeg) || !line(crease)) return null
+  if (!num(layers) || (kind !== 'valley' && kind !== 'mountain')) return null
   if (face !== undefined && !num(face)) return null
+  // Plain folds record crease + angleDeg (exact replay). Compound tools (reverse,
+  // squash, petal) record neither: the engine derives their geometry from the gesture.
+  const exact = tool === 'fold'
+  if (exact ? !num(angleDeg) || !line(crease) : (angleDeg !== undefined && !num(angleDeg)) || (crease !== undefined && !line(crease))) return null
   return {
-    tool: tool as Tool, grab, target, layers, kind, progress: 1, snapAngle: false, crease, angleDeg,
+    tool: tool as Tool, grab, target, layers, kind, progress: 1, snapAngle: false,
+    ...(crease === undefined ? {} : { crease: crease as Line }),
+    ...(angleDeg === undefined ? {} : { angleDeg: angleDeg as number }),
     ...(face === undefined ? {} : { face }),
   }
 }

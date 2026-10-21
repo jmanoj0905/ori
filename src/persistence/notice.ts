@@ -6,6 +6,8 @@ import { create } from 'zustand'
 export const RESTORE_FAILED = "Couldn't restore your last model."
 export const AUTOSAVE_OFF = 'Autosave is off — your browser storage is full or blocked.'
 
+export const EXPORT_FAILED = "Couldn't export the image."
+
 export type NoticeState = { message: string | null; dismiss(): void }
 
 export const useNotice = create<NoticeState>()(set => ({ message: null, dismiss: () => set({ message: null }) }))
@@ -23,4 +25,9 @@ export function noticeOnce(message: string): void {
 export function resetNotices(): void {
   shown.clear()
   useNotice.setState({ message: null })
+}
+
+/** Show `message` every time (user-triggered failures such as a PNG export). */
+export function notify(message: string): void {
+  useNotice.setState({ message })
 }

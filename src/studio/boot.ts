@@ -7,7 +7,15 @@ import { loadHistory, flushSave, saveHistory } from '../persistence/autosave'
 import type { useStudio } from './store'
 
 type Store = typeof useStudio
-const booted = new WeakSet<object>()
+let booted = new WeakSet<object>()
+let teardown: (() => void)[] = []
+
+/** Tests: forget that any store booted and drop its subscription and listeners. */
+export function resetBootForTests(): void {
+  teardown.forEach(f => f())
+  teardown = []
+  booted = new WeakSet()
+}
 
 export function bootStudio(store: Store): void {
   if (booted.has(store)) {
@@ -26,11 +34,16 @@ export function bootStudio(store: Store): void {
   }
   // Every change to the model or the paper (commit, undo, redo, jumpTo, R28
   // replacement, turnOver, newSheet, paper edits) queues a debounced save.
-  store.subscribe((s, prev) => {
+  teardown.push(store.subscribe((s, prev) => {
     if (s.history !== prev.history || s.paper !== prev.paper) saveHistory(s.history, s.paper)
-  })
-  addEventListener('pagehide', flushSave)
-  document.addEventListener('visibilitychange', () => {
+  }))
+  const onHide = () => {
     if (document.visibilityState === 'hidden') flushSave()
+  }
+  addEventListener('pagehide', flushSave)
+  document.addEventListener('visibilitychange', onHide)
+  teardown.push(() => {
+    removeEventListener('pagehide', flushSave)
+    document.removeEventListener('visibilitychange', onHide)
   })
 }

@@ -1,4 +1,5 @@
 // PNG export of the current view at 2x (spec 05 phase 1).
+import { EXPORT_FAILED, notify } from './notice'
 import type { Stage } from '../render/Stage'
 
 const pad = (n: number): string => String(n).padStart(2, '0')
@@ -11,6 +12,8 @@ const pad = (n: number): string => String(n).padStart(2, '0')
 export const pngName = (date: Date, step: number): string =>
   `ori-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${step}.png`
 
+export const REVOKE_MS = 1000
+
 /** Download `blob` as `name` through a temporary anchor + object URL (revoked afterwards). */
 export function download(blob: Blob, name: string): void {
   const url = URL.createObjectURL(blob)
@@ -21,11 +24,16 @@ export function download(blob: Blob, name: string): void {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 0)
+  // Revoke late: some browsers cancel a download whose URL dies at once.
+  setTimeout(() => URL.revokeObjectURL(url), REVOKE_MS)
 }
 
-/** Snapshot the stage at 2x and download it; `step` is the history cursor. */
+/** Snapshot the stage at 2x and download it; `step` is the history cursor. Never rejects: a failure shows a notice. */
 export async function exportPng(stage: Stage, step: number, transparent: boolean): Promise<void> {
-  const blob = await stage.snapshot(2, transparent)
-  download(blob, pngName(new Date(), step))
+  try {
+    const blob = await stage.snapshot(2, transparent)
+    download(blob, pngName(new Date(), step))
+  } catch {
+    notify(EXPORT_FAILED)
+  }
 }

@@ -210,6 +210,11 @@
 }
 .hint {
   margin: 0;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(250, 247, 241, 0.88);
+  -webkit-backdrop-filter: blur(var(--frost-blur));
+  backdrop-filter: blur(var(--frost-blur));
   max-width: 60ch;
   font-size: 14px;
   color: var(--ink-soft);

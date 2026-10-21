@@ -186,3 +186,60 @@ describe('ctrl+wheel (trackpad pinch)', () => {
     expect(of(log, 'zoom')).toEqual([])
   })
 })
+
+describe('review fixes', () => {
+  const lost = (id: number) => {
+    const e = new MouseEvent('lostpointercapture', { bubbles: true })
+    Object.defineProperty(e, 'pointerId', { value: id })
+    Object.defineProperty(e, 'pointerType', { value: 'touch' })
+    el.dispatchEvent(e)
+  }
+  test('lostpointercapture from releasing finger 1 does not kill the two-finger gesture', () => {
+    const log = setup()
+    touch('pointerdown', 1, 100, 100)
+    touch('pointerdown', 2, 200, 100)
+    lost(1) // the browser reports the capture the router just released
+    touch('pointermove', 1, 100, 160)
+    touch('pointermove', 2, 200, 160)
+    expect(of(log, 'orbit').some(e => e.phase === 'move')).toBe(true)
+    touch('pointerup', 1, 100, 160)
+    touch('pointerdown', 3, 50, 50) // the remaining finger still blocks folds
+    expect(phases(log, 'fold')).toEqual(['start'])
+  })
+
+  test('touch never disturbs a mouse drag', () => {
+    const log = setup()
+    const m = (type: string, init: Record<string, unknown> = {}) => {
+      const e = new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons: 1, ...init })
+      Object.defineProperty(e, 'pointerId', { value: 9 })
+      Object.defineProperty(e, 'pointerType', { value: 'mouse' })
+      ;(type === 'pointerdown' ? el : window).dispatchEvent(e)
+    }
+    m('pointerdown', { clientX: 5, clientY: 5 })
+    touch('pointerdown', 1, 100, 100)
+    touch('pointerdown', 2, 200, 100)
+    touch('pointermove', 2, 260, 100)
+    expect(phases(log, 'cancel')).toEqual([])
+    m('pointermove', { clientX: 9, clientY: 9 })
+    m('pointerup', { buttons: 0 })
+    expect(phases(log, 'fold')).toEqual(['start', 'move', 'end'])
+  })
+
+  test('a mouse press does not end a touch fold', () => {
+    const log = setup()
+    touch('pointerdown', 1, 100, 100)
+    const e = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0, buttons: 1 })
+    Object.defineProperty(e, 'pointerId', { value: 9 })
+    Object.defineProperty(e, 'pointerType', { value: 'mouse' })
+    el.dispatchEvent(e)
+    expect(phases(log, 'cancel')).toEqual([])
+  })
+
+  test('a real ctrl+mouse notch zooms like a plain notch; a pinch-sized delta is boosted', () => {
+    const log = setup()
+    el.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(of(log, 'zoom')[0]!.delta).toBe(100)
+    el.dispatchEvent(new WheelEvent('wheel', { deltaY: 3, ctrlKey: true, bubbles: true, cancelable: true }))
+    expect(of(log, 'zoom')[1]!.delta).toBe(30)
+  })
+})

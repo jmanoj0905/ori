@@ -3,7 +3,7 @@
 // hint line. The Stage follows the store (model, preview, paper). Islands fade
 // to 40% while a fold gesture is active (App.css, [data-folding]).
 import './App.css'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { current, poses } from '@engine'
 import type { Stage } from '../render/Stage'
 import { setPaperDefaultsSource, useStudio, type StudioState } from './store'
@@ -19,7 +19,7 @@ import { PaperPanel } from './islands/PaperPanel'
 import { Notice } from './islands/Notice'
 import { bootStudio } from './boot'
 import { exportPng } from '../persistence/png'
-import { measureInsets } from './insets'
+import { measureInsets, NARROW_PX } from './insets'
 import { LiveLog } from './LiveLog'
 import { SheetHost } from './SheetHost'
 import { useUi } from './ui'
@@ -44,7 +44,14 @@ export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): voi
   }
 }
 
+const subscribeResize = (cb: () => void) => {
+  window.addEventListener('resize', cb)
+  return () => window.removeEventListener('resize', cb)
+}
+const isNarrow = () => window.innerWidth < NARROW_PX
+
 export function App() {
+  const narrow = useSyncExternalStore(subscribeResize, isNarrow, () => false)
   const folding = useStudio(s => s.gesture !== null)
   const [paperOpen, setPaperOpen] = useState(false)
   const hostRef = useRef<HTMLDivElement>(null)
@@ -82,13 +89,15 @@ export function App() {
   }, [])
   // Keep the camera framing centred on the area the islands leave free.
   const dockRef = useRef<HTMLDivElement>(null)
+  const kfActive = useUi(s => s.kf) !== 'idle'
+  const busy = folding || kfActive
   const layout = useCallback(() => {
-    if (!stageReady) return
+    if (!stageReady || busy) return // never rescale the paper under a live fold; it reframes when the gesture ends
     const q = (sel: string) => document.querySelector(sel)?.getBoundingClientRect() ?? null
     stageReady.setInsets(
       measureInsets({ width: window.innerWidth, height: window.innerHeight }, { tools: q('.tools'), steps: q('.steps'), dock: dockRef.current?.getBoundingClientRect() }),
     )
-  }, [stageReady])
+  }, [stageReady, busy])
   useEffect(() => {
     layout()
     window.addEventListener('resize', layout)
@@ -106,9 +115,12 @@ export function App() {
   return (
     <main className="studio" data-folding={folding ? '' : undefined}>
       <div className="stage-host" data-stage-host ref={hostRef} />
-      <TopBar paperOpen={paperOpen} onTogglePaper={() => {
-          setSheetOpen(true)
-          setPaperOpen(o => !o)
+      <TopBar paperOpen={paperOpen && (sheetOpen || !narrow)} onTogglePaper={() => {
+          // A collapsed sheet hides the panel: the button opens both rather than toggling blind.
+          if (!sheetOpen && narrow) {
+            setSheetOpen(true)
+            setPaperOpen(true)
+          } else setPaperOpen(o => !o)
         }}
         onExport={stageReady ? t => void exportPng(stageReady, useStudio.getState().history.cursor, t) : undefined}
         onSettings={() => useUi.getState().open('settings')} />

@@ -64,3 +64,23 @@ describe('bottom sheet', () => {
     expect(document.getElementById('dock-body')).toBeInTheDocument()
   })
 })
+
+describe('Paper button with a collapsed sheet', () => {
+  test('opens sheet and panel instead of toggling blind', async () => {
+    vi.stubGlobal('innerWidth', 400)
+    const { App } = await import('../App')
+    render(<App />)
+    const paper = screen.getByRole('button', { name: 'Paper' })
+    expect(paper).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(paper)
+    expect(screen.getByRole('button', { name: /Steps, presets/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(paper).toHaveAttribute('aria-expanded', 'true')
+    // collapse the sheet: the panel is hidden, so the button must not claim it is open...
+    fireEvent.click(screen.getByRole('button', { name: /Steps, presets/ }))
+    expect(paper).toHaveAttribute('aria-expanded', 'false')
+    // ...and pressing it opens the sheet with the panel still open (not closes it)
+    fireEvent.click(paper)
+    expect(paper).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: /Steps, presets/ })).toHaveAttribute('aria-expanded', 'true')
+  })
+})

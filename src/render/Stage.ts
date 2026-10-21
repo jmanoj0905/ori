@@ -15,7 +15,7 @@ import * as THREE from 'three'
 import type { FacePose, FoldKind, Frame, Preview, Tool, Vec2 } from '@engine'
 import { DEFAULT_PAPER, type PaperSettings } from '../studio/store'
 import { NO_INSETS, sameInsets, type Insets } from '../studio/insets'
-import { tween } from '../studio/motion'
+import { isReducedMotion, tween } from '../studio/motion'
 import {
   DEFAULT_TILT,
   FOV_DEG,
@@ -101,6 +101,10 @@ export class Stage {
   private framed = false
   /** Islands' footprint: the sheet is framed and centred in the area left free. */
   private insets: Insets = NO_INSETS
+  /** The insets currently applied (eases toward `insets`). */
+  private shown: Insets = NO_INSETS
+  private insetCtl: AbortController | null = null
+  private insetsSet = false
   /** The user has orbited, panned or zoomed since the last framing: do not refit on their behalf. */
   private userMoved = false
   /** Wall time of the last setPreview, ms (dev diagnostics). */
@@ -195,10 +199,23 @@ export class Stage {
    */
   setInsets(i: Insets): void {
     if (sameInsets(i, this.insets)) return
+    this.insetCtl?.abort()
     this.insets = i
-    if (!this.userMoved) this.cam.distance = this.fitDistance()
-    this.applyViewOffset()
-    this.applyCamera(this.cam)
+    const from = this.shown
+    const d0 = this.cam.distance
+    const d1 = this.userMoved ? d0 : this.fitDistance()
+    const ctl = (this.insetCtl = new AbortController())
+    // Eased (instant under reduced motion and for the first measurement); the user's own zoom is kept.
+    void tween(0, 1, 220, t => {
+      this.shown = {
+        left: lerp(from.left, i.left, t), right: lerp(from.right, i.right, t),
+        top: lerp(from.top, i.top, t), bottom: lerp(from.bottom, i.bottom, t),
+      }
+      this.cam.distance = lerp(d0, d1, t)
+      this.applyViewOffset()
+      this.applyCamera(this.cam)
+    }, isReducedMotion() || !this.insetsSet, ctl.signal)
+    this.insetsSet = true
   }
 
   setPaper(s: PaperSettings): void {
@@ -317,6 +334,12 @@ export class Stage {
   private stopView(): void {
     this.viewCtl?.abort()
     this.viewCtl = null
+    if (this.insetCtl) {
+      this.insetCtl.abort() // a framing in progress, or the user taking over, ends the easing
+      this.insetCtl = null
+      this.shown = this.insets
+      this.applyViewOffset()
+    }
   }
 
   /** Orbit by a pointer delta in pixels (Task 6 binds this to actions). */
@@ -572,7 +595,7 @@ export class Stage {
 
   /** Shift the image so the sheet's centre falls in the middle of the free area (see setInsets). */
   private applyViewOffset(): void {
-    const { left, right, top, bottom } = this.insets
+    const { left, right, top, bottom } = this.shown
     const sx = (left - right) / 2
     const sy = (top - bottom) / 2
     if (sx === 0 && sy === 0) this.camera.clearViewOffset()

@@ -59,6 +59,8 @@ export const LAYER_STEP_PX = 100 // one mouse-wheel notch
 export const TOUCH_SLOP_PX = 6
 /** Ctrl+wheel deltas are tiny (a pinch reports ~1-10 px): scale to mouse-wheel feel. */
 export const PINCH_WHEEL_GAIN = 10
+/** Larger ctrl+wheel deltas are a real wheel notch, which keeps the plain wheel's zoom step. */
+export const PINCH_MAX_PX = 50
 
 const DRAGS = ['fold', 'orbit', 'pan'] as const
 type DragAction = (typeof DRAGS)[number]
@@ -96,7 +98,7 @@ export function inModal(_target?: EventTarget | null): boolean {
 }
 
 export function createRouter(el: HTMLElement, getBindings: () => Bindings, handlers: Handlers): () => void {
-  let drag: { action: DragAction; id: number; x: number; y: number } | null = null
+  let drag: { action: DragAction; id: number; x: number; y: number; touch?: boolean } | null = null
   const held = new Set<Action>()
   let wheelAcc = 0
   // Touch: every finger down, the two-finger gesture, and whether a finger left
@@ -154,6 +156,7 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
   }
 
   const touchDown = (e: PointerEvent) => {
+    if (drag && !drag.touch) return // a mouse drag owns the gesture: touch never disturbs it
     touches.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (touches.size === 1) leftover = false
     else if (!pair && touches.size >= 2) {
@@ -172,7 +175,7 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
     if (!handlers.fold) return
     e.preventDefault()
     if (!emit('fold', { phase: 'start', clientX: e.clientX, clientY: e.clientY, pointerId: e.pointerId })) return
-    drag = { action: 'fold', id: e.pointerId, x: e.clientX, y: e.clientY }
+    drag = { action: 'fold', id: e.pointerId, x: e.clientX, y: e.clientY, touch: true }
     try {
       el.setPointerCapture?.(e.pointerId)
     } catch {
@@ -238,6 +241,7 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
     if (active instanceof HTMLElement && active !== document.body && !el.contains(active)) active.blur()
     const b = getBindings()
     if (drag) {
+      if (drag.touch) return // a touch fold is not the mouse's to end
       if (drag.id === e.pointerId) return // another button of the same pointer
       endDrag(true) // the previous pointer was lost: drop its stale drag
     }
@@ -318,9 +322,10 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
     }
     // A trackpad pinch arrives as ctrl+wheel: zoom, never the browser's page zoom,
     // unless the user bound Ctrl+wheel to something.
+    const pinchLike = e.deltaMode === 0 && Math.abs(dy) < PINCH_MAX_PX // a mouse notch is ~100
     if (e.ctrlKey && handlers.zoom && !(Object.keys(b) as Action[]).some(a => handlers[a] && b[a].some(x => x.type === 'wheel' && x.mods.mod))) {
       e.preventDefault()
-      emit('zoom', { phase: 'tap', delta: dy * PINCH_WHEEL_GAIN, clientX: e.clientX, clientY: e.clientY })
+      emit('zoom', { phase: 'tap', delta: pinchLike ? dy * PINCH_WHEEL_GAIN : dy, clientX: e.clientX, clientY: e.clientY })
     }
   }
 
@@ -373,7 +378,11 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
     if (DRAGS.some(a => handlers[a] && b[a].some(x => x.type === 'mouse' && x.button === 2))) e.preventDefault()
   }
 
-  const onLost = (e: PointerEvent) => onPointerCancel(e)
+  // Touch capture is released by the router itself when a second finger lands (finger 1 is
+  // still down), so a touch pointer losing capture says nothing: pointerup/cancel decide.
+  const onLost = (e: PointerEvent) => {
+    if (e.pointerType !== 'touch') onPointerCancel(e)
+  }
 
   el.addEventListener('pointerdown', onPointerDown)
   el.addEventListener('lostpointercapture', onLost)

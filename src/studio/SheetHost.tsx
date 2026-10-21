@@ -7,7 +7,7 @@
 // with a fresh import().
 import { Component, Suspense, lazy, type ComponentType, type ReactNode } from 'react'
 import type { ShortcutSheet as ShortcutSheetType } from './ShortcutSheet'
-import type { SettingsSheet as SettingsSheetType } from '../settings/SettingsSheet'
+import type { SettingsSheet as SettingsSheetType } from './SettingsSheet'
 import { announce } from './announce'
 import { useUi, type Sheet } from './ui'
 
@@ -62,6 +62,6 @@ export function makeSheetHost(
 }
 
 export const SheetHost = makeSheetHost(
-  () => import('../settings/SettingsSheet').then(m => ({ default: m.SettingsSheet satisfies typeof SettingsSheetType })),
+  () => import('./SettingsSheet').then(m => ({ default: m.SettingsSheet satisfies typeof SettingsSheetType })),
   () => import('./ShortcutSheet').then(m => ({ default: m.ShortcutSheet satisfies typeof ShortcutSheetType })),
 )

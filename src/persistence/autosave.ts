@@ -13,7 +13,7 @@
 // loadHistory returns null and shows RESTORE_FAILED once.
 import { PAPER_SIZES, commit, createPaper, jumpTo, push, startHistory, turnOver } from '@engine'
 import type { Gesture, History, Line, Step, Tool, Vec2 } from '@engine'
-import type { PaperSettings, SheetSize } from '../studio/store'
+import type { PaperSettings, SheetSize } from '../paper'
 import { AUTOSAVE_OFF, RESTORE_FAILED, noticeOnce } from './notice'
 
 export const AUTOSAVE_KEY = 'ori.autosave.v1'

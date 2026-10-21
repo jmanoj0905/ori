@@ -4,7 +4,7 @@ import { useId } from 'react'
 import { ACTION_LABELS, describeBindings } from '../settings/describe'
 import { ACTIONS } from '../settings/schema'
 import { useSettings } from '../settings/store'
-import '../settings/sheet.css'
+import './sheet.css'
 import { useModal } from './useModal'
 
 const FIXED: [string, string][] = [

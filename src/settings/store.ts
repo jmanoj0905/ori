@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { DEFAULT_PAPER, type PaperSettings } from '../studio/store'
+import { DEFAULT_PAPER, cleanPaper } from '../paper'
 import { DEFAULT_BINDINGS, cloneBindings, findConflicts } from './bindings'
 import {
   ACTIONS, SETTINGS_KEY, SETTINGS_VERSION,
@@ -38,31 +38,6 @@ function validBinding(b: unknown): b is Binding {
     case 'modifier': return b.key === 'shift' || b.key === 'alt' || b.key === 'mod'
     default: return false
   }
-}
-
-const HEX = /^#[0-9a-f]{6}$/i
-const MODES = ['kami', 'washi', 'plain', 'custom'] as const
-const unit = (v: unknown, d: number) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : d)
-const dim = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 1000
-
-/** Any value -> a valid PaperSettings: each field is checked and falls back to the default on its own. */
-export function cleanPaper(raw: unknown): PaperSettings {
-  const d = defaultSettings().paperDefaults
-  if (!isObj(raw)) return d
-  const size = raw.size
-  const out: PaperSettings = {
-    mode: MODES.find(m => m === raw.mode) ?? d.mode,
-    front: typeof raw.front === 'string' && HEX.test(raw.front) ? raw.front : d.front,
-    back: typeof raw.back === 'string' && HEX.test(raw.back) ? raw.back : d.back,
-    thickness: unit(raw.thickness, d.thickness),
-    translucency: unit(raw.translucency, d.translucency),
-    size:
-      size === 'square' || size === 'a4' ? size
-      : isObj(size) && dim(size.width) && dim(size.height) ? { width: size.width, height: size.height }
-      : d.size,
-  }
-  if (raw.pattern === 'seigaiha' || raw.pattern === 'asanoha') out.pattern = raw.pattern
-  return out
 }
 
 export const clampRadius = (r: unknown, fallback: number): number =>
@@ -197,3 +172,4 @@ export const useSettings = create<SettingsState>()((set, get) => {
 })
 
 export type { ReducedMotion }
+export { cleanPaper }

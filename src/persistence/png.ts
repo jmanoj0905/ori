@@ -1,6 +1,8 @@
 // PNG export of the current view at 2x (spec 05 phase 1).
 import { EXPORT_FAILED, notify } from './notice'
-import type { Stage } from '../render/Stage'
+
+/** What the export needs from the renderer (the Stage implements it). */
+export type Snapshotter = { snapshot(scale: 2, transparent: boolean): Promise<Blob> }
 
 const pad = (n: number): string => String(n).padStart(2, '0')
 
@@ -29,7 +31,7 @@ export function download(blob: Blob, name: string): void {
 }
 
 /** Snapshot the stage at 2x and download it; `step` is the history cursor. Never rejects: a failure shows a notice. */
-export async function exportPng(stage: Stage, step: number, transparent: boolean): Promise<void> {
+export async function exportPng(stage: Snapshotter, step: number, transparent: boolean): Promise<void> {
   try {
     const blob = await stage.snapshot(2, transparent)
     download(blob, pngName(new Date(), step))

@@ -1,4 +1,5 @@
-// The settings sheet (spec 04): a modal side sheet opened from the top bar's
+// The settings sheet (spec 04): a modal side sheet (studio UI over the
+// settings store; it lives here because it uses studio islands) opened from the top bar's
 // gear or the `settings` action. Code-split (React.lazy in SheetHost).
 //
 // Bindings are edited in a draft: capture a key, mouse button or wheel (with
@@ -15,13 +16,13 @@
 // Esc and "Reset" restores anything remapped away from it.
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { version } from '../../package.json'
-import { announce } from '../studio/announce'
-import { useModal } from '../studio/useModal'
-import { Swatches } from '../studio/islands/PaperPanel'
-import { DEFAULT_BINDINGS, cloneBindings, findConflicts, sameBinding } from './bindings'
-import { ACTION_LABELS, describeBindings } from './describe'
-import { ACTIONS, type Action, type Binding, type Bindings, type ModKey, type Mods, type SnapSettings } from './schema'
-import { useSettings } from './store'
+import { announce } from './announce'
+import { useModal } from './useModal'
+import { Swatches } from './islands/PaperPanel'
+import { DEFAULT_BINDINGS, cloneBindings, findConflicts, sameBinding } from '../settings/bindings'
+import { ACTION_LABELS, describeBindings } from '../settings/describe'
+import { ACTIONS, type Action, type Binding, type Bindings, type ModKey, type Mods, type SnapSettings } from '../settings/schema'
+import { useSettings } from '../settings/store'
 import './sheet.css'
 
 export const SOURCE_URL = 'https://github.com/jmanoj0905/ori'

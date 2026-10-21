@@ -45,6 +45,10 @@ import {
 import type { FoldKind, Gesture, History, Line, PaperSize, Preview, Tool, Vec2 } from '@engine'
 import { createWorkerCommitter, type CommitRequest, type Committer } from './committer'
 import { SETTLE_MS, isReducedMotion, tween } from './motion'
+import { DEFAULT_PAPER, type PaperSettings, type SheetSize } from '../paper'
+
+export { DEFAULT_PAPER, SWATCHES } from '../paper'
+export type { PaperSettings, SheetSize } from '../paper'
 
 export const HINT_START = 'Grab a corner and drag it across.'
 /** Shown when the committer itself fails (worker crash), not an engine refusal. */
@@ -52,40 +56,11 @@ export const COMMIT_FAILED = 'Something went wrong with that fold. Try again.'
 
 /**
  * Where new sheets get their paper (the settings' paper defaults). Injected like
- * the reduced-motion source (settings import this store, not the reverse); the
- * app wires it at start-up. Unset: the sheet keeps the current paper.
+ * the reduced-motion source, so the store stays testable without the settings
+ * store; the app wires it at start-up. Unset: the sheet keeps the current paper.
  */
 let paperDefaultsSource: (() => PaperSettings) | null = null
 export const setPaperDefaultsSource = (fn: (() => PaperSettings) | null): void => { paperDefaultsSource = fn }
-
-export const SWATCHES = Object.freeze({
-  vermilion: '#D9472B',
-  indigo: '#2F4A8A',
-  matcha: '#7A9A57',
-  ochre: '#C9962B',
-  sumi: '#2B2A28',
-})
-
-export type SheetSize = 'square' | 'a4' | { width: number; height: number }
-
-export type PaperSettings = {
-  mode: 'kami' | 'washi' | 'plain' | 'custom'
-  front: string
-  back: string
-  pattern?: 'seigaiha' | 'asanoha'
-  thickness: number
-  translucency: number
-  size: SheetSize
-}
-
-export const DEFAULT_PAPER: PaperSettings = Object.freeze({
-  mode: 'kami',
-  front: SWATCHES.vermilion,
-  back: '#FFFFFF',
-  thickness: 0.5,
-  translucency: 0,
-  size: 'square',
-})
 
 /** The recorded parameters of the fold step the cursor sits on, if it is a fold. */
 export type LastFold = {

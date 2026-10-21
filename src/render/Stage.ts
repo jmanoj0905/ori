@@ -13,9 +13,8 @@
 import { clientToPlane, planeToClient, pxPerUnit, toNdc } from './pickMath'
 import * as THREE from 'three'
 import type { FacePose, FoldKind, Frame, Preview, Tool, Vec2 } from '@engine'
-import { DEFAULT_PAPER, type PaperSettings } from '../studio/store'
-import { NO_INSETS, sameInsets, type Insets } from '../studio/insets'
-import { isReducedMotion, tween } from '../studio/motion'
+import { DEFAULT_PAPER, type PaperSettings } from '../paper'
+import { NO_INSETS, sameInsets, type Insets } from './insets'
 import {
   DEFAULT_TILT,
   FOV_DEG,
@@ -40,6 +39,28 @@ import { buildPaperGeometry, LAYER_GAP, layerOffsets, poseTable, type LayerOffse
 import { IVORY, createWashi, detectShadowMapSize, type WashiUniforms } from './washi'
 
 export type Pick = { face: number; paper: Vec2; folded: Vec2 }
+
+/**
+ * An eased value animation: calls `onFrame` with values from `from` to `to`
+ * over `ms`, the last call exactly `to`; with `instant` (or when aborted) it
+ * jumps / stops. The studio passes its shared tween (studio/motion), so the
+ * Stage needs nothing from the UI layer.
+ */
+export type Tween = (
+  from: number, to: number, ms: number, onFrame: (value: number) => void, instant: boolean, signal?: AbortSignal,
+) => Promise<void>
+
+export type StageOptions = {
+  /** Camera and framing transitions. Default: instant (no animation). */
+  tween?: Tween
+  /** Read on each transition: true makes it instant. Default: false. */
+  reducedMotion?: () => boolean
+}
+
+const instantTween: Tween = (_from, to, _ms, onFrame, _instant, signal) => {
+  if (!signal?.aborted) onFrame(to)
+  return Promise.resolve()
+}
 
 /** How to draw a preview: from the gesture that produced it. */
 export type PreviewStyle = { kind?: FoldKind; tool?: Tool; progress?: number }
@@ -122,8 +143,13 @@ export class Stage {
   /** Hover landmark marker (spec 03 step 1): a thin ring of constant screen size. */
   private marker: THREE.Mesh | null = null
 
-  constructor(host: HTMLElement) {
+  private readonly tween: Tween
+  private readonly reducedMotion: () => boolean
+
+  constructor(host: HTMLElement, opts: StageOptions = {}) {
     this.host = host
+    this.tween = opts.tween ?? instantTween
+    this.reducedMotion = opts.reducedMotion ?? (() => false)
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: false })
     this.renderer.setClearColor(new THREE.Color(IVORY), 1)
     this.renderer.shadowMap.enabled = true
@@ -206,7 +232,7 @@ export class Stage {
     const d1 = this.userMoved ? d0 : this.fitDistance()
     const ctl = (this.insetCtl = new AbortController())
     // Eased (instant under reduced motion and for the first measurement); the user's own zoom is kept.
-    void tween(0, 1, 220, t => {
+    void this.tween(0, 1, 220, t => {
       this.shown = {
         left: lerp(from.left, i.left, t), right: lerp(from.right, i.right, t),
         top: lerp(from.top, i.top, t), bottom: lerp(from.bottom, i.bottom, t),
@@ -214,7 +240,7 @@ export class Stage {
       this.cam.distance = lerp(d0, d1, t)
       this.applyViewOffset()
       this.applyCamera(this.cam)
-    }, isReducedMotion() || !this.insetsSet, ctl.signal)
+    }, this.reducedMotion() || !this.insetsSet, ctl.signal)
     this.insetsSet = true
   }
 
@@ -325,8 +351,8 @@ export class Stage {
     this.userMoved = false
     const from = { ...this.cam }
     const ctl = (this.viewCtl = new AbortController())
-    // The shared tween (studio/motion): instant, one frame, when `animate` is false.
-    void tween(0, 1, VIEW_ANIM_MS, t => {
+    // The injected tween: instant, one frame, when `animate` is false.
+    void this.tween(0, 1, VIEW_ANIM_MS, t => {
       this.cam = {
         tx: lerp(from.tx, to.tx, t), ty: lerp(from.ty, to.ty, t), tilt: lerp(from.tilt, to.tilt, t),
         azimuth: lerp(from.azimuth, to.azimuth, t), distance: lerp(from.distance, to.distance, t),

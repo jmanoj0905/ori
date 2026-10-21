@@ -8,7 +8,7 @@ import { inProcessCommitter } from '../studio/committer'
 import { DEFAULT_PAPER, createStudioStore } from '../studio/store'
 import { bootStudio } from '../studio/boot'
 import { AUTOSAVE_KEY, cancelSave, flushSave, loadHistory, saveHistory } from './autosave'
-import { AUTOSAVE_OFF, RESTORE_FAILED, resetNotices, useNotice } from './notice'
+import { AUTOSAVE_OFF, RESTORE_FAILED, resetNotices, notices } from './notice'
 import { pngName } from './png'
 
 const fresh = () => createStudioStore({ committer: inProcessCommitter })
@@ -53,7 +53,7 @@ describe('autosave', () => {
     expect(wire(r!.history)).toEqual(wire(history))
     expect(current(r!.history)).toEqual(current(history))
     expect(r!.paper).toEqual(paper)
-    expect(useNotice.getState().message).toBeNull()
+    expect(notices.getState().message).toBeNull()
   })
 
   test('a turn over is replayed too', async () => {
@@ -82,23 +82,23 @@ describe('autosave', () => {
 
   test('nothing saved: null and no toast', () => {
     expect(loadHistory()).toBeNull()
-    expect(useNotice.getState().message).toBeNull()
+    expect(notices.getState().message).toBeNull()
   })
 
   test('corrupt JSON gives null and one "Couldn\'t restore" toast', () => {
     localStorage.setItem(AUTOSAVE_KEY, '{not json')
     expect(loadHistory()).toBeNull()
     expect(RESTORE_FAILED).toBe("Couldn't restore your last model.")
-    expect(useNotice.getState().message).toBe(RESTORE_FAILED)
-    useNotice.getState().dismiss()
+    expect(notices.getState().message).toBe(RESTORE_FAILED)
+    notices.getState().dismiss()
     expect(loadHistory()).toBeNull() // once per session
-    expect(useNotice.getState().message).toBeNull()
+    expect(notices.getState().message).toBeNull()
   })
 
   test('an unknown version is treated as unreadable', () => {
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ version: 2, paper: DEFAULT_PAPER, steps: [], cursor: 0 }))
     expect(loadHistory()).toBeNull()
-    expect(useNotice.getState().message).toBe(RESTORE_FAILED)
+    expect(notices.getState().message).toBe(RESTORE_FAILED)
   })
 
   test('a step the engine refuses makes the save corrupt', async () => {
@@ -107,13 +107,13 @@ describe('autosave', () => {
     steps[0].params.crease.origin = [50, 50] // far off the sheet
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ version: 1, paper: DEFAULT_PAPER, steps, cursor: 1 }))
     expect(loadHistory()).toBeNull()
-    expect(useNotice.getState().message).toBe(RESTORE_FAILED)
+    expect(notices.getState().message).toBe(RESTORE_FAILED)
   })
 
   test('malformed fields are corrupt, not a crash', () => {
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ version: 1, paper: DEFAULT_PAPER, steps: [{ kind: 'fold', params: 7 }], cursor: 1 }))
     expect(loadHistory()).toBeNull()
-    expect(useNotice.getState().message).toBe(RESTORE_FAILED)
+    expect(notices.getState().message).toBe(RESTORE_FAILED)
   })
 
   test('setItem throwing (quota / private mode) does not crash and toasts once per session', () => {
@@ -125,11 +125,11 @@ describe('autosave', () => {
       saveHistory(h, DEFAULT_PAPER)
       flushSave()
     }).not.toThrow()
-    expect(useNotice.getState().message).toBe(AUTOSAVE_OFF)
-    useNotice.getState().dismiss()
+    expect(notices.getState().message).toBe(AUTOSAVE_OFF)
+    notices.getState().dismiss()
     saveHistory(h, DEFAULT_PAPER)
     flushSave()
-    expect(useNotice.getState().message).toBeNull()
+    expect(notices.getState().message).toBeNull()
   })
 })
 
@@ -160,7 +160,7 @@ describe('boot ordering', () => {
     const b = fresh()
     bootStudio(b)
     expect(b.getState().history.steps).toHaveLength(0)
-    expect(useNotice.getState().message).toBe(RESTORE_FAILED)
+    expect(notices.getState().message).toBe(RESTORE_FAILED)
   })
 })
 
@@ -196,7 +196,7 @@ describe('replay is exact', () => {
       const r = runPreset(preset)
       if (!r.ok) throw new Error(r.reason)
       const loaded = roundTrip(r.history, { ...DEFAULT_PAPER, size: preset.paper })
-      expect(useNotice.getState().message).toBeNull()
+      expect(notices.getState().message).toBeNull()
       expect(loaded).not.toBeNull()
       expect(loaded!.history.steps.map(s => s.kind)).toEqual(r.history.steps.map(s => s.kind))
       expect(loaded!.history.cursor).toBe(r.history.cursor)
@@ -265,6 +265,6 @@ describe('PNG export', () => {
     const stage = { snapshot: vi.fn(async () => { throw new Error('boom') }) }
     await expect(exportPng(stage as never, 1, false)).resolves.toBeUndefined()
     expect(click).not.toHaveBeenCalled()
-    expect(useNotice.getState().message).toBe("Couldn't export the image.")
+    expect(notices.getState().message).toBe("Couldn't export the image.")
   })
 })

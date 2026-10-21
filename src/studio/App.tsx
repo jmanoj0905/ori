@@ -9,7 +9,7 @@ import type { Stage } from '../render/Stage'
 import { setPaperDefaultsSource, useStudio, type StudioState } from './store'
 import { useInput } from '../input/useInput'
 import { useSettings } from '../settings/store'
-import { prefersReducedMotion, setReducedMotionSource } from './motion'
+import { isReducedMotion, prefersReducedMotion, setReducedMotionSource, tween } from './motion'
 import { TopBar } from './islands/TopBar'
 import { Tools } from './islands/Tools'
 import { FoldBar } from './islands/FoldBar'
@@ -25,7 +25,7 @@ import { SheetHost } from './SheetHost'
 import { useUi } from './ui'
 import './islands/islands.css'
 
-// The store reads reduced motion lazily (settings import the store, not vice versa).
+// The store and the Stage read reduced motion lazily, from the live setting.
 setReducedMotionSource(() => prefersReducedMotion(useSettings.getState().reducedMotion))
 setPaperDefaultsSource(() => useSettings.getState().paperDefaults)
 
@@ -72,7 +72,7 @@ export function App() {
     void import('../render/Stage')
       .then(m => {
         if (cancelled) return
-        const st = new m.Stage(host)
+        const st = new m.Stage(host, { tween, reducedMotion: isReducedMotion })
         stage = st
         setStageReady(st)
         syncStage(st, useStudio.getState())

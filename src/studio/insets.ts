@@ -2,14 +2,9 @@
 // islands. Pure measuring (rects in, insets out) so it is testable without a
 // browser; App feeds the result to Stage.setInsets, which centres the camera
 // framing on that area.
-export interface Insets {
-  left: number
-  right: number
-  top: number
-  bottom: number
-}
+import { NO_INSETS, type Insets } from '../render/insets'
 
-export const NO_INSETS: Insets = { left: 0, right: 0, top: 0, bottom: 0 }
+export { NO_INSETS, sameInsets, type Insets } from '../render/insets'
 
 /** Below this viewport width the islands collapse into the bottom sheet. */
 export const NARROW_PX = 720
@@ -35,6 +30,3 @@ export function measureInsets(
     right: rects.steps ? Math.max(0, viewport.width - rects.steps.left) + GAP : 0,
   }
 }
-
-export const sameInsets = (a: Insets, b: Insets) =>
-  a.left === b.left && a.right === b.right && a.top === b.top && a.bottom === b.bottom

@@ -1,4 +1,4 @@
-import type { PaperSettings } from '../studio/store'
+import type { PaperSettings } from '../paper'
 
 export type Action =
   | 'fold' | 'orbit' | 'pan' | 'zoom'

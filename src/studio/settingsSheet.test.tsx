@@ -2,9 +2,9 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { DEFAULT_BINDINGS } from './bindings'
+import { DEFAULT_BINDINGS } from '../settings/bindings'
 import { SettingsSheet } from './SettingsSheet'
-import { defaultSettings, useSettings } from './store'
+import { defaultSettings, useSettings } from '../settings/store'
 
 beforeEach(() => useSettings.setState(defaultSettings()))
 afterEach(cleanup)

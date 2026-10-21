@@ -1,10 +1,11 @@
 // The non-blocking persistence toast (restore failed, autosave off).
 import { useEffect } from 'react'
-import { useNotice } from '../../persistence/notice'
+import { useStore } from 'zustand'
+import { notices } from '../../persistence/notice'
 
 export function Notice() {
-  const message = useNotice(s => s.message)
-  const dismiss = useNotice(s => s.dismiss)
+  const message = useStore(notices, s => s.message)
+  const dismiss = useStore(notices, s => s.dismiss)
   useEffect(() => {
     if (!message) return
     const t = setTimeout(dismiss, 8000)

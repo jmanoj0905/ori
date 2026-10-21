@@ -12,9 +12,9 @@ export function prefersReducedMotion(setting: ReducedMotion): boolean {
 }
 
 /**
- * Where the studio reads the reduced-motion setting from. The settings store
- * imports the studio store, so the store cannot import it back; the App wires
- * the real source in at start-up. Defaults to the OS preference.
+ * Where the studio reads the reduced-motion setting from. Injected so the
+ * store (and its tests) need no settings store; the App wires the real source
+ * in at start-up. Defaults to the OS preference.
  */
 let source: () => boolean = () => prefersReducedMotion('system')
 export const setReducedMotionSource = (fn: () => boolean): void => { source = fn }

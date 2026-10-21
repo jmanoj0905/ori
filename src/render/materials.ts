@@ -20,7 +20,7 @@ import {
   RepeatWrapping,
   SRGBColorSpace,
 } from 'three'
-import type { PaperSettings, SheetSize } from '../studio/store'
+import type { PaperSettings, SheetSize } from '../paper'
 import { FIBRE_GLSL } from './washi'
 
 /** Accent (live crease, ghost) and the warm-red "blocked" tint (tokens.css). */

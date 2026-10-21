@@ -11,6 +11,15 @@
 // The preview always runs against current(history): Preview.frame (the
 // creased-but-open edited frame) is for rendering only and is never fed back.
 //
+// Settle (spec 03 step 4): the commit lands in `history` at once, so the final
+// state is always correct. The release preview then lives on as `settling`, a
+// purely visual Preview that eases from the released progress to 1 over
+// SETTLE_MS (re-running the synchronous preview each frame); the Stage shows it
+// in place of the committed paper, then reveals the committed frame. Reduced
+// motion skips it entirely. Anything that touches the model or starts a gesture
+// (begin, undo / redo / jumpTo, turnOver, newSheet, tool change, re-commit)
+// aborts the tween and clears `settling`, so input is never blocked or fought.
+//
 // Async commit (R33): release() and turnOver() return a Promise<boolean>
 // (true when a step was pushed). While a commit is pending, `pending` is
 // true, the preview stays on screen (until the result lands, so the Stage can
@@ -34,6 +43,7 @@ import {
 } from '@engine'
 import type { FoldKind, Gesture, History, Line, PaperSize, Preview, Tool, Vec2 } from '@engine'
 import { createWorkerCommitter, type CommitRequest, type Committer } from './committer'
+import { SETTLE_MS, isReducedMotion, tween } from './motion'
 
 export const HINT_START = 'Grab a corner and drag it across.'
 /** Shown when the committer itself fails (worker crash), not an engine refusal. */
@@ -108,6 +118,8 @@ export type StudioState = {
   kind: FoldKind
   gesture: Gesture | null
   preview: Preview | null
+  /** Visual only: the flap easing into its committed angle after a release. */
+  settling: Preview | null
   refusal: string | null
   paper: PaperSettings
   hint: string
@@ -146,7 +158,7 @@ export type StudioState = {
   newSheet(size: SheetSize): void
 }
 
-export type StudioOptions = { committer?: Committer }
+export type StudioOptions = { committer?: Committer; reduced?: () => boolean }
 
 const sizeOf = (size: SheetSize): PaperSize | null => {
   if (size === 'square' || size === 'a4') return PAPER_SIZES[size]
@@ -154,10 +166,34 @@ const sizeOf = (size: SheetSize): PaperSize | null => {
   return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? { width, height } : null
 }
 
-const idle = { gesture: null, preview: null, refusal: null } as const
+const idle = { gesture: null, preview: null, refusal: null, settling: null } as const
 
-export function createStudioStore({ committer = createWorkerCommitter() }: StudioOptions = {}) {
+export function createStudioStore({ committer = createWorkerCommitter(), reduced = isReducedMotion }: StudioOptions = {}) {
   return create<StudioState>()((set, get) => {
+    let settleCtl: AbortController | null = null
+    /** Stop a running settle; callers set `settling: null` themselves (idle does). */
+    const endSettle = () => {
+      settleCtl?.abort()
+      settleCtl = null
+    }
+
+    /** Ease the just-committed flap from its released progress to 1 (see header). */
+    const startSettle = (base: History, g: Gesture | undefined, shown: Preview | null, isReduced: boolean) => {
+      if (!g || !shown || g.tool !== 'fold' || g.angleDeg !== undefined || g.progress >= 1) return
+      if (!isReduced) set({ settling: shown })
+      const ctl = (settleCtl = new AbortController())
+      void tween(g.progress, 1, SETTLE_MS, p => {
+        if (ctl.signal.aborted) return
+        if (p >= 1) {
+          settleCtl = null
+          set({ settling: null })
+          return
+        }
+        const r = previewFold(current(base), { ...g, progress: p })
+        if (r.ok) set({ settling: r.preview })
+      }, isReduced, ctl.signal)
+    }
+
     /** Preview `g` against the current frame; store the gesture with k clamped to what the engine took. */
     const runPreview = (g: Gesture) => {
       const r = previewFold(current(get().history), g)
@@ -171,7 +207,10 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
     /** Send `req` to the committer and push its step, unless the history moved meanwhile. */
     const runCommit = async (req: CommitRequest): Promise<boolean> => {
       const base = get().history
-      set({ pending: true })
+      const shown = get().preview
+      const isReduced = reduced()
+      endSettle()
+      set({ pending: true, settling: null })
       let result
       try {
         result = await committer(req)
@@ -189,11 +228,15 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
         return false
       }
       set({ ...idle, history: push(base, result.step, result.frame), pending: false })
+      startSettle(base, 'gesture' in req ? req.gesture : undefined, shown, isReduced)
       return true
     }
 
     /** History navigation: drops any gesture, then moves the cursor. */
-    const navigate = (h: History) => set({ ...idle, history: h })
+    const navigate = (h: History) => {
+      endSettle()
+      set({ ...idle, history: h })
+    }
 
     /** At most one re-commit in flight; later edits merge into `queued` (latest wins). */
     let recommitting: Promise<boolean> | null = null
@@ -212,7 +255,8 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
         angleDeg: edit.angleDeg ?? last.angleDeg,
         ...(last.face === undefined ? {} : { face: last.face }),
       }
-      set({ pending: true })
+      endSettle()
+      set({ pending: true, settling: null })
       let result
       try {
         result = await committer({ frame: current(prev), gesture: g })
@@ -246,6 +290,7 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
 
       begin(grab, face) {
         if (get().pending) return
+        endSettle()
         const { tool, kind } = get()
         const g: Gesture = { tool, grab, target: grab, layers: 1, kind, progress: 0, snapAngle: false }
         set({ ...idle, gesture: face === undefined ? g : { ...g, face } })
@@ -296,6 +341,7 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
 
       cancel() {
         if (get().pending) return
+        endSettle()
         set(idle)
       },
 
@@ -305,6 +351,7 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
 
       turnOver() {
         if (get().pending) return Promise.resolve(false)
+        endSettle()
         set(idle)
         return runCommit({ frame: current(get().history), turnOver: true })
       },
@@ -350,6 +397,7 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
 
       setTool(tool) {
         if (get().pending) return set({ tool })
+        endSettle()
         set({ ...idle, tool })
       },
 
@@ -360,6 +408,7 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
       newSheet(size) {
         const s = sizeOf(size)
         if (!s) return
+        endSettle()
         set({
           ...idle,
           history: startHistory(createPaper(s)),

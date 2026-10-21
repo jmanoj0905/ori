@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { PAPER_SIZES, canRedo, createPaper, current, preview } from '@engine'
 import type { Gesture } from '@engine'
 import { inProcessCommitter, type Committer, type CommitRequest } from './committer'
@@ -346,5 +346,73 @@ describe('useStudio store', () => {
       expect(canRedo(h)).toBe(true)
       expect(s.getState().pending).toBe(false)
     })
+  })
+})
+
+
+describe('settle animation', () => {
+  let now = 0
+  let queue: ((t: number) => void)[] = []
+  const flush = (dt: number) => {
+    now += dt
+    const q = queue
+    queue = []
+    q.forEach(cb => cb(now))
+  }
+  beforeEach(() => {
+    now = 0
+    queue = []
+    vi.stubGlobal('requestAnimationFrame', (cb: (t: number) => void) => queue.push(cb))
+    vi.stubGlobal('cancelAnimationFrame', () => { queue = [] })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  const released = async (reduced: boolean) => {
+    const s = createStudioStore({ committer: inProcessCommitter, reduced: () => reduced })
+    const seen: (number | null)[] = []
+    s.subscribe(st => seen.push(st.settling ? st.settling.angleDeg : null))
+    s.getState().begin([1, 1])
+    s.getState().drag([0, 0], 0.6)
+    const startAngle = s.getState().preview!.angleDeg
+    expect(await s.getState().release()).toBe(true)
+    return { s, seen, startAngle }
+  }
+
+  test('commits immediately; the flap then eases from the released angle to the committed one', async () => {
+    const { s, startAngle } = await released(false)
+    expect(s.getState().history.steps).toHaveLength(1)
+    expect(s.getState().preview).toBeNull()
+    expect(s.getState().settling?.angleDeg).toBeCloseTo(startAngle)
+    flush(0)
+    flush(100)
+    const mid = s.getState().settling!.angleDeg
+    expect(mid).toBeGreaterThan(startAngle)
+    expect(mid).toBeLessThan(180)
+    flush(400)
+    expect(s.getState().settling).toBeNull()
+  })
+
+  test('reduced motion: no intermediate frame is ever shown', async () => {
+    const { s, seen } = await released(true)
+    expect(s.getState().history.steps).toHaveLength(1)
+    expect(s.getState().settling).toBeNull()
+    expect(seen.every(a => a === null)).toBe(true)
+    expect(queue).toHaveLength(0)
+  })
+
+  test('undo, begin or a new fold mid-settle cancels it and shows the final state', async () => {
+    for (const act of [
+      (s: ReturnType<typeof fresh>) => s.getState().undo(),
+      (s: ReturnType<typeof fresh>) => s.getState().begin([0, 1]),
+    ]) {
+      const { s } = await released(false)
+      flush(0)
+      flush(50)
+      expect(s.getState().settling).not.toBeNull()
+      act(s)
+      expect(s.getState().settling).toBeNull()
+      flush(500)
+      expect(s.getState().settling).toBeNull()
+    }
   })
 })

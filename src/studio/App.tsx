@@ -8,12 +8,17 @@ import { current, poses } from '@engine'
 import type { Stage } from '../render/Stage'
 import { useStudio, type StudioState } from './store'
 import { useInput } from '../input/useInput'
+import { useSettings } from '../settings/store'
+import { prefersReducedMotion, setReducedMotionSource } from './motion'
 import { TopBar } from './islands/TopBar'
 import { Tools } from './islands/Tools'
 import { FoldBar } from './islands/FoldBar'
 import { HintLine } from './islands/HintLine'
 import { PaperPanel } from './islands/PaperPanel'
 import './islands/islands.css'
+
+// The store reads reduced motion lazily (settings import the store, not vice versa).
+setReducedMotionSource(() => prefersReducedMotion(useSettings.getState().reducedMotion))
 
 /** Push the store's model, preview and paper into the Stage (only what changed). */
 function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
@@ -22,9 +27,11 @@ function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
     const frame = current(s.history)
     stage.setFrame(frame, poses(frame))
   }
-  if (!prev || s.preview !== prev.preview) {
+  const shown = s.preview ?? s.settling
+  const was = prev && (prev.preview ?? prev.settling)
+  if (!prev || shown !== was) {
     const g = s.gesture
-    stage.setPreview(s.preview, g ? { kind: g.kind, tool: g.tool, progress: g.progress } : {})
+    stage.setPreview(shown, g ? { kind: g.kind, tool: g.tool, progress: g.progress } : {})
   }
 }
 

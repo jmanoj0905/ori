@@ -14,6 +14,7 @@ import { clientToPlane, pxPerUnit, toNdc } from './pickMath'
 import * as THREE from 'three'
 import type { FacePose, FoldKind, Frame, Preview, Tool, Vec2 } from '@engine'
 import { DEFAULT_PAPER, type PaperSettings } from '../studio/store'
+import { tween } from '../studio/motion'
 import {
   DEFAULT_TILT,
   FOV_DEG,
@@ -101,7 +102,8 @@ export class Stage {
   lastPreviewMs = 0
 
   private cam: CamState = { tx: 0.5, ty: 0.5, tilt: DEFAULT_TILT, azimuth: 0, distance: 3 }
-  private anim: { from: CamState; to: CamState; start: number } | null = null
+  /** Cancels the running camera view tween (Top / Reset view), if any. */
+  private viewCtl: AbortController | null = null
   private width = 1
   private height = 1
   private dpr = 1
@@ -163,7 +165,7 @@ export class Stage {
     if (changed || !this.framed) {
       this.framed = true
       const c = this.modelCenter()
-      this.anim = null
+      this.stopView()
       this.cam = { ...this.cam, tx: c.x, ty: c.y, distance: this.fitDistance() }
       this.applyCamera(this.cam)
     }
@@ -277,19 +279,28 @@ export class Stage {
       tilt: name === 'top' ? 0 : DEFAULT_TILT,
       distance: this.fitDistance(),
     }
-    if (!animate) {
-      this.anim = null
-      this.cam = to
+    this.stopView()
+    const from = { ...this.cam }
+    const ctl = (this.viewCtl = new AbortController())
+    // The shared tween (studio/motion): instant, one frame, when `animate` is false.
+    void tween(0, 1, VIEW_ANIM_MS, t => {
+      this.cam = {
+        tx: lerp(from.tx, to.tx, t), ty: lerp(from.ty, to.ty, t), tilt: lerp(from.tilt, to.tilt, t),
+        azimuth: lerp(from.azimuth, to.azimuth, t), distance: lerp(from.distance, to.distance, t),
+      }
       this.applyCamera(this.cam)
-      return
-    }
-    this.anim = { from: { ...this.cam }, to, start: performance.now() }
-    this.invalidate()
+      this.invalidate()
+    }, !animate, ctl.signal)
+  }
+
+  private stopView(): void {
+    this.viewCtl?.abort()
+    this.viewCtl = null
   }
 
   /** Orbit by a pointer delta in pixels (Task 6 binds this to actions). */
   orbit(dx: number, dy: number): void {
-    this.anim = null
+    this.stopView()
     this.cam.azimuth -= dx * 0.006
     this.cam.tilt = clamp(this.cam.tilt - dy * 0.006, 0, MAX_TILT)
     this.applyCamera(this.cam)
@@ -297,7 +308,7 @@ export class Stage {
 
   /** Pan by a pointer delta in pixels, in the view plane. */
   pan(dx: number, dy: number): void {
-    this.anim = null
+    this.stopView()
     const worldPerPx = (2 * this.cam.distance * Math.tan((FOV_DEG * Math.PI) / 360)) / this.height
     const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0)
     const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1)
@@ -309,7 +320,7 @@ export class Stage {
 
   /** Zoom by a wheel-like delta (positive = out). */
   zoom(delta: number): void {
-    this.anim = null
+    this.stopView()
     this.cam.distance = clamp(this.cam.distance * Math.exp(delta * 0.001), 0.3, 40)
     this.applyCamera(this.cam)
   }
@@ -345,6 +356,7 @@ export class Stage {
     if (this.disposed) return
     this.disposed = true
     cancelAnimationFrame(this.raf)
+    this.stopView()
     this.ro.disconnect()
     window.removeEventListener('resize', this.resize)
     this.disposeBuilt(this.committed)
@@ -569,25 +581,13 @@ export class Stage {
     if (!this.raf && !this.disposed) this.raf = requestAnimationFrame(this.tick)
   }
 
-  private readonly tick = (now: number): void => {
+  private readonly tick = (): void => {
     this.raf = 0
     if (this.disposed) return
-    if (this.anim) {
-      const t = clamp((now - this.anim.start) / VIEW_ANIM_MS, 0, 1)
-      const e = t * t * (3 - 2 * t)
-      const { from, to } = this.anim
-      this.cam = {
-        tx: lerp(from.tx, to.tx, e), ty: lerp(from.ty, to.ty, e), tilt: lerp(from.tilt, to.tilt, e),
-        azimuth: lerp(from.azimuth, to.azimuth, e), distance: lerp(from.distance, to.distance, e),
-      }
-      this.applyCamera(this.cam)
-      if (t >= 1) this.anim = null
-    }
     if (this.dirty) {
       this.dirty = false
       this.renderer.render(this.scene, this.camera)
     }
-    if (this.anim) this.invalidate()
   }
 }
 

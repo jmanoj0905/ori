@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useStudio } from '../studio/store'
 import { createFoldGesture, type GestureOptions, type GestureStage } from '../studio/useFoldGesture'
 import { useSettings } from '../settings/store'
+import { prefersReducedMotion } from '../studio/motion'
 import { createRouter, type Handlers } from './router'
 
 /** What the input wiring needs from the Stage. */
@@ -15,12 +16,7 @@ export interface InputStage extends GestureStage {
   setHoverMarker?(p: readonly [number, number] | null): void
 }
 
-const animateViews = (): boolean => {
-  const m = useSettings.getState().reducedMotion
-  if (m === 'always') return false
-  if (m === 'never') return true
-  return !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches)
-}
+const animateViews = (): boolean => !prefersReducedMotion(useSettings.getState().reducedMotion)
 
 export function useInput(stage: InputStage | null, opts?: GestureOptions): void {
   useEffect(() => {

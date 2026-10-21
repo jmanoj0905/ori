@@ -63,17 +63,29 @@ export function aboveGraph(frame: Frame): Map<number, number[]> {
   const hit = aboveCache.get(frame)
   if (hit) return hit
   const w = windings(frame)
-  const below = new Map<number, number[]>()
+  // Lists are gathered per face id in a plain array (a drag previews a new
+  // frame per pointer move, each with tens of thousands of orders on a deep
+  // stack), then handed out as the map. Each list keeps faceOrders order.
+  const lists: (number[] | undefined)[] = []
+  const other = new Map<number, number[]>() // ids that aren't array indices (malformed orders)
   const add = (top: number, bottom: number) => {
-    const list = below.get(top)
-    if (list) list.push(bottom)
-    else below.set(top, [bottom])
+    if (Number.isInteger(top) && top >= 0) {
+      const list = lists[top]
+      if (list) list.push(bottom)
+      else lists[top] = [bottom]
+    } else {
+      const list = other.get(top)
+      if (list) list.push(bottom)
+      else other.set(top, [bottom])
+    }
   }
   for (const [f, g, s] of frame.faceOrders) {
     if (s * (w[g] ? 1 : -1) > 0) add(f, g)
     else add(g, f)
   }
-  for (const list of below.values()) Object.freeze(list)
+  const below = new Map<number, number[]>()
+  lists.forEach((list, top) => list && below.set(top, Object.freeze(list) as number[]))
+  for (const [top, list] of other) below.set(top, Object.freeze(list) as number[])
   aboveCache.set(frame, below)
   return below
 }
@@ -100,7 +112,7 @@ export function layerRanks(frame: Frame): number[] {
   const n = frame.faces_vertices.length
   const below = aboveGraph(frame)
   const aboveCount = new Array<number>(n).fill(0)
-  const edges = new Map<number, number[]>()
+  const edges: (number[] | undefined)[] = new Array(n)
   // Dedupe each face's list in first-seen order with a stamp array (no Set per
   // face: on a deep stack there are tens of thousands of orders per frame).
   const seen = new Int32Array(n)
@@ -113,7 +125,7 @@ export function layerRanks(frame: Frame): number[] {
       seen[b] = stamp
       uniq.push(b)
     }
-    edges.set(top, uniq)
+    if (Number.isInteger(top) && top >= 0 && top < n) edges[top] = uniq // only ever read for ids 0..n−1
     for (const b of uniq) aboveCount[b]++
   }
   const done = new Array<boolean>(n).fill(false)
@@ -134,7 +146,8 @@ export function layerRanks(frame: Frame): number[] {
     }
     done[next] = true
     ranks[next] = n - 1 - placed
-    for (const b of edges.get(next) ?? []) if (--aboveCount[b] === 0 && !done[b]) ready.push(b)
+    const bs = edges[next]
+    if (bs) for (const b of bs) if (--aboveCount[b] === 0 && !done[b]) ready.push(b)
   }
   Object.freeze(ranks)
   rankCache.set(frame, ranks)

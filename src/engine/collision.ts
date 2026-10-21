@@ -161,9 +161,14 @@ function overlapArea(a: P2[], b: P2[]): number {
 }
 
 const boxOf = (poly: P2[]): Part['box'] => {
-  const xs = poly.map(p => p[0])
-  const ys = poly.map(p => p[1])
-  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (const [x, y] of poly) {
+    if (x < x0) x0 = x
+    if (x > x1) x1 = x
+    if (y < y0) y0 = y
+    if (y > y1) y1 = y
+  }
+  return [x0, y0, x1, y1]
 }
 const boxesMeet = (a: Part['box'], b: Part['box']) =>
   a[0] < b[2] - EPS && b[0] < a[2] - EPS && a[1] < b[3] - EPS && b[1] < a[3] - EPS
@@ -190,8 +195,16 @@ function axialParts(tri: Tri, ax: AxisFrame): Part[] | null {
     const q: Vec3 = [rel[0] - ax.a[0] * t, rel[1] - ax.a[1] * t, rel[2] - ax.a[2] * t]
     return { t, q }
   })
-  const far = tq.reduce((m, x) => (norm3(x.q) > norm3(m.q) ? x : m))
-  const r = norm3(far.q)
+  // the point farthest from the axis (the first of equals, as a reduce would pick)
+  let far = tq[0]!
+  let r = norm3(far.q)
+  for (let i = 1; i < tq.length; i++) {
+    const d = norm3(tq[i]!.q)
+    if (d > r) {
+      far = tq[i]!
+      r = d
+    }
+  }
   if (r < EPS) return []
   const e: Vec3 = [far.q[0] / r, far.q[1] / r, far.q[2] / r]
   const theta = (Math.atan2(e[2], dot3(e, ax.u)) * 180) / Math.PI
@@ -233,54 +246,71 @@ const relationCache = new WeakMap<Frame, (f: number, g: number) => boolean | nul
  *
  * Both answers are read from closures of `g` alone: f is above g iff f is
  * reachable upward from g (f ∈ over(g)), below it iff reachable downward
- * (f ∈ under(g)). The sweep always asks with g = a moving face, so only the
- * few moving faces' closures are ever built, not one per static face (on a
- * deep stack that was most of a drag's preview time).
+ * (f ∈ under(g)); "above" wins when both hold (only possible on a cycle of
+ * inconsistent orders). The sweep always asks with g = a moving face, so only
+ * the few moving faces' closures are ever built, not one per static face.
+ * under(g) is built first: when it holds f and g is on no cycle, f cannot also
+ * be above g, so the answer is "below" without the upward closure (which needs
+ * the whole reversed graph). On a deep stack that was most of a drag's preview.
  */
+type Closure = { mark: Uint8Array; cyclic: boolean }
+
 function layerRelation(frame: Frame) {
   const hit = relationCache.get(frame)
   if (hit) return hit
+  const n = frame.faces_vertices.length
   let below: Map<number, number[]> | null = null
-  let aboveOf: Map<number, number[]> | null = null
-  const downMemo = new Map<number, Set<number>>()
-  const upMemo = new Map<number, Set<number>>()
-  /** Every face other than `f` reachable from `f` along `graph`. */
-  const closure = (f: number, graph: Map<number, number[]>) => {
-    const s = new Set<number>()
-    const stack = [...(graph.get(f) ?? [])]
+  let aboveOf: number[][] | null = null
+  const downMemo = new Map<number, Closure>()
+  const upMemo = new Map<number, Closure>()
+  const inRange = (x: number) => x >= 0 && x < n
+  /** Every face other than `f` reachable from `f` (marked); `cyclic`: `f` reaches itself. */
+  const closure = (f: number, next: (x: number) => readonly number[] | undefined): Closure => {
+    const mark = new Uint8Array(n)
+    let cyclic = false
+    const stack = [...(next(f) ?? [])]
     while (stack.length) {
       const x = stack.pop()!
-      if (s.has(x) || x === f) continue
-      s.add(x)
-      for (const y of graph.get(x) ?? []) stack.push(y)
+      if (x === f) {
+        cyclic = true
+        continue
+      }
+      if (!inRange(x) || mark[x]) continue
+      mark[x] = 1
+      const ys = next(x)
+      if (ys) for (const y of ys) stack.push(y)
     }
-    return s
+    return { mark, cyclic }
   }
   const under = (g: number) => {
-    let s = downMemo.get(g)
-    if (!s) downMemo.set(g, (s = closure(g, (below ??= aboveGraph(frame)))))
-    return s
+    let c = downMemo.get(g)
+    if (!c) {
+      const b = (below ??= aboveGraph(frame))
+      downMemo.set(g, (c = closure(g, x => b.get(x))))
+    }
+    return c
   }
   const over = (g: number) => {
-    let s = upMemo.get(g)
-    if (!s) {
+    let c = upMemo.get(g)
+    if (!c) {
       if (!aboveOf) {
         below ??= aboveGraph(frame)
-        const up = new Map<number, number[]>()
-        for (const [top, bottoms] of below) {
-          for (const b of bottoms) {
-            const list = up.get(b)
-            if (list) list.push(top)
-            else up.set(b, [top])
-          }
-        }
+        const up: number[][] = Array.from({ length: n }, () => [])
+        for (const [top, bottoms] of below) for (const b of bottoms) if (inRange(b)) up[b]!.push(top)
         aboveOf = up
       }
-      upMemo.set(g, (s = closure(g, aboveOf)))
+      const a = aboveOf
+      upMemo.set(g, (c = closure(g, x => (inRange(x) ? a[x] : undefined))))
     }
-    return s
+    return c
   }
-  const rel = (f: number, g: number): boolean | null => (over(g).has(f) ? true : under(g).has(f) ? false : null)
+  const rel = (f: number, g: number): boolean | null => {
+    const down = under(g)
+    const isBelow = inRange(f) && down.mark[f] === 1
+    if (isBelow && !down.cyclic) return false
+    const isAbove = inRange(f) && over(g).mark[f] === 1
+    return isAbove ? true : isBelow ? false : null
+  }
   relationCache.set(frame, rel)
   return rel
 }
@@ -331,7 +361,7 @@ type Analysis = {
   statAxial: Part[]
   above: ((f: number, g: number) => boolean | null) | null
   /** per direction (+1 / −1): blocked at the start, and the earliest axial contact angle */
-  dirs: Map<number, { startBlocked: boolean; minDelta: number }>
+  dirs: Map<string, { startBlocked: boolean; minDelta: number }>
   /** sampled-class data, built lazily */
   sampled?: { local: Tri['p'][]; statP: Tri['p'][]; statBoxes: Box3[]; pairs: [number, number][] }
   movTris: Tri[]
@@ -444,11 +474,17 @@ const BAND = 1e-6
  * pair left out would fail the `delta >= minDelta` test anyway. The per-pair
  * arithmetic and tests are unchanged, so is the verdict.
  */
-function axialFor(an: Analysis, dir: number) {
-  const cached = an.dirs.get(dir)
+function axialFor(an: Analysis, dir: number, limit: number) {
+  const key = `${dir}|${limit}`
+  const cached = an.dirs.get(key)
   if (cached) return cached
   let startBlocked = false
-  let minDelta = Infinity
+  // Contacts at or beyond `limit` (less ANG_EPS) can't decide a sweep of at most
+  // `limit` degrees (sweep only uses minDelta < span − ANG_EPS), so the search
+  // starts there: a flap that lands flat (Δθ = 180) on a stack is not tested
+  // against every layer it lands on. If nothing nearer is found minDelta stays
+  // at that bound, which the caller reads as no contact, exactly as Infinity.
+  let minDelta = limit - ANG_EPS
   const { parts, thetas, next, prev } = staticByTheta(an)
   const n = parts.length
   const inBand = new Uint8Array(n)
@@ -462,9 +498,11 @@ function axialFor(an: Analysis, dir: number) {
       if (delta < ANG_EPS || delta > 360 - ANG_EPS) {
         // stacked at the start: only a pair that departs into the static face matters
         if (!an.above) return false
+        // boxes first: a cheap, pure test, so most side-by-side pairs never query the layer order
+        if (!boxesMeet(pm.box, ps.box)) return false
         const staticAbove = an.above(ps.face, pm.face)
         if (staticAbove === null || zUp !== staticAbove) return false
-        return boxesMeet(pm.box, ps.box) && overlapArea(pm.poly, ps.poly) > AREA_EPS
+        return overlapArea(pm.poly, ps.poly) > AREA_EPS
       }
       // only a pair that would be the earliest contact so far needs its overlap tested
       if (delta >= minDelta) return false
@@ -518,7 +556,7 @@ function axialFor(an: Analysis, dir: number) {
     banded.length = 0
   }
   const r = { startBlocked, minDelta }
-  an.dirs.set(dir, r)
+  an.dirs.set(key, r)
   return r
 }
 
@@ -564,7 +602,9 @@ export function sweep(
   let hit = Infinity
 
   // 1. axial × axial: exact
-  const axial = axialFor(an, dir)
+  // Every real sweep spans at most 180° (a fold from flat): one cached analysis per
+  // direction covers all of a drag's angles. Larger spans search without a bound.
+  const axial = axialFor(an, dir, span <= 180 ? 180 : Infinity)
   if (axial.startBlocked) hit = 0
   else if (axial.minDelta < span - ANG_EPS) hit = axial.minDelta
 

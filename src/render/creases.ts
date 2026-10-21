@@ -305,8 +305,26 @@ export function buildCreaseShade(
     const deg = Math.abs(frame.edges_foldAngle[e] ?? 0)
     if (deg > 1e-6) angle.set(edgeKey(frame, a, b), deg)
   })
-  const pos: number[] = []
-  const col: number[] = []
+  // Quads are written straight into typed arrays (grown by doubling): the
+  // stationary part of a drag preview is rebuilt on every pointer move.
+  let pos = new Float32Array(0)
+  let col = new Float32Array(0)
+  let nv = 0
+  const reserve = (k: number) => {
+    if (3 * (nv + k) <= pos.length) return
+    const cap = Math.max(64, 2 * (nv + k))
+    const p2 = new Float32Array(3 * cap)
+    p2.set(pos)
+    pos = p2
+    const c2 = new Float32Array(4 * cap)
+    c2.set(col)
+    col = c2
+  }
+  const vert = (x: number, y: number, z: number, al: number) => {
+    pos[3 * nv] = x; pos[3 * nv + 1] = y; pos[3 * nv + 2] = z
+    col[4 * nv] = 0.17; col[4 * nv + 1] = 0.165; col[4 * nv + 2] = 0.157; col[4 * nv + 3] = al
+    nv++
+  }
   const c = frame.vertices_coords
   if (angle.size) {
     frame.faces_vertices.forEach((_, f) => {
@@ -321,11 +339,8 @@ export function buildCreaseShade(
       const ox = offsets[3 * f]! + l * lo.up[3 * f]!
       const oy = offsets[3 * f + 1]! + l * lo.up[3 * f + 1]!
       const oz = offsets[3 * f + 2]! + l * lo.up[3 * f + 2]!
-      const world = (x: number, y: number) => [
-        m[0]! * x + m[4]! * y + m[12]! + ox,
-        m[1]! * x + m[5]! * y + m[13]! + oy,
-        m[2]! * x + m[6]! * y + m[14]! + oz,
-      ]
+      const put = (x: number, y: number, al: number) =>
+        vert(m[0]! * x + m[4]! * y + m[12]! + ox, m[1]! * x + m[5]! * y + m[13]! + oy, m[2]! * x + m[6]! * y + m[14]! + oz, al)
       for (let i = 0; i < loop.length; i++) {
         const a = loop[i]!, b = loop[(i + 1) % loop.length]!
         const deg = angle.get(edgeKey(frame, a, b))
@@ -341,18 +356,20 @@ export function buildCreaseShade(
         const w = Math.min(reach, Math.abs(toC) * 0.45)
         if (w <= 1e-9) continue
         const alpha = strength * Math.min(1, deg / 180)
-        const P0 = world(p[0], p[1]), P1 = world(q[0], q[1])
-        const Q1 = world(q[0] + nx * w, q[1] + ny * w), Q0 = world(p[0] + nx * w, p[1] + ny * w)
-        for (const [pt, al] of [[P0, alpha], [P1, alpha], [Q1, 0], [P0, alpha], [Q1, 0], [Q0, 0]] as const) {
-          pos.push(pt[0]!, pt[1]!, pt[2]!)
-          col.push(0.17, 0.165, 0.157, al)
-        }
+        reserve(6)
+        // P0 P1 Q1, P0 Q1 Q0 (P on the hinge at alpha, Q inward at 0)
+        put(p[0], p[1], alpha)
+        put(q[0], q[1], alpha)
+        put(q[0] + nx * w, q[1] + ny * w, 0)
+        put(p[0], p[1], alpha)
+        put(q[0] + nx * w, q[1] + ny * w, 0)
+        put(p[0] + nx * w, p[1] + ny * w, 0)
       }
     })
   }
   const g = new BufferGeometry()
-  g.setAttribute('position', new Float32BufferAttribute(pos, 3))
-  g.setAttribute('color', new Float32BufferAttribute(col, 4))
+  g.setAttribute('position', new Float32BufferAttribute(pos.subarray(0, 3 * nv), 3))
+  g.setAttribute('color', new Float32BufferAttribute(col.subarray(0, 4 * nv), 4))
   return g
 }
 

@@ -681,16 +681,28 @@ function cutFlat(frame: Frame, p: Plan): Edit | null {
  * commits — RE drops the orders of faces it splits.
  */
 function inherited(old: Frame, from: (Origin | null)[]): FaceOrder[] {
-  const children = new Map<number, number[]>()
+  // Children per old face, by index (a drag's preview runs this on every move:
+  // array lookups, and the usual one-child case pushed directly; same output order).
+  const children: (number[] | undefined)[] = []
   from.forEach((o, f) => {
     if (!o) return
-    const list = children.get(o.oldFace)
+    const list = children[o.oldFace]
     if (list) list.push(f)
-    else children.set(o.oldFace, [f])
+    else children[o.oldFace] = [f]
   })
   const out: FaceOrder[] = []
-  for (const [a, b, s] of old.faceOrders)
-    for (const ca of children.get(a) ?? []) for (const cb of children.get(b) ?? []) out.push([ca, cb, s])
+  for (const order of old.faceOrders) {
+    const a = order[0]
+    const b = order[1]
+    const s = order[2]
+    const ka = children[a]
+    const kb = children[b]
+    if (!ka || !kb) continue
+    if (ka.length === 1 && kb.length === 1) {
+      // two faces that kept their ids: the same (immutable) triple, shared rather than copied
+      out.push(ka[0] === a && kb[0] === b ? order : [ka[0], kb[0], s])
+    } else for (const ca of ka) for (const cb of kb) out.push([ca, cb, s])
+  }
   return out
 }
 

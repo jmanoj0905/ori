@@ -15,12 +15,21 @@
 // crease on every move: the worst case for the preview and the renderer). Frame times are the deltas between
 // requestAnimationFrame timestamps recorded in the page during the drag (see
 // the jitter note at the assertion).
+//
+// Ruling R48: the frame-time gates alone barely discriminate (frame times are
+// quantised to vsyncs), so the per-move work is gated too: the p95 of the time
+// spent handling one pointermove (engine preview + Stage rebuild, synchronous in
+// the handler) must be ≤ 12 ms, leaving the rest of the 16.7 ms frame for the
+// WebGL render and the browser. It is measured on a sustained drag, after a short
+// warm-up drag (cancelled) has paid the one-off JIT and per-model cache costs;
+// the warm-up's own numbers are logged.
 import { expect, test } from '@playwright/test'
 import { frames, openStudio, px, settle, type Vec2 } from './helpers'
 
 const W = 1 / 8 // the stack's side after six halvings
 const BUDGET_MS = 16.7
 const VSYNC_JITTER_MS = 0.5
+const HANDLER_P95_MS = 12
 
 type G = { tool: 'fold'; grab: Vec2; target: Vec2; layers: number; kind: 'valley'; progress: 1; snapAngle: false }
 const fold = (grab: Vec2, target: Vec2, layers: number): G => ({ tool: 'fold', grab, target, layers, kind: 'valley', progress: 1, snapAngle: false })
@@ -88,43 +97,58 @@ test('dragging a fold on a 320-face model holds 60 fps (p95 frame time ≤ 16.7 
   for (let i = 0; i <= 240; i++) points.push(await px(page, path(i / 240)))
   const [gx, gy] = await px(page, grab)
 
-  // A real (trusted) press on the flap, then one pointermove per frame for 2 s: what
-  // Chrome delivers for a mouse that keeps moving (input is rAF-aligned and coalesced).
+  // A real (trusted) press on the flap, then one pointermove per frame: what Chrome
+  // delivers for a mouse that keeps moving (input is rAF-aligned and coalesced).
   // Each move is dispatched at the start of a frame, so the frame's time includes the
   // full input handling (engine preview + mesh rebuild) and the WebGL render.
-  await page.evaluate(() => {
-    const w = window as unknown as { __pid: number }
-    window.addEventListener('pointerdown', e => (w.__pid = e.pointerId), { once: true, capture: true })
-  })
-  await page.mouse.move(gx, gy)
-  await page.mouse.down()
-  const sample = await page.evaluate(points => new Promise<{ ts: number[]; handle: number[]; build: number[]; previewing: boolean; refusal: string | null }>(resolve => {
-    const w = window as unknown as { __pid: number; __ori: any }
-    const canvas = w.__ori.stage.canvas as HTMLCanvasElement
-    const ts: number[] = []
-    const handle: number[] = []
-    const build: number[] = []
-    let t0 = -1
-    const tick = (t: number) => {
-      if (t0 < 0) t0 = t
-      ts.push(t)
-      const f = (t - t0) / 2000
-      if (f >= 1) {
-        const s = w.__ori.store.getState()
-        resolve({ ts, handle, build, previewing: s.preview !== null, refusal: s.refusal })
-        return
+  type Sample = { ts: number[]; handle: number[]; build: number[]; previewing: boolean; refusal: string | null }
+  const dragFor = async (ms: number, pts: Vec2[]): Promise<Sample> => {
+    await page.evaluate(() => {
+      const w = window as unknown as { __pid: number }
+      window.addEventListener('pointerdown', e => (w.__pid = e.pointerId), { once: true, capture: true })
+    })
+    await page.mouse.move(gx, gy)
+    await page.mouse.down()
+    return page.evaluate(([ms, points]) => new Promise<Sample>(resolve => {
+      const w = window as unknown as { __pid: number; __ori: any }
+      const canvas = w.__ori.stage.canvas as HTMLCanvasElement
+      const ts: number[] = []
+      const handle: number[] = []
+      const build: number[] = []
+      let t0 = -1
+      const tick = (t: number) => {
+        if (t0 < 0) t0 = t
+        ts.push(t)
+        const f = (t - t0) / ms
+        if (f >= 1) {
+          const s = w.__ori.store.getState()
+          resolve({ ts, handle, build, previewing: s.preview !== null, refusal: s.refusal })
+          return
+        }
+        const [x, y] = points[Math.min(points.length - 1, Math.floor(f * points.length))]!
+        const h0 = performance.now()
+        canvas.dispatchEvent(new PointerEvent('pointermove', {
+          pointerId: w.__pid, pointerType: 'mouse', isPrimary: true, buttons: 1, clientX: x + (ts.length % 2) * 0.5, clientY: y, bubbles: true,
+        }))
+        handle.push(performance.now() - h0)
+        build.push(w.__ori.stage.lastPreviewMs)
+        requestAnimationFrame(tick)
       }
-      const [x, y] = points[Math.min(points.length - 1, Math.floor(f * points.length))]!
-      const h0 = performance.now()
-      canvas.dispatchEvent(new PointerEvent('pointermove', {
-        pointerId: w.__pid, pointerType: 'mouse', isPrimary: true, buttons: 1, clientX: x + (ts.length % 2) * 0.5, clientY: y, bubbles: true,
-      }))
-      handle.push(performance.now() - h0)
-      build.push(w.__ori.stage.lastPreviewMs)
       requestAnimationFrame(tick)
-    }
-    requestAnimationFrame(tick)
-  }), points)
+    }), [ms, pts] as const)
+  }
+
+  // Warm-up: a first, short drag along the path backwards, cancelled with Esc. The
+  // first moves of a page's first drag pay one-off costs (JIT compilation of the
+  // preview and mesh code, per-model caches); the gate measures sustained dragging.
+  // The warm-up's own numbers are logged, not asserted.
+  const cold = await dragFor(500, [...points].reverse())
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await settle(page)
+  expect(await page.evaluate(() => window.__ori!.store.getState().history.steps.length)).toBe(10)
+
+  const sample = await dragFor(2000, points)
   await page.mouse.up()
   await settle(page)
   const moves = sample.handle.length
@@ -138,7 +162,8 @@ test('dragging a fold on a 320-face model holds 60 fps (p95 frame time ≤ 16.7 
     `${moves} pointer moves, ${dts.length} frames in the 2 s drag: p50 ${p50.toFixed(2)} ms, p95 ${p95.toFixed(2)} ms, max ${worst.toFixed(2)} ms, ` +
     `frames over 16.7 ms: ${dts.filter(d => d > 16.7).length}, over 20 ms: ${dts.filter(d => d > 20).length}; ` +
     `input handling per move p50 ${pct(sample.handle, 50).toFixed(2)} / p95 ${pct(sample.handle, 95).toFixed(2)} ms ` +
-    `(of which Stage preview rebuild p50 ${pct(sample.build, 50).toFixed(2)} / p95 ${pct(sample.build, 95).toFixed(2)} ms)`
+    `(of which Stage preview rebuild p50 ${pct(sample.build, 50).toFixed(2)} / p95 ${pct(sample.build, 95).toFixed(2)} ms); ` +
+    `cold warm-up drag (${cold.handle.length} moves): handling p50 ${pct(cold.handle, 50).toFixed(2)} / p95 ${pct(cold.handle, 95).toFixed(2)} / max ${Math.max(...cold.handle).toFixed(2)} ms`
   console.log(`[perf] ${summary}`)
   await info.attach('perf', { body: summary, contentType: 'text/plain' })
 
@@ -152,4 +177,8 @@ test('dragging a fold on a 320-face model holds 60 fps (p95 frame time ≤ 16.7 
   expect(p95).toBeLessThanOrEqual(BUDGET_MS + VSYNC_JITTER_MS)
   // The same gate counted directly: at most 5% of frames miss a vsync.
   expect(dts.filter(d => d > 1.5 * BUDGET_MS).length / dts.length).toBeLessThanOrEqual(0.05)
+  // Ruling R48, the discriminating one: the per-move work itself (engine preview +
+  // Stage rebuild, synchronous in the pointer handler) leaves headroom in the frame
+  // for the WebGL render and the browser.
+  expect(pct(sample.handle, 95)).toBeLessThanOrEqual(HANDLER_P95_MS)
 })

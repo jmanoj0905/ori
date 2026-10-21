@@ -166,6 +166,21 @@ describe('fold bar', () => {
     expect(screen.queryByRole('form', { name: 'Exact crease' })).toBeNull()
   })
 
+  test('the numeric form closes when a new gesture starts', () => {
+    render(<FoldBar />)
+    act(() => {
+      useStudio.getState().begin([1, 0.5])
+      useStudio.getState().drag([0.5, 0.5], 0.5)
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit crease numerically' }))
+    expect(screen.getByRole('form', { name: 'Exact crease' })).toBeInTheDocument()
+    act(() => {
+      useStudio.getState().cancel()
+      useStudio.getState().begin([0, 0])
+    })
+    expect(screen.queryByRole('form', { name: 'Exact crease' })).toBeNull()
+  })
+
   test('two points make a crease line; identical points are rejected; Esc closes the form', async () => {
     render(<FoldBar />)
     act(() => {
@@ -266,23 +281,52 @@ describe('paper panel', () => {
     expect(screen.getByRole('button', { name: 'Seigaiha' })).toBeInTheDocument()
   })
 
-  test('size: an empty sheet changes silently; with work it asks first', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+  test('size: an empty sheet changes silently; with work an in-app dialog asks first', () => {
+    const confirm = vi.spyOn(window, 'confirm')
     render(<PaperPanel onClose={() => {}} />)
     fireEvent.click(screen.getByRole('button', { name: 'A4' }))
-    expect(confirm).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(useStudio.getState().paper.size).toBe('a4')
 
     act(() => useStudio.setState({ history: quarterFolded() }))
     fireEvent.click(screen.getByRole('button', { name: 'Square' }))
-    expect(confirm).toHaveBeenCalledTimes(1)
+    const dialog = screen.getByRole('alertdialog')
+    expect(confirm).not.toHaveBeenCalled()
     expect(useStudio.getState().paper.size).toBe('a4')
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus()
+
+    // Esc cancels: nothing changes.
+    fireEvent.keyDown(within(dialog).getByRole('button', { name: 'Cancel' }), { key: 'Escape' })
+    expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(useStudio.getState().history.steps).toHaveLength(2)
 
-    confirm.mockReturnValue(true)
+    // Cancel button: nothing changes. Confirm: new sheet.
     fireEvent.click(screen.getByRole('button', { name: 'Square' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' }))
+    expect(useStudio.getState().paper.size).toBe('a4')
+    fireEvent.click(screen.getByRole('button', { name: 'Square' }))
+    fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'New sheet' }))
     expect(useStudio.getState().paper.size).toBe('square')
     expect(useStudio.getState().history.steps).toHaveLength(0)
+  })
+
+  test('the dialog traps Tab and returns focus to the trigger; Esc does not also close the panel', () => {
+    const onClose = vi.fn()
+    act(() => useStudio.setState({ history: quarterFolded() }))
+    render(<PaperPanel onClose={onClose} />)
+    const trigger = screen.getByRole('button', { name: 'A4' })
+    trigger.focus()
+    fireEvent.click(trigger)
+    const dialog = screen.getByRole('alertdialog')
+    const [cancel, ok] = within(dialog).getAllByRole('button')
+    ok!.focus()
+    fireEvent.keyDown(ok!, { key: 'Tab' })
+    expect(cancel).toHaveFocus()
+    fireEvent.keyDown(cancel!, { key: 'Tab', shiftKey: true })
+    expect(ok).toHaveFocus()
+    fireEvent.keyDown(ok!, { key: 'Escape' })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(trigger).toHaveFocus()
   })
 
   test('Esc closes the panel', async () => {

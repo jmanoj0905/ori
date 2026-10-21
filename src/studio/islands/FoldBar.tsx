@@ -154,6 +154,8 @@ export function FoldBar() {
   useEffect(() => {
     if (!subject) setOpen(false)
   }, [subject])
+  // ...and when a gesture starts or ends, or the cursor moves to another step (stale values).
+  useEffect(() => setOpen(false), [live, gesture?.grab, history.cursor, history.steps.length])
 
   if (!subject) return null
 

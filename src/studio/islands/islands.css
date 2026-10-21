@@ -490,3 +490,35 @@ input[type='range'] {
     width: auto;
   }
 }
+
+/* ---- confirm dialog ---- */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(43, 42, 40, 0.18);
+}
+.dialog {
+  position: static;
+  width: min(360px, calc(100% - 2 * var(--space)));
+  padding: 16px 18px;
+  background: rgba(250, 247, 241, 0.96);
+}
+.dialog h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 21px;
+}
+.dialog p {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}

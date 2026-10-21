@@ -1,8 +1,9 @@
 // Paper panel: material (4 modes), colours, washi pattern, size.
 // Changing the size starts a new sheet. When there is work on the page
-// (history has steps) the user is asked first with window.confirm; an empty
-// history changes size silently.
+// (history has steps) the user is asked first with the in-app ConfirmDialog;
+// an empty history changes size silently.
 import { useRef, useState } from 'react'
+import { ConfirmDialog } from './ConfirmDialog'
 import { SWATCHES, useStudio, type PaperSettings, type SheetSize } from '../store'
 
 const MODES: { mode: PaperSettings['mode']; label: string; note: string }[] = [
@@ -16,7 +17,7 @@ const KAMI_BACK = '#FFFFFF'
 
 const sizeKey = (s: SheetSize): 'square' | 'a4' | 'custom' => (s === 'square' || s === 'a4' ? s : 'custom')
 
-export const CONFIRM_RESIZE = 'Changing the size starts a new sheet and clears your folds. Continue?'
+export const CONFIRM_RESIZE = 'Changing the size starts a new sheet and clears your folds.'
 
 function Swatches({ value, onPick }: { value: string; onPick(c: string): void }) {
   return (
@@ -49,9 +50,10 @@ export function PaperPanel({ onClose }: { onClose(): void }) {
   const [customOpen, setCustomOpen] = useState(false)
   const ref = useRef<HTMLElement>(null)
 
+  const [askSize, setAskSize] = useState<SheetSize | null>(null)
   const chooseSize = (size: SheetSize) => {
-    if (hasWork && !window.confirm(CONFIRM_RESIZE)) return
-    newSheet(size)
+    if (hasWork) setAskSize(size)
+    else newSheet(size)
   }
   const customSize = (): SheetSize | null => {
     const width = Number(dims.w)
@@ -154,6 +156,18 @@ export function PaperPanel({ onClose }: { onClose(): void }) {
           <label>H <input type="number" min="0.1" step="0.1" value={dims.h} onChange={e => setDims({ ...dims, h: e.target.value })} /></label>
           <button type="submit" className="tbtn text" disabled={!customSize()}>New sheet</button>
         </form>
+      )}
+      {askSize !== null && (
+        <ConfirmDialog
+          title="Start a new sheet?"
+          message={CONFIRM_RESIZE}
+          confirmLabel="New sheet"
+          onCancel={() => setAskSize(null)}
+          onConfirm={() => {
+            newSheet(askSize)
+            setAskSize(null)
+          }}
+        />
       )}
     </section>
   )

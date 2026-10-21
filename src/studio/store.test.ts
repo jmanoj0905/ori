@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, test, vi } from 'vitest'
-import { PAPER_SIZES, createPaper, current, preview } from '@engine'
+import { PAPER_SIZES, canRedo, createPaper, current, preview } from '@engine'
 import type { Gesture } from '@engine'
 import { inProcessCommitter, type Committer, type CommitRequest } from './committer'
 import { HINT_START, createStudioStore, lastFold } from './store'
@@ -315,6 +315,36 @@ describe('useStudio store', () => {
       await Promise.all([first, second, third])
       expect(lastFold(s.getState().history)?.angleDeg).toBeCloseTo(80)
       expect(s.getState().history.steps).toHaveLength(1)
+    })
+
+    test('undo while a re-commit is in flight drops the queued edit: the earlier fold is untouched, the later one stays redoable', async () => {
+      const { committer, calls } = deferredCommitter()
+      const s = createStudioStore({ committer })
+      const fold = async (grab: [number, number], target: [number, number], layers: number) => {
+        s.getState().begin(grab)
+        s.getState().drag(target, 1)
+        s.getState().setLayers(layers)
+        const p = s.getState().release()
+        calls.at(-1)!.resolve()
+        await p
+      }
+      await fold([1, 0.5], [0, 0.5], 1)
+      await fold([0, 0.5], [0.5, 0.5], 2)
+      expect(s.getState().history.steps).toHaveLength(2)
+      const stepA = s.getState().history.steps[0]
+      const n = calls.length
+      const a = s.getState().setLastFold({ angleDeg: 100 })
+      const b = s.getState().setLastFold({ angleDeg: 60 })
+      s.getState().undo()
+      calls[n].resolve()
+      await Promise.all([a, b])
+      const h = s.getState().history
+      expect(calls).toHaveLength(n + 1) // the queued value never reached the committer
+      expect(h.cursor).toBe(1)
+      expect(h.steps).toHaveLength(2)
+      expect(h.steps[0]).toBe(stepA)
+      expect(canRedo(h)).toBe(true)
+      expect(s.getState().pending).toBe(false)
     })
   })
 })

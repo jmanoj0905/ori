@@ -198,6 +198,8 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
     /** At most one re-commit in flight; later edits merge into `queued` (latest wins). */
     let recommitting: Promise<boolean> | null = null
     let queued: NumericEdit | null = null
+    /** Set when a re-commit's result was discarded because the history moved (undo, jump, new sheet). */
+    let stale = false
 
     const recommit = async (edit: NumericEdit): Promise<boolean> => {
       const { gesture, pending, history } = get()
@@ -216,10 +218,12 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
         result = await committer({ frame: current(prev), gesture: g })
       } catch {
         if (get().history === history) set({ refusal: COMMIT_FAILED })
+        else stale = true
         set({ pending: false })
         return false
       }
       if (get().history !== history) {
+        stale = true
         set({ pending: false })
         return false
       }
@@ -326,12 +330,18 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
           return recommitting
         }
         recommitting = (async () => {
+          stale = false
           let ok = await recommit(edit)
-          while (queued) {
+          let expected = get().history
+          // Edits queued meanwhile were meant for the fold they were made on: if the
+          // history moved (undo / jump / new sheet) they would hit a different fold.
+          while (queued && !stale && get().history === expected) {
             const next: NumericEdit = queued
             queued = null
             ok = await recommit(next)
+            expected = get().history
           }
+          queued = null
           recommitting = null
           return ok
         })()

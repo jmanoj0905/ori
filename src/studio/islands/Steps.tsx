@@ -41,7 +41,9 @@ export function Steps() {
         const a = s.history
         const b = prev.history
         if (a === b) return
-        const truncated = a.cursor === b.cursor + 1 && a.frames.length === a.cursor + 1 && b.frames.length > b.cursor + 1
+        const truncated =
+          a.cursor === b.cursor + 1 && a.frames.length === a.cursor + 1 && b.frames.length > b.cursor + 1 &&
+          a.steps[a.cursor - 1] !== b.steps[b.cursor] // a redo / jump reuses the same step
         setToast(truncated && !ctl.current ? b : null)
       }),
     [],
@@ -134,7 +136,7 @@ export function Steps() {
             type="button"
             className="tbtn text"
             onClick={() => {
-              useStudio.setState({ history: toast })
+              useStudio.getState().restoreHistory(toast)
               setToast(null)
             }}
           >

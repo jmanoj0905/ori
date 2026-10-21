@@ -54,3 +54,29 @@ describe('playPreset', () => {
     expect(store.getState().history.steps).toHaveLength(1)
   })
 })
+
+describe('refused step', () => {
+  test('stops playback and reports "Step N: reason"', async () => {
+    let n = 0
+    const committer: typeof inProcessCommitter = req => (++n === 3 ? Promise.resolve({ ok: false, reason: 'That crease misses the paper.' }) : inProcessCommitter(req))
+    const store = createStudioStore({ committer, reduced: () => true })
+    await playPreset('cup', { store, reduced: () => true })
+    expect(store.getState().history.steps).toHaveLength(2)
+    expect(store.getState().refusal).toBe('Step 3: That crease misses the paper.')
+    expect(store.getState().pending).toBe(false)
+  })
+
+  test('restoreHistory drops a gesture and is ignored while pending', async () => {
+    const store = mk()
+    await playPreset('cup', { store, reduced: () => true })
+    const h = store.getState().history
+    store.getState().undo()
+    store.getState().begin([0.5, 0.5])
+    store.getState().restoreHistory(h)
+    expect(store.getState().history).toBe(h)
+    expect(store.getState().gesture).toBeNull()
+    store.setState({ pending: true })
+    store.getState().restoreHistory({ ...h, cursor: 0 })
+    expect(store.getState().history).toBe(h)
+  })
+})

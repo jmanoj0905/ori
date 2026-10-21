@@ -102,6 +102,35 @@ describe('step list', () => {
   })
 })
 
+describe('redo toast accuracy', () => {
+  test('a plain redo or jump to the last step shows no toast', () => {
+    useStudio.setState({ history: threeFolds() })
+    act(() => useStudio.getState().jumpTo(2))
+    render(<Steps />)
+    act(() => useStudio.getState().redo())
+    expect(useStudio.getState().history.cursor).toBe(3)
+    expect(screen.queryByRole('status')).toBeNull()
+    act(() => useStudio.getState().jumpTo(2))
+    act(() => useStudio.getState().jumpTo(3))
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  test('toast Undo clears an active gesture', async () => {
+    useStudio.setState({ history: threeFolds() })
+    act(() => useStudio.getState().jumpTo(1))
+    render(<Steps />)
+    await act(async () => {
+      useStudio.getState().begin([0, 0.5])
+      useStudio.getState().drag([0.2, 0.5], 1)
+      await useStudio.getState().release()
+    })
+    act(() => useStudio.getState().begin([0.5, 0.5]))
+    fireEvent.click(within(screen.getByRole('status')).getByRole('button', { name: 'Undo' }))
+    expect(useStudio.getState().gesture).toBeNull()
+    expect(useStudio.getState().history.frames).toHaveLength(4)
+  })
+})
+
 describe('MiniCP', () => {
   test('valley is dashed 6 4, mountain dash-dot 6 3 1.5 3, boundary solid, same ink', () => {
     expect(MINI_DASH.valley).toBe(DASH.valley.join(' '))

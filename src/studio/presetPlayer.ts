@@ -44,8 +44,11 @@ export async function playPreset(id: Preset['id'], { onStep, signal, store = use
   let expected = store.getState().history
   for (const [i, step] of preset.steps.entries()) {
     if (signal?.aborted) return
-    const ok = await store.getState().commitStep(step)
-    if (!ok) return
+    const r = await store.getState().commitStep(step)
+    if (!r.ok) {
+      if (r.refused && r.reason) store.setState({ refusal: `Step ${i + 1}: ${r.reason}` })
+      return
+    }
     const h = store.getState().history
     // The commit pushed exactly one step; anything else means someone else moved the history.
     if (h.cursor !== expected.cursor + 1) return

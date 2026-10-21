@@ -113,6 +113,9 @@ export function lastFold(h: History): LastFold | null {
 /** Exact numeric input (spec 03): a crease line and/or a fold angle in degrees. */
 export type NumericEdit = { crease?: Line; angleDeg?: number; kind?: FoldKind }
 
+/** `refused`: the engine (or committer) rejected the step; false when merely skipped (pending / history moved). */
+export type CommitStepResult = { ok: true } | { ok: false; refused: boolean; reason: string | null }
+
 export type StudioState = {
   history: History
   tool: Tool
@@ -147,7 +150,9 @@ export type StudioState = {
    * through the committer (Worker), without any preview. Ignored (false) while
    * a commit is pending. The refusal, if any, lands in `refusal`.
    */
-  commitStep(step: Gesture | { tool: 'turnOver' }): Promise<boolean>
+  commitStep(step: Gesture | { tool: 'turnOver' }): Promise<CommitStepResult>
+  /** Restore a History captured earlier (toast Undo): like undo / jumpTo, drops any gesture, ignored while pending. */
+  restoreHistory(h: History): void
   /**
    * Numeric input / angle slider. While a gesture is active it sets
    * Gesture.crease / Gesture.angleDeg and re-runs the preview. Otherwise it
@@ -374,11 +379,22 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       },
 
       commitStep(step) {
-        if (get().pending) return Promise.resolve(false)
+        if (get().pending) return Promise.resolve({ ok: false, refused: false, reason: null })
         endSettle()
         set(idle)
-        const frame = current(get().history)
-        return runCommit(step.tool === 'turnOver' ? { frame, turnOver: true } : { frame, gesture: step as Gesture })
+        const base = get().history
+        const frame = current(base)
+        return runCommit(step.tool === 'turnOver' ? { frame, turnOver: true } : { frame, gesture: step as Gesture }).then(ok => {
+          if (ok) return { ok: true as const }
+          const { refusal, history } = get()
+          const refused = history === base && refusal !== null
+          return { ok: false as const, refused, reason: refused ? refusal : null }
+        })
+      },
+
+      restoreHistory(h) {
+        if (get().pending) return
+        navigate(h)
       },
 
       setNumeric(edit) {

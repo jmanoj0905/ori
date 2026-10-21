@@ -5,6 +5,7 @@ import type { Vec2 } from '@engine'
 import { clientToPlane, planeToClient, pxPerUnit, snapRadiusPaper, type RectLike } from '../render/pickMath'
 import { inProcessCommitter } from './committer'
 import { createStudioStore } from './store'
+import { current } from '@engine'
 import { createFoldGesture, dragProgress, SNAP_RADIUS_PX, type GestureStage } from './useFoldGesture'
 
 const line = (a: Vec2, b: Vec2) => ({ origin: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as Vec2, vector: [-(b[1] - a[1]), b[0] - a[0]] as Vec2 })
@@ -145,5 +146,116 @@ describe('createFoldGesture on the blank square', () => {
     await g.up(ev(50, 50))
     expect(store.getState().gesture).toBeNull()
     expect(store.getState().history.steps.length).toBe(0)
+  })
+})
+
+describe('real camera, resize mid-drag with snapping (Review Focus 1)', () => {
+  const cam = (aspect: number, dist: number) => {
+    const c = new THREE.PerspectiveCamera(35, aspect, 0.1, 400)
+    c.position.set(0.5, 0.5 - 0.45 * dist, dist)
+    c.up.set(0, 1, 0)
+    c.lookAt(0.5, 0.5, 0)
+    c.updateMatrixWorld(true)
+    return c
+  }
+
+  test('the next pick maps to the same paper point and the snap radius follows the new scale', () => {
+    let camera = cam(800 / 600, 3)
+    let rect: RectLike = { left: 0, top: 0, width: 800, height: 600 }
+    const stage: GestureStage = {
+      canvas: document.createElement('canvas'),
+      pick: (x, y) => {
+        const p = clientToPlane(camera, rect, x, y)
+        return p && { face: 0, paper: p, folded: p }
+      },
+      projectToPaperPlane: (x, y) => clientToPlane(camera, rect, x, y)!,
+      pxPerUnit: () => pxPerUnit(camera, rect, [0.5, 0.5]),
+    }
+    const store = createStudioStore({ committer: inProcessCommitter })
+    const g = createFoldGesture(stage, store)
+    const ev = (c: Vec2) => ({ button: 0, pointerId: 1, clientX: c[0], clientY: c[1] })
+
+    const radiusBefore = snapRadiusPaper(SNAP_RADIUS_PX, stage.pxPerUnit())
+    const camFar = cam(1200 / 500, 9)
+    const rectFar: RectLike = { left: 40, top: 10, width: 1200, height: 500 }
+    const radiusAfter = snapRadiusPaper(SNAP_RADIUS_PX, pxPerUnit(camFar, rectFar, [0.5, 0.5]))
+    expect(radiusAfter).toBeGreaterThan(radiusBefore * 2)
+    // A target offset from the (0,0) corner by a distance inside the new radius only.
+    const d = (radiusBefore + radiusAfter) / 2
+    const q: Vec2 = [d, 0]
+
+    g.down(ev(planeToClient(camera, rect, [1, 1])))
+    expect(store.getState().gesture!.grab).toEqual([1, 1])
+    g.move(ev(planeToClient(camera, rect, q)))
+    const t1 = store.getState().gesture!.target
+    expect(t1[0]).toBeCloseTo(d, 6) // outside the old radius: not snapped
+    expect(t1[1]).toBeCloseTo(0, 6)
+
+    camera = camFar // resize / zoom / DPR change mid-drag
+    rect = rectFar
+    const client = planeToClient(camera, rect, q)
+    const picked = stage.pick(client[0], client[1])!
+    expect(picked.folded[0]).toBeCloseTo(q[0], 6)
+    expect(picked.folded[1]).toBeCloseTo(q[1], 6)
+    g.move(ev(client))
+    expect(store.getState().gesture!.grab).toEqual([1, 1])
+    expect(store.getState().gesture!.target).toEqual([0, 0]) // inside the new radius: snapped
+  })
+})
+
+describe('folded model: the grab is the folded point, not the paper point', () => {
+  test('grab = snap(folded) against landmarks of current(history); face passed through', async () => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    store.getState().begin([1, 1])
+    store.getState().drag([0, 0], 1)
+    expect(await store.getState().release()).toBe(true)
+    expect(current(store.getState().history)).toBeDefined()
+    // The flap's paper point (0.995, 0.995) lies at folded (0.005, 0.005), next to the (0,0) corner.
+    const stage: GestureStage = {
+      canvas: document.createElement('canvas'),
+      pick: () => ({ face: 3, paper: [0.995, 0.995], folded: [0.005, 0.005] }),
+      projectToPaperPlane: () => [0.5, 0.5],
+      pxPerUnit: () => 100,
+    }
+    const g = createFoldGesture(stage, store)
+    g.down({ button: 0, pointerId: 1, clientX: 0, clientY: 0 })
+    const gs = store.getState().gesture!
+    expect(gs.grab).toEqual([0, 0])
+    expect(gs.face).toBe(3)
+  })
+})
+
+describe('lost pointer capture', () => {
+  const stage = (): GestureStage => ({
+    canvas: document.createElement('canvas'),
+    pick: () => ({ face: 0, paper: [0.5, 0.5], folded: [0.5, 0.5] }),
+    projectToPaperPlane: () => [0.2, 0.2],
+    pxPerUnit: () => 100,
+  })
+  const ev = (id: number) => ({ button: 0, pointerId: id, clientX: 0, clientY: 0 })
+
+  test('lost() cancels the gesture and the canvas responds again', () => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    const g = createFoldGesture(stage(), store)
+    g.down(ev(1))
+    g.move(ev(1))
+    expect(store.getState().preview).not.toBeNull()
+    g.lost({ pointerId: 1 })
+    expect(store.getState().gesture).toBeNull()
+    expect(store.getState().preview).toBeNull()
+    g.down(ev(1))
+    expect(store.getState().gesture).not.toBeNull()
+  })
+
+  test('a press from a different pointer resets a stale gesture', () => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    const g = createFoldGesture(stage(), store)
+    g.down(ev(1))
+    g.move(ev(1))
+    g.down(ev(2))
+    expect(store.getState().gesture).not.toBeNull()
+    expect(store.getState().preview).toBeNull() // fresh gesture, not dragged yet
+    g.move(ev(2))
+    expect(store.getState().preview).not.toBeNull()
   })
 })

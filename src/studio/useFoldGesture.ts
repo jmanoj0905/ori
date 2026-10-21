@@ -80,7 +80,14 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
   return {
     down(e: PointerLike): void {
       if (e.button !== undefined && e.button !== 0) return
-      if (active || store.getState().pending) return
+      if (store.getState().pending) return
+      if (active) {
+        // A press from the same pointer is a duplicate; a different pointer means the
+        // previous one was lost (released outside the window): drop its stale gesture.
+        if (active.id === e.pointerId) return
+        active = null
+        store.getState().cancel()
+      }
       const hit = stage.pick(e.clientX, e.clientY)
       if (!hit) return
       const grab = snap(hit.folded)
@@ -108,6 +115,14 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
       store.getState().drag(target, dragProgress(active.grab, crease, cursor))
     },
 
+    /** The pointer capture was lost without a pointerup: cancel cleanly. */
+    lost(e: { pointerId: number }): void {
+      if (!active || e.pointerId !== active.id) return
+      active = null
+      store.getState().cancel()
+      setCursor('')
+    },
+
     async up(e: PointerLike): Promise<void> {
       if (!active || e.pointerId !== active.id) return
       const { moved } = active
@@ -133,13 +148,16 @@ export function useFoldGesture(stage: GestureStage | null, opts?: GestureOptions
     const down = (e: PointerEvent) => g.down(e)
     const move = (e: PointerEvent) => g.move(e)
     const up = (e: PointerEvent) => void g.up(e)
+    const lost = (e: PointerEvent) => g.lost(e)
     el.addEventListener('pointerdown', down)
     el.addEventListener('pointermove', move)
     el.addEventListener('pointerup', up)
+    el.addEventListener('lostpointercapture', lost)
     return () => {
       el.removeEventListener('pointerdown', down)
       el.removeEventListener('pointermove', move)
       el.removeEventListener('pointerup', up)
+      el.removeEventListener('lostpointercapture', lost)
       el.style.cursor = ''
     }
   }, [stage, opts])

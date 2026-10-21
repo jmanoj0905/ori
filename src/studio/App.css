@@ -51,3 +51,7 @@
 .hint[data-refusal] {
   color: var(--refusal);
 }
+
+.stage-host canvas {
+  touch-action: none;
+}

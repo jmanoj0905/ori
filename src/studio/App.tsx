@@ -2,10 +2,11 @@
 // wordmark island and the hint line. The Stage follows the store (model,
 // preview, paper); later tasks add the islands.
 import './App.css'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { current, poses } from '@engine'
 import type { Stage } from '../render/Stage'
 import { useStudio, type StudioState } from './store'
+import { useFoldGesture } from './useFoldGesture'
 
 /** Push the store's model, preview and paper into the Stage (only what changed). */
 function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
@@ -24,6 +25,8 @@ export function App() {
   const hint = useStudio(s => s.hint)
   const refusal = useStudio(s => s.refusal)
   const hostRef = useRef<HTMLDivElement>(null)
+  const [stageReady, setStageReady] = useState<Stage | null>(null)
+  useFoldGesture(stageReady)
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
@@ -37,6 +40,7 @@ export function App() {
         if (cancelled) return
         const st = new m.Stage(host)
         stage = st
+        setStageReady(st)
         syncStage(st, useStudio.getState())
         unsubscribe = useStudio.subscribe((s, prev) => syncStage(st, s, prev))
         // Dev-only hook for manual and browser checks (stripped from production builds).

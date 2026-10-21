@@ -10,6 +10,7 @@
 // moving faces as the translucent ghost, plus the accent live crease. The
 // stationary part is rebuilt only when Preview.frame changes; each pointer
 // move rebuilds just the ghost and the live crease.
+import { clientToPlane, pxPerUnit, toNdc } from './pickMath'
 import * as THREE from 'three'
 import type { FacePose, FoldKind, Frame, Preview, Tool, Vec2 } from '@engine'
 import { DEFAULT_PAPER, type PaperSettings } from '../studio/store'
@@ -221,10 +222,17 @@ export class Stage {
 
   /** Intersect the view ray with the z = 0 plane; paper coordinates (x, y). */
   projectToPaperPlane(clientX: number, clientY: number): Vec2 {
-    this.setRay(clientX, clientY)
-    const p = new THREE.Vector3()
-    if (!this.raycaster.ray.intersectPlane(this.plane, p)) return [this.cam.tx, this.cam.ty]
-    return [p.x, p.y]
+    return clientToPlane(this.camera, this.renderer.domElement.getBoundingClientRect(), clientX, clientY) ?? [this.cam.tx, this.cam.ty]
+  }
+
+  /** CSS pixels per paper unit at the view target, at the current zoom. */
+  pxPerUnit(): number {
+    return pxPerUnit(this.camera, this.renderer.domElement.getBoundingClientRect(), [this.cam.tx, this.cam.ty])
+  }
+
+  /** The canvas pointer events are listened on. */
+  get canvas(): HTMLCanvasElement {
+    return this.renderer.domElement
   }
 
   // ---- camera ------------------------------------------------------------
@@ -514,10 +522,8 @@ export class Stage {
   }
 
   private setRay(clientX: number, clientY: number): void {
-    const r = this.renderer.domElement.getBoundingClientRect()
-    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -(((clientY - r.top) / r.height) * 2 - 1))
     this.camera.updateMatrixWorld()
-    this.raycaster.setFromCamera(ndc, this.camera)
+    this.raycaster.setFromCamera(toNdc(clientX, clientY, this.renderer.domElement.getBoundingClientRect()), this.camera)
   }
 
   private invalidate(): void {

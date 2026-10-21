@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest'
-import { containsPoint, layerAt, selectFlap, withLayerOrder } from './layers'
+import { containsPoint, layerAt, layerRanks, selectFlap, withLayerOrder } from './layers'
 import { BASE_NAMES, baseFrame, foldThrough, foldedCoords, makeSheet } from './rabbit'
-import { halfFolded } from './testkit'
+import { accordion, base, doubleTriangle, halfFolded, preliminary } from './testkit'
 import type { Frame, Line } from './types'
 
 const vertical = (x: number): Line => ({ origin: [x, 0], vector: [0, 1] })
@@ -130,5 +130,36 @@ describe('withLayerOrder', () => {
   test('refuses a frame with no valid layer order', () => {
     const partial = foldThrough(sheet(), vertical(0.5), [0], 'valley', 90)!
     expect(withLayerOrder(partial)).toEqual({ ok: false, reason: 'No valid layer order exists for this fold.' })
+  })
+})
+
+describe('layerRanks (final review 4a)', () => {
+  test('per face, 0 = bottom: the half fold has the moved face on top', () => {
+    expect(layerRanks(halfFolded())).toEqual([0, 1])
+    expect(layerRanks(halfMountain())).toEqual([1, 0])
+    expect(layerRanks(sheet())).toEqual([0])
+  })
+  test('an accordion stacks n−1 (top) … 0 (bottom)', () => {
+    expect(layerRanks(accordion(6))).toEqual([0, 1, 2, 3, 4, 5])
+  })
+  test('a permutation of 0 … n−1, cached per frame', () => {
+    const f = base('bird')
+    const r = layerRanks(f)
+    expect([...r].sort((a, b) => a - b)).toEqual(f.faces_vertices.map((_, i) => i))
+    expect(layerRanks(f)).toBe(r)
+  })
+  test("agrees with layerAt's top-to-bottom order at every point", () => {
+    const frames: Frame[] = [halfFolded(), doubleTriangle(), preliminary(), base('waterbomb'), base('bird'), base('frog')]
+    for (const f of frames) {
+      const r = layerRanks(f)
+      for (let i = 0; i <= 20; i++)
+        for (let j = 0; j <= 20; j++) {
+          const stack = layerAt(f, [i / 20, j / 20])
+          for (let k = 1; k < stack.length; k++) expect(r[stack[k - 1]]).toBeGreaterThan(r[stack[k]])
+        }
+    }
+  })
+  test('unordered faces tie-break like layerAt: the lowest face id is on top', () => {
+    expect(layerRanks({ ...halfFolded(), faceOrders: [] })).toEqual([1, 0])
   })
 })

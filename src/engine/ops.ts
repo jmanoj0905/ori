@@ -3,14 +3,19 @@
  *
  * A gesture is a grab point, a target point (both in folded/world space, the
  * root-face-0 folded form), a layer count k, a fold kind, a drag progress and
- * an angle-snap flag. `preview` is called on every pointer move; `commit` on
- * release. Both share `plan()`:
+ * an angle-snap flag, optionally with numeric input (an exact `crease` and/or
+ * `angleDeg`) and the hit `face` (see `Gesture`). `preview` is called on
+ * every pointer move; `commit` on release. Both first validate the gesture
+ * (`checkGesture`: non-finite input refuses "Drag further to fold.") and
+ * share `plan()`:
  *
- *   1. crease = perpendicular bisector of grab → target (`creaseFromDrag`);
- *      a (near) zero-length drag refuses with "Drag further to fold.".
- *      With `snapAngle`, the crease is rotated to the nearest 22.5° step about
- *      the MIDPOINT of the drag (the point the unsnapped crease passes
- *      through, so a nearly-aligned drag barely moves).
+ *   1. crease = `g.crease` if given, else the perpendicular bisector of
+ *      grab → target (`creaseFromDrag`); a (near) zero-length drag refuses
+ *      with "Drag further to fold.". With `snapAngle`, the bisector is
+ *      rotated to the nearest 22.5° step about the MIDPOINT of the drag (the
+ *      point the unsnapped crease passes through, so a nearly-aligned drag
+ *      barely moves). The fold angle is `g.angleDeg` if given, else
+ *      progressToAngle(progress) (`requestedAngle`).
  *   2. The crease is oriented so that `grab` lies on the LEFT of
  *      `line.vector`. The moving side is the grab side.
  *   3. `selectFlap` picks the top k layers at grab (k clamped; reported as
@@ -45,6 +50,11 @@
  * and `Preview.frame` is the edited frame (`moving` and `poses` index its
  * faces — the input frame has fewer). The edited frame is cached per input
  * frame for the last (crease, faces, kind), so progress-only moves are cheap.
+ * `Preview.valid` (see `Validity`): a preview whose commit would be a flat
+ * fold of a flat model runs that commit's fold and layer solve (`flatFold`,
+ * cached the same way and reused by commit) when the result has at most
+ * VALID_SOLVE_MAX_FACES faces, else reports 'unknown'; every other fold
+ * commits non-flat and is valid.
  *
  * Commit:
  *   - flat (progress → 180° on a flat model): fold at 180° regardless of the
@@ -99,7 +109,7 @@ import { clipLineToPolygon, cross, scale, add, sub } from './geometry'
 import { creaseFromDrag, progressToAngle, snapAngle as snapLine } from './gesture'
 import type { Step } from './history'
 import { petalFold, previewCompound, reverseFold, squashFold } from './compound'
-import { containsPoint, selectFlap, withLayerOrder } from './layers'
+import { NO_ORDER, containsPoint, selectFlap, withLayerOrder } from './layers'
 import { poses, transform, treePoses, type FacePose, type Rigid } from './poses'
 import { foldThrough, foldedCoords, makeSheet, rebuildAdjacency } from './rabbit'
 import type { FaceOrder, FoldKind, Frame, Line, Ok, PaperSize, Refusal, Result, Tool, Vec2 } from './types'
@@ -112,7 +122,58 @@ export type Gesture = {
   kind: FoldKind
   progress: number
   snapAngle: boolean
+  /**
+   * Numeric input (spec §5 "exact crease coordinates"; spec 03 "two points, or
+   * a point plus an angle", which the UI turns into a line): the crease, in
+   * folded (world) space, instead of the drag's perpendicular bisector. Its
+   * direction doesn't matter; `grab` still picks the moving side (the side
+   * holding it) and the flap. `snapAngle` doesn't rotate it. Used by 'fold'
+   * and 'reverse'; squash and petal take their creases from the flap's
+   * geometry and ignore it (as they ignore the bisector). `target` is still
+   * the drag direction for reverse (inside/outside) and petal. Refused "Drag
+   * further to fold." when non-finite, zero-length or through `grab`.
+   */
+  crease?: Line
+  /**
+   * Numeric input: the exact fold angle in degrees, overriding `progress`
+   * (asking 90 commits exactly 90). Must lie in [0, 180] ("The fold angle
+   * must be between 0° and 180°." otherwise); non-finite is refused "Drag
+   * further to fold.". The sweep can still clamp a partial fold (blocked);
+   * compound tools complete on any angle > 0, as for progress.
+   */
+  angleDeg?: number
+  /**
+   * The face hit at grab (spec §5.1). When it is one of the faces at `grab`,
+   * the top-k selection starts from its place in the stack (k counts from it
+   * down, clamped to the layers below), which disambiguates grabs on a vertex
+   * or edge, where faces merely touching the point would count toward k.
+   * Otherwise ignored. Non-finite is refused "Drag further to fold.".
+   */
+  face?: number
 }
+
+/**
+ * Preview.valid: whether committing this same gesture would pass the
+ * layer-order check ("No valid layer order exists for this fold.").
+ *   - true: the commit takes no layer solve (it ends non-flat: a partial fold
+ *     or swing, so nothing to check — R2), or the solve was run and found an
+ *     order.
+ *   - false: the solve was run and found none; the commit would be refused.
+ *   - 'unknown': the commit would solve, but the result has more than
+ *     `VALID_SOLVE_MAX_FACES` faces, so the preview skipped it (a full solve
+ *     per pointer move is too slow there; Plan 2 reworks this).
+ * Only the layer order: other refusals (e.g. a partial fold blocked at 0°,
+ * "Something is in the way of this fold.") show as `blocked`/the refusal
+ * itself. It describes the gesture as given: during a drag (progress < 1)
+ * the commit would be partial, hence true; preview with progress 1 (or
+ * angleDeg 180) to ask about the flat landing. Results are cached per frame
+ * and crease, so progress-only moves don't re-solve, and a commit after a
+ * checked preview reuses the solve.
+ */
+export type Validity = boolean | 'unknown'
+
+/** Preview.valid skips the layer solve on results with more faces than this. */
+export const VALID_SOLVE_MAX_FACES = 16
 
 export type Preview = {
   /** Crease segments in folded (world) space, one per distinct cut. */
@@ -126,6 +187,8 @@ export type Preview = {
   /** One pose per face of `frame`, the moving faces swung to ±angleDeg. */
   poses: FacePose[]
   blocked: boolean
+  /** Whether the commit would find a layer order: see `Validity`. */
+  valid: Validity
   /** The edited frame (crease cut in, still flat-open) that `moving`/`poses` index. */
   frame: Frame
 }
@@ -134,6 +197,7 @@ export const MISS = 'That crease misses the paper.'
 export const TOO_SHORT = 'Drag further to fold.'
 export const IN_THE_WAY = 'Something is in the way of this fold.'
 export const FLATTEN = 'Flatten the model before this fold.'
+export const ANGLE_RANGE = 'The fold angle must be between 0° and 180°.'
 
 const EPS = 1e-9
 const SNAP_STEP = 22.5
@@ -178,14 +242,28 @@ const finite = (...xs: readonly number[]) => xs.every(Number.isFinite)
 
 /**
  * Input validation shared by `preview` and `commit`: a gesture with a
- * non-finite grab, target or progress is refused "Drag further to fold."
- * (the same quiet refusal as a zero-length drag), so NaN never reaches the
- * geometry, a label or the history.
+ * non-finite grab, target, progress, crease, angleDeg or face is refused
+ * "Drag further to fold." (the same quiet refusal as a zero-length drag), so
+ * NaN never reaches the geometry, a label or the history; an angleDeg
+ * outside [0, 180] is refused with ANGLE_RANGE.
  */
 function checkGesture(g: Gesture): Refusal | null {
   if (!finite(g.grab[0], g.grab[1], g.target[0], g.target[1], g.progress)) return refuse(TOO_SHORT)
+  if (g.crease && !finite(g.crease.origin[0], g.crease.origin[1], g.crease.vector[0], g.crease.vector[1]))
+    return refuse(TOO_SHORT)
+  if (g.face !== undefined && !Number.isFinite(g.face)) return refuse(TOO_SHORT)
+  if (g.angleDeg !== undefined) {
+    if (!Number.isFinite(g.angleDeg)) return refuse(TOO_SHORT)
+    if (g.angleDeg < 0 || g.angleDeg > 180) return refuse(ANGLE_RANGE)
+  }
   return null
 }
+
+/** The fold angle the gesture asks for, in [0, 180]: `angleDeg` if given, else from progress. */
+export const requestedAngle = (g: Gesture): number => g.angleDeg ?? progressToAngle(g.progress)
+
+/** Gesture params a step records beyond the common ones (only those given). */
+export const extraParams = (g: Gesture) => (g.face === undefined ? {} : { face: g.face })
 
 // ---- paper and turn over ----
 
@@ -222,11 +300,20 @@ export type Plan = {
 export const side = (p: readonly number[], l: Line) =>
   cross(l.vector, sub([p[0], p[1]], l.origin)) / Math.hypot(l.vector[0], l.vector[1])
 
-/** The drag's crease (snapped if asked), oriented so that grab is on its left. */
+/**
+ * The gesture's crease, oriented so that grab is on its left: the exact
+ * `g.crease` if given, else the drag's bisector (snapped if asked).
+ */
 export function creaseLine(g: Gesture): Result<{ line: Line }> {
-  const raw = creaseFromDrag(g.grab, g.target)
-  if (!raw) return refuse(TOO_SHORT)
-  const line = g.snapAngle ? snapLine(raw, scale(add(g.grab, g.target), 0.5), SNAP_STEP) : raw
+  let line: Line
+  if (g.crease) {
+    if (Math.hypot(g.crease.vector[0], g.crease.vector[1]) < 1e-12) return refuse(TOO_SHORT)
+    line = { origin: [g.crease.origin[0], g.crease.origin[1]], vector: [g.crease.vector[0], g.crease.vector[1]] }
+  } else {
+    const raw = creaseFromDrag(g.grab, g.target)
+    if (!raw) return refuse(TOO_SHORT)
+    line = g.snapAngle ? snapLine(raw, scale(add(g.grab, g.target), 0.5), SNAP_STEP) : raw
+  }
   const s = side(g.grab, line)
   if (Math.abs(s) < EPS) return refuse(TOO_SHORT)
   return { ok: true, line: s < 0 ? { origin: line.origin, vector: [-line.vector[0], -line.vector[1]] } : line }
@@ -237,7 +324,7 @@ export function plan(frame: Frame, g: Gesture): Result<{ plan: Plan }> {
   if (!cl.ok) return cl
   const line = cl.line
 
-  const sel = selectFlap(frame, g.grab, g.layers, line)
+  const sel = selectFlap(frame, g.grab, g.layers, line, g.face)
   if (sel.faces.length === 0) return refuse(MISS)
 
   const coords = foldedCoords(frame)
@@ -426,10 +513,20 @@ function previewFold(frame: Frame, g: Gesture): Result<{ preview: Preview }> {
   const p = r.plan
   const edit = edited(frame, p, g.kind)
   if (!edit.ok) return edit
-  const want = signed(g.kind, progressToAngle(g.progress))
+  const requested = requestedAngle(g)
+  const want = signed(g.kind, requested)
   const swing = { faces: edit.moving, axis: p.line }
   const { freeDeg, blocked } = sweep(edit.frame, swing, 0, want)
   const applied = blocked ? freeDeg : want
+  // only a flat commit of a flat model solves the layer order
+  let valid: Validity = true
+  if (requested >= 180 && isFlatFrame(frame)) {
+    if (edit.frame.faces_vertices.length > VALID_SOLVE_MAX_FACES) valid = 'unknown'
+    else {
+      const f = flatFold(frame, p, g.kind)
+      valid = f.ok || f.reason !== NO_ORDER
+    }
+  }
   return {
     ok: true,
     preview: {
@@ -439,6 +536,7 @@ function previewFold(frame: Frame, g: Gesture): Result<{ preview: Preview }> {
       angleDeg: Math.abs(applied),
       poses: poses(edit.frame, { ...swing, angleDeg: applied }),
       blocked,
+      valid,
       frame: edit.frame,
     },
   }
@@ -450,29 +548,28 @@ function commitFold(frame: Frame, g: Gesture): Result<{ frame: Frame; step: Step
   const r = plan(frame, g)
   if (!r.ok) return r
   const p = r.plan
-  const requested = progressToAngle(g.progress)
+  const requested = requestedAngle(g)
   if (requested < MIN_ANGLE) return refuse(TOO_SHORT)
   // A flat fold of a flat model ends in a flat state the layer solver judges;
   // anything else ends non-flat and is clamped to what the sweep allows.
   const flat = requested >= 180 && frame.edges_foldAngle.every(isFlatAngle)
   let angle = requested
-  if (!flat) {
+  let out: Frame
+  if (flat) {
+    const f = flatFold(frame, p, g.kind)
+    if (!f.ok) return f
+    out = f.frame
+  } else {
     const edit = edited(frame, p, g.kind)
     if (!edit.ok) return edit
     const { freeDeg, blocked } = sweep(edit.frame, { faces: edit.moving, axis: p.line }, 0, signed(g.kind, requested))
     if (blocked) angle = Math.abs(freeDeg)
     if (angle < MIN_ANGLE) return refuse(IN_THE_WAY)
-  }
-
-  const next = foldThrough(frame, p.line, p.faces, g.kind, angle, { solve: false })
-  if (!next) return refuse(MISS)
-  const kept = settle(frame, next, p, !flat)
-  if (!kept.ok) return kept
-  let out = kept.frame
-  if (flat) {
-    const solved = withLayerOrder(out)
-    if (!solved.ok) return solved
-    out = solved.frame
+    const next = foldThrough(frame, p.line, p.faces, g.kind, angle, { solve: false })
+    if (!next) return refuse(MISS)
+    const kept = settle(frame, next, p, true)
+    if (!kept.ok) return kept
+    out = kept.frame
   }
   const step: Step = {
     kind: 'fold',
@@ -485,11 +582,35 @@ function commitFold(frame: Frame, g: Gesture): Result<{ frame: Frame; step: Step
       angleDeg: angle,
       crease: p.line,
       snapAngle: g.snapAngle,
+      ...extraParams(g),
     },
     label: label(g.kind, p.k, angle),
     at: Date.now(),
   }
   return { ok: true, frame: out, step }
+}
+
+const flatCache = new WeakMap<Frame, { key: string; r: Result<{ frame: Frame }> }>()
+
+/**
+ * The flat (180°) fold of a flat model along plan `p`, re-rooted and with its
+ * layer order solved (refusing "No valid layer order exists for this fold.").
+ * Collision never vetoes it (spec §4). Cached per input frame for the last
+ * (crease, faces, kind), shared by the preview's validity check and commit.
+ */
+function flatFold(frame: Frame, p: Plan, kind: FoldKind): Result<{ frame: Frame }> {
+  const key = JSON.stringify([p.line, p.faces, kind])
+  const hit = flatCache.get(frame)
+  if (hit && hit.key === key) return hit.r
+  let r: Result<{ frame: Frame }>
+  const next = foldThrough(frame, p.line, p.faces, kind, 180, { solve: false })
+  if (!next) r = refuse(MISS)
+  else {
+    const kept = settle(frame, next, p, false)
+    r = kept.ok ? withLayerOrder(kept.frame) : kept
+  }
+  flatCache.set(frame, { key, r })
+  return r
 }
 
 export function label(kind: FoldKind, k: number, angleDeg: number): string {
@@ -646,7 +767,7 @@ function hingePlan(frame: Frame, g: Gesture): Result<{ hinge: Hinge }> | null {
   let S: Set<number>
   let k = 1
   if (flat) {
-    const sel = selectFlap(frame, g.grab, g.layers, line)
+    const sel = selectFlap(frame, g.grab, g.layers, line, g.face)
     if (sel.faces.length === 0) return null
     S = new Set(sel.faces)
     k = sel.k
@@ -720,14 +841,23 @@ export function hingeRate(frame: Frame, e: number, s: number, tPose: Rigid, line
 
 /** How far the hinge fold turns: min(progress angle, range), clamped by the sweep. */
 function hingeSwing(frame: Frame, g: Gesture, h: Hinge): { applied: number; blocked: boolean } {
-  const want = Math.min(progressToAngle(g.progress), h.range)
-  if (want < MIN_ANGLE) return { applied: 0, blocked: h.range < MIN_ANGLE && progressToAngle(g.progress) > 0 }
+  const want = Math.min(requestedAngle(g), h.range)
+  if (want < MIN_ANGLE) return { applied: 0, blocked: h.range < MIN_ANGLE && requestedAngle(g) > 0 }
   const { freeDeg, blocked } = sweep(frame, { faces: h.faces, axis: h.line }, 0, signed(g.kind, want))
   return { applied: blocked ? Math.abs(freeDeg) : want, blocked }
 }
 
 function previewHinge(frame: Frame, g: Gesture, h: Hinge): Result<{ preview: Preview }> {
   const { applied, blocked } = hingeSwing(frame, g, h)
+  // the commit solves only when the swing lands flat
+  let valid: Validity = true
+  if (applied >= MIN_ANGLE && isFlatFrame({ ...frame, edges_foldAngle: hingeAngles(frame, g, h, applied).angle })) {
+    if (frame.faces_vertices.length > VALID_SOLVE_MAX_FACES) valid = 'unknown'
+    else {
+      const c = commitHinge(frame, g, h)
+      valid = c.ok || c.reason !== NO_ORDER
+    }
+  }
   return {
     ok: true,
     preview: {
@@ -737,25 +867,32 @@ function previewHinge(frame: Frame, g: Gesture, h: Hinge): Result<{ preview: Pre
       angleDeg: applied,
       poses: poses(frame, { faces: h.faces, axis: h.line, angleDeg: signed(g.kind, applied) }),
       blocked,
+      valid,
       frame,
     },
   }
 }
 
-function commitHinge(frame: Frame, g: Gesture, h: Hinge): Result<{ frame: Frame; step: Step }> {
-  if (progressToAngle(g.progress) < MIN_ANGLE) return refuse(TOO_SHORT)
-  const { applied } = hingeSwing(frame, g, h)
-  if (applied < MIN_ANGLE) return refuse(IN_THE_WAY)
+/** Edge angles and assignments after turning the hinge flap by `applied` degrees. */
+function hingeAngles(frame: Frame, g: Gesture, h: Hinge, applied: number): { angle: number[]; assignment: string[] } {
   const dir = g.kind === 'valley' ? 1 : -1
-  const edges_assignment = [...frame.edges_assignment]
-  const edges_foldAngle = [...frame.edges_foldAngle]
+  const assignment = [...frame.edges_assignment]
+  const angle = [...frame.edges_foldAngle]
   for (const { e, rate } of h.edges) {
     let a = frame.edges_foldAngle[e] + rate * dir * applied
     if (Math.abs(a) < 1e-6) a = 0
     if (Math.abs(Math.abs(a) - 180) < 1e-6) a = Math.sign(a) * 180
-    edges_foldAngle[e] = a
-    edges_assignment[e] = a === 0 ? 'F' : a > 0 ? 'V' : 'M'
+    angle[e] = a
+    assignment[e] = a === 0 ? 'F' : a > 0 ? 'V' : 'M'
   }
+  return { angle, assignment }
+}
+
+function commitHinge(frame: Frame, g: Gesture, h: Hinge): Result<{ frame: Frame; step: Step }> {
+  if (requestedAngle(g) < MIN_ANGLE) return refuse(TOO_SHORT)
+  const { applied } = hingeSwing(frame, g, h)
+  if (applied < MIN_ANGLE) return refuse(IN_THE_WAY)
+  const { angle: edges_foldAngle, assignment: edges_assignment } = hingeAngles(frame, g, h, applied)
   const moving = new Set(h.faces)
   const next: Frame = { ...frame, edges_assignment, edges_foldAngle }
   const kept = settleBy(frame, next, originsBy(frame, next, f => moving.has(f)), false)
@@ -783,6 +920,7 @@ function commitHinge(frame: Frame, g: Gesture, h: Hinge): Result<{ frame: Frame;
       crease: h.line,
       snapAngle: g.snapAngle,
       hinge: true,
+      ...extraParams(g),
     },
     label: label(g.kind, h.k, applied),
     at: Date.now(),

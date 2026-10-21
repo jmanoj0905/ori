@@ -69,11 +69,54 @@ export function aboveGraph(frame: Frame): Map<number, number[]> {
 }
 
 /**
- * Face ids under the folded-space point `p`, top to bottom by faceOrders.
- * The order is a topological sort of "is above" (including relations implied
- * through faces not under `p`); among faces with nothing known to be above
- * them, the lowest face id comes first. So a point on a boundary (vertex or
- * crease) shared by unordered faces resolves deterministically.
+ * Per-face layer rank: `ranks[f]` is face f's place in one global stacking
+ * order of the whole model, 0 = bottom … n−1 = top (world +z, as `layerAt`).
+ * For a renderer offsetting each layer by ε × rank along its normal.
+ *
+ * The order is a topological sort of "is above" (`aboveGraph`, faceOrders
+ * plus windings, so the rendered stack never needs the windings convention):
+ * repeatedly the lowest-id face with nothing left directly above it is the
+ * next one down. Whenever faceOrders decide two faces' order (directly or
+ * through others), the face above has the higher rank; inconsistent orders
+ * (a cycle) fall back to the lowest remaining id. Faces the orders don't
+ * relate (side by side, or a partial frame's carried orders) still get
+ * distinct ranks. `layerAt` sorts by these ranks, so the two always agree.
+ * Cached per frame (frames are immutable); treat the array as read-only.
+ */
+export function layerRanks(frame: Frame): number[] {
+  const hit = rankCache.get(frame)
+  if (hit) return hit
+  const n = frame.faces_vertices.length
+  const below = aboveGraph(frame)
+  const aboveCount = new Array<number>(n).fill(0)
+  const edges = new Map<number, number[]>()
+  for (const [top, bottoms] of below) {
+    const uniq = [...new Set(bottoms)].filter(b => b !== top && b >= 0 && b < n)
+    edges.set(top, uniq)
+    for (const b of uniq) aboveCount[b]++
+  }
+  const done = new Array<boolean>(n).fill(false)
+  const ranks = new Array<number>(n)
+  for (let placed = 0; placed < n; placed++) {
+    let next = -1
+    for (let f = 0; f < n && next < 0; f++) if (!done[f] && aboveCount[f] === 0) next = f
+    if (next < 0) next = done.indexOf(false) // a cycle: the lowest remaining id
+    done[next] = true
+    ranks[next] = n - 1 - placed
+    for (const b of edges.get(next) ?? []) aboveCount[b]--
+  }
+  rankCache.set(frame, ranks)
+  return ranks
+}
+
+const rankCache = new WeakMap<Frame, number[]>()
+
+/**
+ * Face ids under the folded-space point `p`, top to bottom: sorted by
+ * `layerRanks` (so by faceOrders, including relations implied through faces
+ * not under `p`; ties among unrelated faces resolve by the global order,
+ * lowest id first where nothing else decides). A point on a boundary (vertex
+ * or crease) shared by unordered faces therefore resolves deterministically.
  */
 export function layerAt(frame: Frame, p: Vec2): number[] {
   const coords = foldedCoords(frame)
@@ -81,31 +124,19 @@ export function layerAt(frame: Frame, p: Vec2): number[] {
     .map((vs, f) => (containsPoint(vs.map(v => coords[v]), p) ? f : -1))
     .filter(f => f >= 0)
   if (here.length < 2) return here
+  const ranks = layerRanks(frame)
+  return here.sort((a, b) => ranks[b] - ranks[a])
+}
 
-  const below = aboveGraph(frame)
-  const reach = (from: number): Set<number> => {
-    const seen = new Set<number>()
-    const stack = [...(below.get(from) ?? [])]
-    while (stack.length) {
-      const x = stack.pop()!
-      if (seen.has(x) || x === from) continue
-      seen.add(x)
-      stack.push(...(below.get(x) ?? []))
-    }
-    return seen
-  }
-  const reachable = new Map(here.map(f => [f, reach(f)]))
-  // Kahn: repeatedly take the lowest-id face with no remaining face above it.
-  const remaining = new Set(here)
-  const out: number[] = []
-  while (remaining.size) {
-    const free = [...remaining].filter(f => ![...remaining].some(g => g !== f && reachable.get(g)!.has(f)))
-    // a cycle (inconsistent orders) falls back to the lowest remaining id
-    const next = Math.min(...(free.length ? free : [...remaining]))
-    out.push(next)
-    remaining.delete(next)
-  }
-  return out
+/**
+ * The stack at `p` from the hit face `face` down (spec §5.1: the grab input
+ * includes the hit face), or the whole of `layerAt(frame, p)` when `face` is
+ * absent or isn't one of the faces there (ignored, not refused).
+ */
+export function stackFrom(frame: Frame, p: Vec2, face?: number): number[] {
+  const stack = layerAt(frame, p)
+  const i = face === undefined ? -1 : stack.indexOf(face)
+  return i > 0 ? stack.slice(i) : stack
 }
 
 const sideOf = (p: Vec2, l: Line) => cross(l.vector, sub(p, l.origin))
@@ -118,6 +149,8 @@ const sideOf = (p: Vec2, l: Line) => cross(l.vector, sub(p, l.origin))
  * Rule:
  *   1. Seeds: the top k faces of `layerAt(frame, grab)`, k clamped to
  *      [1, layer count] (k = 0 and no faces when nothing is under `grab`).
+ *      With a hit face `face` under `grab`, the k count from that face down
+ *      (`stackFrom`), clamped to the layers from it to the bottom.
  *   2. Flood fill from the seeds across shared edges that are not boundary
  *      edges (assignment B, or only one face) and that reach strictly into
  *      the moving side (at least one folded endpoint off the crease line on
@@ -137,8 +170,9 @@ export function selectFlap(
   grab: Vec2,
   k: number,
   moveSide: Line,
+  face?: number,
 ): { faces: number[]; k: number } {
-  const stack = layerAt(frame, grab)
+  const stack = stackFrom(frame, grab, face)
   if (stack.length === 0) return { faces: [], k: 0 }
   const kk = Math.min(stack.length, Math.max(1, Math.floor(Number.isFinite(k) ? k : 1)))
   const chosen = new Set(stack.slice(0, kk))
@@ -185,9 +219,11 @@ export function selectFlap(
 }
 
 /** Re-solve the layer order; refuse if the fold has no valid one. */
+export const NO_ORDER = 'No valid layer order exists for this fold.'
+
 export function withLayerOrder(frame: Frame): Result<{ frame: Frame }> {
   const orders = layerOrders(frame)
-  if (!orders) return { ok: false, reason: 'No valid layer order exists for this fold.' }
+  if (!orders) return { ok: false, reason: NO_ORDER }
   const next = structuredClone(frame) as Frame
   return { ok: true, frame: { ...next, faceOrders: orders } }
 }

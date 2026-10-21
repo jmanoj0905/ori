@@ -81,18 +81,23 @@
  *   On a preliminary base this gives the bird base's front petal; all its
  *   creases lie on Rabbit Ear's bird crease pattern (tested).
  *
- * Previews compute the same result without the layer solve and show its end
- * state (poses of the result frame); `angleDeg` reports progressToAngle.
+ * Previews compute the same result and show its end state (poses of the
+ * result frame); `angleDeg` reports the requested angle (progressToAngle, or
+ * the gesture's exact angleDeg). They run the layer solve only for
+ * `Preview.valid`, on results of at most VALID_SOLVE_MAX_FACES faces (else
+ * 'unknown'); the solve is cached with the build, so progress-only moves and
+ * the commit reuse it.
  */
-import { progressToAngle } from './gesture'
 import { clipLineToPolygon, cross, sub } from './geometry'
 import type { Step } from './history'
-import { containsPoint, layerAt, withLayerOrder } from './layers'
+import { containsPoint, stackFrom, withLayerOrder } from './layers'
 import {
   FLATTEN,
   MISS,
   TOO_SHORT,
+  VALID_SOLVE_MAX_FACES,
   creaseLine,
+  extraParams,
   dedupe,
   edgeFaces,
   facesEdges,
@@ -102,11 +107,13 @@ import {
   originsBy,
   plan,
   refuse,
+  requestedAngle,
   settleBy,
   side,
   type Gesture,
   type Origin,
   type Preview,
+  type Validity,
 } from './ops'
 import { poses, treePoses } from './poses'
 import { foldThrough, foldedCoords, windings } from './rabbit'
@@ -160,15 +167,19 @@ export function previewCompound(frame: Frame, g: Gesture): Result<{ preview: Pre
   if (!r.ok) return r
   const b = r.built
   const out = b.frame
+  // compound folds always commit flat, so always solve; skipped on big results
+  let valid: Validity = 'unknown'
+  if (out.faces_vertices.length <= VALID_SOLVE_MAX_FACES) valid = solve(b).ok
   return {
     ok: true,
     preview: {
       crease: b.crease,
       moving: b.moving,
       layers: b.k,
-      angleDeg: progressToAngle(g.progress),
+      angleDeg: requestedAngle(g),
       poses: poses(out),
       blocked: false,
+      valid,
       frame: out,
     },
   }
@@ -178,9 +189,9 @@ export function previewCompound(frame: Frame, g: Gesture): Result<{ preview: Pre
 
 const buildCache = new WeakMap<Frame, { key: string; r: Result<{ built: Built }> }>()
 
-/** Builds depend on everything but progress; cache the last one per frame. */
+/** Builds depend on everything but progress / angleDeg; cache the last one per frame. */
 function cached(frame: Frame, g: Gesture, build: (f: Frame, g: Gesture) => Result<{ built: Built }>) {
-  const key = JSON.stringify([g.tool, g.grab, g.target, g.layers, g.kind, g.snapAngle])
+  const key = JSON.stringify([g.tool, g.grab, g.target, g.layers, g.kind, g.snapAngle, g.crease ?? null, g.face ?? null])
   const hit = buildCache.get(frame)
   if (hit && hit.key === key) return hit.r
   const r = build(frame, g)
@@ -188,24 +199,47 @@ function cached(frame: Frame, g: Gesture, build: (f: Frame, g: Gesture) => Resul
   return r
 }
 
-function finish(g: Gesture, kind: Tool, r: Result<{ built: Built }>): Out {
-  if (!r.ok) return r
-  if (progressToAngle(g.progress) < 1e-6) return refuse(TOO_SHORT)
-  const b = r.built
+const solveCache = new WeakMap<Built, Result<{ frame: Frame }>>()
+
+/** The build's layer solve, its alternatives tried in turn; cached per build (shared by preview and commit). */
+function solve(b: Built): Result<{ frame: Frame }> {
+  const hit = solveCache.get(b)
+  if (hit) return hit
   let solved = withLayerOrder(b.frame)
   for (const alt of solved.ok ? [] : (b.alternatives?.() ?? [])) {
     solved = withLayerOrder(alt)
     if (solved.ok) break
   }
+  solveCache.set(b, solved)
+  return solved
+}
+
+function finish(g: Gesture, kind: Tool, r: Result<{ built: Built }>): Out {
+  if (!r.ok) return r
+  if (requestedAngle(g) < 1e-6) return refuse(TOO_SHORT)
+  const b = r.built
+  const solved = solve(b)
   if (!solved.ok) return solved
   const step: Step = {
     kind,
-    params: { tool: kind, grab: g.grab, target: g.target, layers: b.k, kind: g.kind, snapAngle: g.snapAngle, ...b.params },
+    params: {
+      tool: kind,
+      grab: g.grab,
+      target: g.target,
+      layers: b.k,
+      kind: g.kind,
+      snapAngle: g.snapAngle,
+      ...extraParams(g),
+      ...b.params,
+    },
     label: b.label,
     at: Date.now(),
   }
   return { ok: true, frame: solved.frame, step }
 }
+
+/** Squash and petal take their creases from the flap: they need only a real drag (an exact crease is ignored). */
+const dragged = (g: Gesture) => creaseLine({ ...g, crease: undefined }).ok
 
 const isInner = (f: Frame, e: number, facesOf: number[][]) =>
   facesOf[e].length === 2 && !/^[Bb]$/.test(f.edges_assignment[e])
@@ -364,7 +398,7 @@ function buildReverse(frame: Frame, g: Gesture): Result<{ built: Built }> {
   const F = new Set(p.faces)
   const coords = foldedCoords(frame)
   const facesOf = edgeFaces(frame)
-  const stack = layerAt(frame, g.grab).filter(f => F.has(f))
+  const stack = stackFrom(frame, g.grab, g.face).filter(f => F.has(f))
   if (stack.length < 2) return refuse(REVERSE_NO)
   const top = stack[0]
   const bottom = stack[stack.length - 1]
@@ -540,10 +574,10 @@ function clipToLeft(poly: readonly Vec2[], l: Line): Vec2[] {
 
 type SquashFlap = { apex: Vec2; ridgeEnd: Vec2; hingeEnd: Vec2; U: Set<number>; D: Set<number> }
 
-function findSquashFlap(frame: Frame, grab: Vec2): SquashFlap | null {
+function findSquashFlap(frame: Frame, grab: Vec2, face?: number): SquashFlap | null {
   const coords = foldedCoords(frame)
   const facesOf = edgeFaces(frame)
-  const stack = layerAt(frame, grab)
+  const stack = stackFrom(frame, grab, face)
   if (stack.length < 2) return null
   const [U0, D0] = stack
   const ridge = facesEdges(frame, U0, facesOf).filter(e => facesOf[e].includes(D0) && isFolded(frame, e))
@@ -599,8 +633,8 @@ function findSquashFlap(frame: Frame, grab: Vec2): SquashFlap | null {
 
 function buildSquash(frame: Frame, g: Gesture): Result<{ built: Built }> {
   if (!isFlatFrame(frame)) return refuse(FLATTEN)
-  if (!creaseLine(g).ok) return refuse(TOO_SHORT)
-  const flap = findSquashFlap(frame, g.grab)
+  if (!dragged(g)) return refuse(TOO_SHORT)
+  const flap = findSquashFlap(frame, g.grab, g.face)
   if (!flap) return refuse(SQUASH_NO)
   const { apex, ridgeEnd, hingeEnd, U, D } = flap
   const all = new Set([...U, ...D])
@@ -714,10 +748,10 @@ function intersect(l: Line, a: Vec2, b: Vec2): { p: Vec2; t: number } | null {
 
 function buildPetal(frame: Frame, g: Gesture): Result<{ built: Built }> {
   if (!isFlatFrame(frame)) return refuse(FLATTEN)
-  if (!creaseLine(g).ok) return refuse(TOO_SHORT)
+  if (!dragged(g)) return refuse(TOO_SHORT)
   const coords = foldedCoords(frame)
   const facesOf = edgeFaces(frame)
-  const stack = layerAt(frame, g.grab)
+  const stack = stackFrom(frame, g.grab, g.face)
   if (stack.length === 0) return refuse(MISS)
   const panel = flood(frame, stack[0], facesOf, e => isOpen(frame, e))
   const sides = outline(frame, panel, coords, facesOf)

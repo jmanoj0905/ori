@@ -15,6 +15,7 @@ import type { Line, Vec2 } from '@engine'
 import type { Pick } from '../render/Stage'
 import { snapRadiusPaper } from '../render/pickMath'
 import { useStudio, type StudioState } from './store'
+import { useSettings } from '../settings/store'
 
 /** Default snap radius in CSS pixels (the settings store takes over in Task 5). */
 export const SNAP_RADIUS_PX = 12
@@ -66,7 +67,7 @@ const bisector = (grab: Vec2, target: Vec2): Line | null => {
 /** The pointer handlers, free of React so they can be driven directly in tests. */
 export function createFoldGesture(stage: GestureStage, store: StoreLike = useStudio, opts: GestureOptions = {}) {
   let active: { id: number; grab: Vec2; moved: boolean } | null = null
-  const radiusPx = opts.snapRadiusPx ?? (() => SNAP_RADIUS_PX)
+  const radiusPx = opts.snapRadiusPx ?? (() => useSettings.getState().snapRadiusPx)
 
   const snap = (p: Vec2): Vec2 => {
     const ls = landmarks(current(store.getState().history), { edges: true })

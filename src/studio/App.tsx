@@ -14,6 +14,7 @@ import { TopBar } from './islands/TopBar'
 import { Tools } from './islands/Tools'
 import { FoldBar } from './islands/FoldBar'
 import { HintLine } from './islands/HintLine'
+import { Steps } from './islands/Steps'
 import { PaperPanel } from './islands/PaperPanel'
 import './islands/islands.css'
 
@@ -72,6 +73,7 @@ export function App() {
       <div className="stage-host" data-stage-host ref={hostRef} />
       <TopBar paperOpen={paperOpen} onTogglePaper={() => setPaperOpen(o => !o)} />
       <Tools />
+      <Steps />
       {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
       <div className="bottom">
         <FoldBar />

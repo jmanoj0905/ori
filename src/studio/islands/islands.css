@@ -522,3 +522,94 @@ input[type='range'] {
   justify-content: flex-end;
   gap: 6px;
 }
+
+/* ---- steps island (right) ---- */
+.steps {
+  right: var(--space);
+  top: var(--space);
+  bottom: calc(var(--space) + 90px);
+  width: 236px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(250, 247, 241, 0.9);
+}
+.mini-cp {
+  flex: none;
+  width: 100%;
+  height: 150px;
+  border: 1px solid var(--frost-border);
+  border-radius: 8px;
+  background: var(--ivory);
+}
+.mini-cp line {
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.mini-cp .cp-boundary {
+  stroke-width: 1.6;
+}
+.step-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+.step-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.step-item:hover {
+  background: var(--ink-faint);
+}
+.step-item[aria-current='step'] {
+  background: var(--ink);
+  color: var(--ivory);
+}
+.step-item[aria-disabled='true'] {
+  color: var(--ink-soft);
+  opacity: 0.6;
+}
+.presets {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.preset-btn {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--frost-border);
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.preset-btn[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--ivory);
+}
+.steps .stop {
+  border: 1px solid var(--ink);
+}
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 8px;
+  background: var(--ivory);
+  border: 1px solid var(--frost-border);
+}

@@ -143,6 +143,12 @@ export type StudioState = {
   jumpTo(i: number): void
   turnOver(): Promise<boolean>
   /**
+   * Preset playback: commit one gesture or a turn over on the current frame,
+   * through the committer (Worker), without any preview. Ignored (false) while
+   * a commit is pending. The refusal, if any, lands in `refusal`.
+   */
+  commitStep(step: Gesture | { tool: 'turnOver' }): Promise<boolean>
+  /**
    * Numeric input / angle slider. While a gesture is active it sets
    * Gesture.crease / Gesture.angleDeg and re-runs the preview. Otherwise it
    * re-commits the last fold with those values (R28), see setLastFold.
@@ -365,6 +371,14 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
         endSettle()
         set(idle)
         return runCommit({ frame: current(get().history), turnOver: true })
+      },
+
+      commitStep(step) {
+        if (get().pending) return Promise.resolve(false)
+        endSettle()
+        set(idle)
+        const frame = current(get().history)
+        return runCommit(step.tool === 'turnOver' ? { frame, turnOver: true } : { frame, gesture: step as Gesture })
       },
 
       setNumeric(edit) {

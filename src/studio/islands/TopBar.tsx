@@ -1,12 +1,13 @@
 // Top island: wordmark, undo / redo, paper, export and settings.
+import { useState } from 'react'
 import { canRedo, canUndo } from '@engine'
 import { useStudio } from '../store'
 
 export type TopBarProps = {
   paperOpen: boolean
   onTogglePaper(): void
-  /** Wired by Task 11 (PNG export); the button is disabled until then. */
-  onExport?: () => void
+  /** PNG export of the current view; the button is disabled when absent. */
+  onExport?: (transparent: boolean) => void
   /** Opens the settings sheet (the gear). */
   onSettings?: () => void
 }
@@ -16,6 +17,11 @@ export function TopBar({ paperOpen, onTogglePaper, onExport, onSettings }: TopBa
   const redoable = useStudio(s => canRedo(s.history))
   const undo = useStudio(s => s.undo)
   const redo = useStudio(s => s.redo)
+  const [exportOpen, setExportOpen] = useState(false)
+  const choose = (transparent: boolean) => {
+    setExportOpen(false)
+    onExport?.(transparent)
+  }
   return (
     <header className="island topbar" role="banner" aria-label="Studio bar">
       <h1 className="wordmark">ori · 折り</h1>
@@ -36,9 +42,25 @@ export function TopBar({ paperOpen, onTogglePaper, onExport, onSettings }: TopBa
         >
           Paper
         </button>
-        <button type="button" className="tbtn text" onClick={onExport} disabled={!onExport}>
-          Export
-        </button>
+        <span className="export-wrap">
+          <button
+            type="button"
+            className="tbtn text"
+            aria-expanded={exportOpen}
+            aria-haspopup="true"
+            onClick={() => setExportOpen(o => !o)}
+            onKeyDown={e => e.key === 'Escape' && setExportOpen(false)}
+            disabled={!onExport}
+          >
+            Export
+          </button>
+          {exportOpen && (
+            <div className="export-menu" role="group" aria-label="Export PNG">
+              <button type="button" className="tbtn text" onClick={() => choose(false)}>PNG · washi background</button>
+              <button type="button" className="tbtn text" onClick={() => choose(true)}>PNG · transparent</button>
+            </div>
+          )}
+        </span>
         <button type="button" className="tbtn" aria-label="Settings" title="Settings" onClick={onSettings} disabled={!onSettings}>
           <svg viewBox="0 0 20 20" aria-hidden="true">
             <circle cx="10" cy="10" r="2.6" />

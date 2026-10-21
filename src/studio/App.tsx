@@ -16,6 +16,9 @@ import { FoldBar } from './islands/FoldBar'
 import { HintLine } from './islands/HintLine'
 import { Steps } from './islands/Steps'
 import { PaperPanel } from './islands/PaperPanel'
+import { Notice } from './islands/Notice'
+import { bootStudio } from './boot'
+import { exportPng } from '../persistence/png'
 import { LiveLog } from './LiveLog'
 import { SheetHost } from './SheetHost'
 import { useUi } from './ui'
@@ -46,10 +49,9 @@ export function App() {
   const hostRef = useRef<HTMLDivElement>(null)
   const [stageReady, setStageReady] = useState<Stage | null>(null)
   useInput(stageReady)
-  // A blank studio opens on the user's paper defaults (settings, section 5).
-  useEffect(() => {
-    if (useStudio.getState().history.steps.length === 0) useStudio.getState().newSheet()
-  }, [])
+  // Restore the autosave first; only an unrestored studio opens on the user's
+  // paper defaults (settings, section 5). Then autosave starts (see boot.ts).
+  useEffect(() => bootStudio(useStudio), [])
   useEffect(() => {
     const host = hostRef.current
     if (!host) return
@@ -79,7 +81,9 @@ export function App() {
   return (
     <main className="studio" data-folding={folding ? '' : undefined}>
       <div className="stage-host" data-stage-host ref={hostRef} />
-      <TopBar paperOpen={paperOpen} onTogglePaper={() => setPaperOpen(o => !o)} onSettings={() => useUi.getState().open('settings')} />
+      <TopBar paperOpen={paperOpen} onTogglePaper={() => setPaperOpen(o => !o)}
+        onExport={stageReady ? t => void exportPng(stageReady, useStudio.getState().history.cursor, t) : undefined}
+        onSettings={() => useUi.getState().open('settings')} />
       <Tools />
       <Steps />
       {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
@@ -87,6 +91,7 @@ export function App() {
         <FoldBar />
         <HintLine />
       </div>
+      <Notice />
       <LiveLog />
       <SheetHost />
     </main>

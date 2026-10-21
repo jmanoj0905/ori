@@ -39,3 +39,26 @@ test('the studio opens on the paper defaults from settings', () => {
   expect(useStudio.getState().paper).toMatchObject({ front: '#2F4A8A', size: 'a4', mode: 'plain' })
   useSettings.setState(defaultSettings())
 })
+
+test('a saved model is restored on mount and the blank-sheet seed does not replace it', async () => {
+  const { createStudioStore } = await import('./store')
+  const { inProcessCommitter } = await import('./committer')
+  const { saveHistory, flushSave, AUTOSAVE_KEY } = await import('../persistence/autosave')
+  const s = createStudioStore({ committer: inProcessCommitter })
+  s.getState().begin([1, 1])
+  s.getState().drag([0, 0], 1)
+  await s.getState().release()
+  saveHistory(s.getState().history, s.getState().paper)
+  flushSave()
+  const { bootStudio } = await import('./boot')
+  const target = createStudioStore({ committer: inProcessCommitter })
+  bootStudio(target)
+  expect(target.getState().history.steps).toHaveLength(1)
+  localStorage.removeItem(AUTOSAVE_KEY)
+})
+
+test('Export stays disabled while there is no Stage to snapshot', async () => {
+  render(<App />)
+  const btn = screen.getByRole('button', { name: 'Export' })
+  await waitFor(() => expect(btn).toBeDisabled()) // no WebGL in jsdom: stage never becomes ready
+})

@@ -37,6 +37,19 @@ describe('useStudio store', () => {
     expect(s.paper.size).toBe('square')
   })
 
+  test('setSnapAngle toggles Gesture.snapAngle mid-drag and is a no-op without a gesture', () => {
+    const s = fresh()
+    s.getState().setSnapAngle(true)
+    expect(s.getState().gesture).toBeNull()
+    s.getState().begin([1, 1])
+    s.getState().drag([0.3, 0.3], 1)
+    s.getState().setSnapAngle(true)
+    expect(s.getState().gesture?.snapAngle).toBe(true)
+    expect(s.getState().preview).not.toBeNull()
+    s.getState().setSnapAngle(false)
+    expect(s.getState().gesture?.snapAngle).toBe(false)
+  })
+
   test('begin → drag → release on a fresh square adds one step', async () => {
     const s = fresh()
     s.getState().begin([1, 1])

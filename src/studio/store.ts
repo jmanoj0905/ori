@@ -85,6 +85,8 @@ export type StudioState = {
   drag(target: Vec2, progress: number): void
   setLayers(k: number): void
   setKind(k: FoldKind): void
+  /** Hold-to-snap the fold angle (angleSnap modifier); re-previews mid-drag. */
+  setSnapAngle(on: boolean): void
   release(): Promise<boolean>
   cancel(): void
   undo(): void
@@ -181,6 +183,14 @@ export function createStudioStore({ committer = createWorkerCommitter() }: Studi
         const { gesture } = get()
         if (!gesture) return
         const g = { ...gesture, kind }
+        if (dragged()) runPreview(g)
+        else set({ gesture: g })
+      },
+
+      setSnapAngle(on) {
+        const { gesture, pending } = get()
+        if (!gesture || pending || gesture.snapAngle === on) return
+        const g = { ...gesture, snapAngle: on }
         if (dragged()) runPreview(g)
         else set({ gesture: g })
       },

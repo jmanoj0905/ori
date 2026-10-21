@@ -131,12 +131,29 @@ describe('createFoldGesture on the blank square', () => {
     expect(store.getState().history.steps.length).toBe(1)
   })
 
-  test('ignores non-left buttons and presses off the paper', () => {
+  // Button filtering moved to the input router (router.test.ts: right-drag is orbit, not fold).
+  test('a press off the paper begins nothing and reports false; a press on it reports true', () => {
     const store = createStudioStore({ committer: inProcessCommitter })
     const g = createFoldGesture(stageFor(), store)
-    g.down(ev(50, 50, 2))
-    g.down(ev(500, 500))
+    expect(g.down(ev(500, 500))).toBe(false)
     expect(store.getState().gesture).toBeNull()
+    expect(g.down(ev(50, 50))).toBe(true)
+    expect(g.down(ev(50, 50))).toBe(false) // duplicate press from the same pointer
+    expect(store.getState().gesture).not.toBeNull()
+  })
+
+  test('cancel() drops a dragged gesture as Esc would, and the next press starts afresh', () => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    const g = createFoldGesture(stageFor(), store)
+    g.down(ev(97, 3))
+    g.move(ev(50, 50))
+    expect(store.getState().preview).not.toBeNull()
+    g.cancel()
+    expect(store.getState().gesture).toBeNull()
+    expect(store.getState().preview).toBeNull()
+    g.move(ev(40, 40)) // stale move after cancel is ignored
+    expect(store.getState().preview).toBeNull()
+    expect(g.down(ev(97, 3))).toBe(true)
   })
 
   test('a click without drag cancels the gesture and commits nothing', async () => {

@@ -1,7 +1,8 @@
 // The bridge from pointer events on the Stage canvas to the studio store:
 // press picks the top flap and snaps the grab, moves snap the target and
-// compute the drag progress, release commits. Only the left button; binding
-// remapping, layers, Esc and pointercancel belong to the input router.
+// compute the drag progress, release commits. Raw events, bindings, layers,
+// Esc and pointercancel/blur belong to the input router (src/input/router.ts),
+// which calls down/move/up/cancel here; pointer capture is the router's job.
 //
 // Coordinates: the engine's gesture points are FOLDED-space points (z = 0).
 // The grab comes from pick().folded (where the visible flap is), the target
@@ -9,7 +10,6 @@
 // the Stage on every event, and the snap radius is recomputed per event from
 // the Stage's current zoom, so a resize or devicePixelRatio change mid-drag
 // cannot desync the gesture (the grab is held in paper space, never in pixels).
-import { useEffect } from 'react'
 import { current, landmarks, snapPoint } from '@engine'
 import type { Line, Vec2 } from '@engine'
 import type { Pick } from '../render/Stage'
@@ -79,34 +79,39 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
   }
 
   return {
-    down(e: PointerLike): void {
-      if (e.button !== undefined && e.button !== 0) return
-      if (store.getState().pending) return
+    /** Returns true when a gesture began (false: the router should treat the drag as refused). */
+    down(e: PointerLike): boolean {
+      if (store.getState().pending) return false
       if (active) {
         // A press from the same pointer is a duplicate; a different pointer means the
         // previous one was lost (released outside the window): drop its stale gesture.
-        if (active.id === e.pointerId) return
+        if (active.id === e.pointerId) return false
         active = null
         store.getState().cancel()
       }
       const hit = stage.pick(e.clientX, e.clientY)
-      if (!hit) return
+      if (!hit) return false
       const grab = snap(hit.folded)
       store.getState().begin(grab, hit.face)
       active = { id: e.pointerId, grab, moved: false }
-      try {
-        ;(stage.canvas as HTMLElement).setPointerCapture?.(e.pointerId)
-      } catch {
-        /* capture is best-effort */
-      }
       setCursor('grabbing')
+      return true
+    },
+
+    /** Hover feedback while no drag is active. */
+    hover(e: { clientX: number; clientY: number }): void {
+      if (!active) setCursor(stage.pick(e.clientX, e.clientY) ? 'grab' : '')
+    },
+
+    /** Cancel the gesture as if Esc was pressed (also the pointercancel / blur path). */
+    cancel(): void {
+      active = null
+      store.getState().cancel()
+      setCursor('')
     },
 
     move(e: PointerLike): void {
-      if (!active) {
-        setCursor(stage.pick(e.clientX, e.clientY) ? 'grab' : '')
-        return
-      }
+      if (!active) return
       if (e.pointerId !== active.id) return
       const cursor = stage.projectToPaperPlane(e.clientX, e.clientY)
       const target = snap(cursor)
@@ -128,38 +133,9 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
       if (!active || e.pointerId !== active.id) return
       const { moved } = active
       active = null
-      try {
-        ;(stage.canvas as HTMLElement).releasePointerCapture?.(e.pointerId)
-      } catch {
-        /* already released */
-      }
       setCursor(stage.pick(e.clientX, e.clientY) ? 'grab' : '')
       if (moved) await store.getState().release()
       else store.getState().cancel()
     },
   }
-}
-
-/** Wire the fold gesture onto the Stage canvas (left button, pointer capture). */
-export function useFoldGesture(stage: GestureStage | null, opts?: GestureOptions): void {
-  useEffect(() => {
-    if (!stage) return
-    const g = createFoldGesture(stage, useStudio, opts)
-    const el = stage.canvas
-    const down = (e: PointerEvent) => g.down(e)
-    const move = (e: PointerEvent) => g.move(e)
-    const up = (e: PointerEvent) => void g.up(e)
-    const lost = (e: PointerEvent) => g.lost(e)
-    el.addEventListener('pointerdown', down)
-    el.addEventListener('pointermove', move)
-    el.addEventListener('pointerup', up)
-    el.addEventListener('lostpointercapture', lost)
-    return () => {
-      el.removeEventListener('pointerdown', down)
-      el.removeEventListener('pointermove', move)
-      el.removeEventListener('pointerup', up)
-      el.removeEventListener('lostpointercapture', lost)
-      el.style.cursor = ''
-    }
-  }, [stage, opts])
 }

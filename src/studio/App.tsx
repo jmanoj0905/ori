@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { current, poses } from '@engine'
 import type { Stage } from '../render/Stage'
 import { useStudio, type StudioState } from './store'
-import { useFoldGesture } from './useFoldGesture'
+import { useInput } from '../input/useInput'
 
 /** Push the store's model, preview and paper into the Stage (only what changed). */
 function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
@@ -26,7 +26,7 @@ export function App() {
   const refusal = useStudio(s => s.refusal)
   const hostRef = useRef<HTMLDivElement>(null)
   const [stageReady, setStageReady] = useState<Stage | null>(null)
-  useFoldGesture(stageReady)
+  useInput(stageReady)
   useEffect(() => {
     const host = hostRef.current
     if (!host) return

@@ -247,10 +247,11 @@ export function FoldBar() {
           type="button"
           className="readout mono"
           aria-expanded={open}
-          aria-label="Edit crease numerically"
           disabled={!canCrease}
           onClick={() => setOpen(o => !o)}
         >
+          {/* The visible readout is part of the accessible name (WCAG 2.5.3, label in name). */}
+          <span className="sr-only">Edit crease numerically: </span>
           {d ? `(${fmt(d.origin[0])}, ${fmt(d.origin[1])}) · ${Math.round(d.deg)}°` : 'crease —'}
         </button>
       </div>

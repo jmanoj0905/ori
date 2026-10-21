@@ -201,7 +201,7 @@ export function SettingsSheet({ onClose }: { onClose(): void }) {
 
   return (
     <div className="scrim sheet-scrim" onKeyDown={onKeyDown}>
-      <aside
+      <div
         ref={ref}
         className="island sheet"
         role="dialog"
@@ -375,7 +375,7 @@ export function SettingsSheet({ onClose }: { onClose(): void }) {
             </p>
           </section>
         </div>
-      </aside>
+      </div>
     </div>
   )
 }

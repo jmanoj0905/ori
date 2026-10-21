@@ -5,10 +5,19 @@
   background: var(--ivory);
 }
 
-/* The Three.js Stage mounts here (Task 2); full bleed under the islands. */
+/* The main landmark adds no box: its children lay out against .studio. */
+.studio-main {
+  display: contents;
+}
+
+/* The Three.js Stage mounts here (Task 2); full bleed under the islands.
+   z-index −1: the top bar precedes it in the DOM (it is outside <main>), so the
+   canvas is pushed below every island explicitly (.studio, position: fixed, is
+   the stacking context, and its own background still paints first). */
 .stage-host {
   position: absolute;
   inset: 0;
+  z-index: -1;
 }
 
 .island {

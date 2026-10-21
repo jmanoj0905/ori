@@ -150,7 +150,7 @@ describe('fold bar', () => {
       useStudio.getState().begin([1, 0.5])
       useStudio.getState().drag([0.5, 0.5], 0.5)
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Edit crease numerically' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Edit crease numerically/ }))
     const form = screen.getByRole('form', { name: 'Exact crease' })
     fireEvent.click(within(form).getByRole('button', { name: 'Point + angle' }))
     const [x, y, deg, fold] = within(form).getAllByRole('spinbutton')
@@ -172,7 +172,7 @@ describe('fold bar', () => {
       useStudio.getState().begin([1, 0.5])
       useStudio.getState().drag([0.5, 0.5], 0.5)
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Edit crease numerically' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Edit crease numerically/ }))
     expect(screen.getByRole('form', { name: 'Exact crease' })).toBeInTheDocument()
     act(() => {
       useStudio.getState().cancel()
@@ -187,7 +187,7 @@ describe('fold bar', () => {
       useStudio.getState().begin([1, 0.5])
       useStudio.getState().drag([0.5, 0.5], 0.5)
     })
-    fireEvent.click(screen.getByRole('button', { name: 'Edit crease numerically' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Edit crease numerically/ }))
     const form = screen.getByRole('form', { name: 'Exact crease' })
     const [x1, y1, x2, y2] = within(form).getAllByRole('spinbutton')
     for (const [el, val] of [[x1, '0.7'], [y1, '0'], [x2, '0.7'], [y2, '0']] as const) {
@@ -199,7 +199,7 @@ describe('fold bar', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'Apply' }))
     expect(useStudio.getState().gesture?.crease).toEqual({ origin: [0.7, 0], vector: [0, 1] })
 
-    fireEvent.click(screen.getByRole('button', { name: 'Edit crease numerically' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Edit crease numerically/ }))
     expect(screen.getByRole('form', { name: 'Exact crease' })).toBeInTheDocument()
     fireEvent.keyDown(screen.getAllByRole('spinbutton')[0]!, { key: 'Escape' })
     expect(screen.queryByRole('form', { name: 'Exact crease' })).toBeNull()
@@ -384,7 +384,10 @@ describe('shell', () => {
   test('islands are named landmarks and fade while a gesture is active', () => {
     const { container } = render(<App />)
     for (const name of ['Studio bar', 'Tools']) expect(screen.getByLabelText(name, { selector: '.island' })).toBeInTheDocument()
-    const main = container.querySelector('main')!
+    const main = container.querySelector('.studio')!
+    // The top bar is a top-level banner, beside <main> (not nested in it).
+    expect(container.querySelector('main [role="banner"]')).toBeNull()
+    expect(screen.getByRole('main')).toBeInTheDocument()
     expect(main).not.toHaveAttribute('data-folding')
     act(() => useStudio.getState().begin([1, 1]))
     expect(main).toHaveAttribute('data-folding')

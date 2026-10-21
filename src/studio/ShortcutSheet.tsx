@@ -20,11 +20,12 @@ export function ShortcutSheet({ onClose, onSettings }: { onClose(): void; onSett
   const bindings = useSettings(s => s.bindings)
   return (
     <div className="scrim" onKeyDown={onKeyDown}>
-      <aside ref={ref} className="island sheet center" role="dialog" aria-modal="true" aria-labelledby={`${id}-t`}>
+      <div ref={ref} className="island sheet center" role="dialog" aria-modal="true" aria-labelledby={`${id}-t`}>
         <header className="sheet-head">
           <h2 id={`${id}-t`}>Keyboard shortcuts</h2>
         </header>
-        <div className="sheet-body">
+        {/* Static content that scrolls: a tab stop of its own so the keyboard can scroll it. */}
+        <div className="sheet-body" tabIndex={0} role="region" aria-label="Shortcut list">
           <table className="shortcuts">
             <caption className="sr-only">Current controls</caption>
             <tbody>
@@ -56,7 +57,7 @@ export function ShortcutSheet({ onClose, onSettings }: { onClose(): void; onSett
           {onSettings && <button type="button" className="tbtn text" onClick={onSettings}>Change in Settings</button>}
           <button type="button" className="tbtn text primary" data-autofocus onClick={onClose}>Close</button>
         </footer>
-      </aside>
+      </div>
     </div>
   )
 }

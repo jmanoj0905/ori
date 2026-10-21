@@ -113,8 +113,10 @@ export function App() {
     }
   }, [layout, sheetOpen])
   return (
-    <main className="studio" data-folding={folding ? '' : undefined}>
-      <div className="stage-host" data-stage-host ref={hostRef} />
+    // Landmarks: the top bar is the page's banner, so it sits beside <main>, not
+    // inside it (a banner nested in main is not a top-level landmark). <main> uses
+    // display: contents, so the islands still position against .studio.
+    <div className="studio" data-folding={folding ? '' : undefined}>
       <TopBar paperOpen={paperOpen && (sheetOpen || !narrow)} onTogglePaper={() => {
           // A collapsed sheet hides the panel: the button opens both rather than toggling blind.
           if (!sheetOpen && narrow) {
@@ -124,27 +126,30 @@ export function App() {
         }}
         onExport={stageReady ? t => void exportPng(stageReady, useStudio.getState().history.cursor, t) : undefined}
         onSettings={() => useUi.getState().open('settings')} />
-      <div className="lower">
-        <div className="bottom">
-          <FoldBar />
-          <HintLine />
-        </div>
-        {/* Wide: the islands float where they are. Narrow (< 720 px): this is the bottom sheet. */}
-        <div className="dock" ref={dockRef} data-open={sheetOpen ? '' : undefined}>
-          <button type="button" className="dock-handle" aria-expanded={sheetOpen} aria-controls="dock-body" onClick={() => setSheetOpen(o => !o)}>
-            <span className="grabber" aria-hidden="true" />
-            Steps, presets and paper
-          </button>
-          <Tools />
-          <div className="dock-body" id="dock-body">
-            <Steps />
-            {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
+      <main className="studio-main">
+        <div className="stage-host" data-stage-host ref={hostRef} />
+        <div className="lower">
+          <div className="bottom">
+            <FoldBar />
+            <HintLine />
+          </div>
+          {/* Wide: the islands float where they are. Narrow (< 720 px): this is the bottom sheet. */}
+          <div className="dock" ref={dockRef} data-open={sheetOpen ? '' : undefined}>
+            <button type="button" className="dock-handle" aria-expanded={sheetOpen} aria-controls="dock-body" onClick={() => setSheetOpen(o => !o)}>
+              <span className="grabber" aria-hidden="true" />
+              Steps, presets and paper
+            </button>
+            <Tools />
+            <div className="dock-body" id="dock-body">
+              <Steps />
+              {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
+            </div>
           </div>
         </div>
-      </div>
-      <Notice />
-      <LiveLog />
-      <SheetHost />
-    </main>
+        <Notice />
+        <LiveLog />
+        <SheetHost />
+      </main>
+    </div>
   )
 }

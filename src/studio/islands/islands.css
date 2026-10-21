@@ -473,21 +473,173 @@ input[type='range'] {
   }
 }
 
-/* Narrow screens: stack the islands so nothing overlaps (full bottom sheet is Task 12). */
-@media (max-width: 640px) {
-  .tools {
-    top: auto;
-    bottom: 120px;
+/* ---- touch: bigger targets for the layer stepper ---- */
+.foldbar[data-coarse] .step {
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+}
+.foldbar[data-coarse] .badge {
+  gap: 8px;
+}
+.foldbar[data-coarse] .seg button {
+  height: 40px;
+}
+.foldbar[data-coarse] input[type='range'] {
+  height: 32px;
+}
+
+/* ---- dock: floating islands wide, one bottom sheet narrow ---- */
+.lower,
+.dock,
+.dock-body {
+  display: contents;
+}
+.dock-handle {
+  display: none;
+}
+
+@media (max-width: 719.98px) {
+  .lower {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .lower > * {
+    pointer-events: auto;
+  }
+  .bottom {
+    position: static;
     transform: none;
     width: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    max-width: calc(100% - 2 * var(--space));
+    max-width: none;
+    padding: 0 var(--space);
+    pointer-events: none;
   }
-  .paper-panel {
-    left: var(--space);
-    right: var(--space);
+  .bottom > * {
+    max-width: 100%;
+  }
+  .dock {
+    display: flex;
+    flex-direction: column;
+    max-height: 62vh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(250, 247, 241, 0.94);
+    border-top: 1px solid var(--frost-border);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -8px 28px -14px rgba(43, 42, 40, 0.35);
+    backdrop-filter: blur(var(--frost-blur));
+    -webkit-backdrop-filter: blur(var(--frost-blur));
+  }
+  .dock-handle {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    height: 44px;
+    padding-top: 8px;
+    border: 0;
+    background: transparent;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .grabber {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: rgba(43, 42, 40, 0.28);
+  }
+  .dock .island {
+    position: static;
+    transform: none;
     width: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  /* Tools: one swipeable row, always within reach of the thumb. */
+  .dock .tools {
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 0 var(--space) 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .dock .tools > * {
+    flex: none;
+  }
+  .dock .tools .stack {
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+  }
+  .dock .tools .snaps {
+    border-top: 0;
+    border-left: 1px solid var(--frost-border);
+    padding: 0 0 0 8px;
+  }
+  .dock .tool {
+    height: 40px;
+    white-space: nowrap;
+  }
+  .dock .tool.snap {
+    height: 40px;
+  }
+  .dock .group-label {
+    display: none;
+  }
+  .dock-body {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px var(--space) var(--space);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-top: 1px solid var(--frost-border);
+  }
+  .dock[data-open] .dock-body {
+    display: flex;
+  }
+  .dock .steps,
+  .dock .paper-panel {
+    padding: 8px 0;
+    gap: 10px;
+  }
+  .dock .step-list {
+    max-height: 168px;
+    flex: none;
+  }
+  .dock .mini-cp {
+    height: 110px;
+  }
+  .dock .step-item,
+  .dock .preset-btn {
+    min-height: 40px;
+  }
+  .topbar {
+    max-width: calc(100% - 2 * var(--space));
+    padding-left: 12px;
+    gap: 8px;
+  }
+  .notice {
+    max-width: calc(100% - 2 * var(--space));
   }
 }
 

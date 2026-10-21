@@ -4,10 +4,20 @@
 //   - during a gesture the slider sets the live preview angle (Gesture.angleDeg);
 //   - after release it re-commits the last step at the new angle (R28), see
 //     the store's setLastFold.
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { current, layerAt } from '@engine'
 import type { FoldKind, Line, Vec2 } from '@engine'
 import { lastFold, useStudio } from '../store'
+
+const COARSE = '(pointer: coarse)'
+const coarseQuery = () => (typeof matchMedia === 'function' ? matchMedia(COARSE) : null)
+const subscribeCoarse = (cb: () => void) => {
+  const q = coarseQuery()
+  q?.addEventListener?.('change', cb)
+  return () => q?.removeEventListener?.('change', cb)
+}
+/** True on touch-first devices, where the layer stepper replaces the scroll wheel. */
+export const useCoarsePointer = (): boolean => useSyncExternalStore(subscribeCoarse, () => coarseQuery()?.matches === true, () => false)
 
 const fmt = (n: number) => (Math.abs(n) < 0.0005 ? 0 : n).toFixed(2)
 
@@ -137,6 +147,7 @@ export function FoldBar() {
   const [local, setLocal] = useState<number | null>(null)
   const readout = useRef<HTMLButtonElement>(null)
   const sliderId = useId()
+  const coarse = useCoarsePointer()
 
   // The fold the bar describes: the live gesture, else the last committed fold.
   const live = gesture !== null
@@ -186,7 +197,7 @@ export function FoldBar() {
   }
 
   return (
-    <section className="island foldbar" aria-label="Fold" data-live={live ? '' : undefined}>
+    <section className="island foldbar" aria-label="Fold" data-live={live ? '' : undefined} data-coarse={coarse ? '' : undefined}>
       {open && (
         <NumericForm
           crease={crease}

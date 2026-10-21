@@ -17,6 +17,17 @@
 //  - `cancel` (tap) is also emitted, instead of `end`, when a fold drag is
 //    lost: pointercancel, lostpointercapture, window blur, a move with no
 //    button down, or a second pointer pressing. Orbit and pan just end.
+//  - Touch (pointerType 'touch') is handled by its own small state machine and
+//    ignores the mouse bindings: one finger on the paper is a fold (a finger
+//    that misses the paper does nothing); a second finger arriving cancels the
+//    fold (as Esc: `cancel`, never `end`) and starts a two-finger gesture whose
+//    centre movement is `orbit` and whose finger-distance change is `zoom`
+//    (delta < 0 when the fingers spread). Neither engages before TOUCH_SLOP_PX
+//    of travel, so a steady pair of fingers does not jitter the view. Lifting
+//    a finger ends the gesture; the finger left on the glass does not turn
+//    into a fold until every finger has lifted. pointercancel / blur cancel.
+//  - Ctrl+wheel (a trackpad pinch) is zoom unless some binding claims
+//    Ctrl+wheel, so it never falls through to the browser's page zoom.
 //  - `mod` (Ctrl-or-Cmd) matches ctrlKey || metaKey on every platform.
 //    Mouse and wheel matching ignores modifiers that are themselves bound as
 //    hold-modifiers (Shift for angleSnap), so holding Shift never blocks a fold.
@@ -43,6 +54,11 @@ export type Handlers = Partial<Record<Action, ActionHandler>>
 
 /** Wheel pixels (normalised) that make one layer step while folding. */
 export const LAYER_STEP_PX = 100 // one mouse-wheel notch
+
+/** Travel (centre or finger distance, CSS px) before a two-finger gesture engages. */
+export const TOUCH_SLOP_PX = 6
+/** Ctrl+wheel deltas are tiny (a pinch reports ~1-10 px): scale to mouse-wheel feel. */
+export const PINCH_WHEEL_GAIN = 10
 
 const DRAGS = ['fold', 'orbit', 'pan'] as const
 type DragAction = (typeof DRAGS)[number]
@@ -83,6 +99,16 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
   let drag: { action: DragAction; id: number; x: number; y: number } | null = null
   const held = new Set<Action>()
   let wheelAcc = 0
+  // Touch: every finger down, the two-finger gesture, and whether a finger left
+  // over from one must be ignored until all lift.
+  const touches = new Map<number, { x: number; y: number }>()
+  let pair: {
+    a: number; b: number; engaged: boolean; mode: 'orbit' | 'zoom'; moved: Set<number>
+    cx0: number; cy0: number; d0: number; cx: number; cy: number; d: number
+  } | null = null
+  let leftover = false
+  const prevTouchAction = el.style.getPropertyValue('touch-action')
+  el.style.setProperty('touch-action', 'none') // the router owns every touch gesture
 
   const emit = (a: Action, e: ActionEvent): boolean => {
     const h = handlers[a]
@@ -114,7 +140,98 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
     else emit(d.action, { phase: 'end', pointerId: d.id, ...e })
   }
 
+  const centre = (a: number, b: number) => {
+    const p = touches.get(a)!
+    const q = touches.get(b)!
+    return { cx: (p.x + q.x) / 2, cy: (p.y + q.y) / 2, d: Math.hypot(p.x - q.x, p.y - q.y) }
+  }
+
+  const endPair = () => {
+    if (!pair) return
+    const was = pair
+    pair = null
+    if (was.engaged && was.mode === 'orbit') emit('orbit', { phase: 'end' })
+  }
+
+  const touchDown = (e: PointerEvent) => {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (touches.size === 1) leftover = false
+    else if (!pair && touches.size >= 2) {
+      // The second finger: a fold in progress is cancelled as if Esc was pressed.
+      if (drag) endDrag(true)
+      const [a, b] = [...touches.keys()]
+      const c = centre(a!, b!)
+      pair = { a: a!, b: b!, engaged: false, mode: 'orbit', moved: new Set(), cx0: c.cx, cy0: c.cy, d0: c.d, ...c }
+      leftover = true
+      e.preventDefault()
+      return
+    }
+    if (pair || leftover || drag) return // extra fingers, or the remainder of a gesture
+    const active = document.activeElement
+    if (active instanceof HTMLElement && active !== document.body && !el.contains(active)) active.blur()
+    if (!handlers.fold) return
+    e.preventDefault()
+    if (!emit('fold', { phase: 'start', clientX: e.clientX, clientY: e.clientY, pointerId: e.pointerId })) return
+    drag = { action: 'fold', id: e.pointerId, x: e.clientX, y: e.clientY }
+    try {
+      el.setPointerCapture?.(e.pointerId)
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  const touchMove = (e: PointerEvent) => {
+    const t = touches.get(e.pointerId)
+    if (!t) return
+    t.x = e.clientX
+    t.y = e.clientY
+    if (pair && (e.pointerId === pair.a || e.pointerId === pair.b)) {
+      // Fingers report one at a time: act once both have moved (or one moved twice, the
+      // other being still), so a single finger's step is not mistaken for a pinch.
+      const again = pair.moved.has(e.pointerId)
+      pair.moved.add(e.pointerId)
+      if (pair.moved.size < 2 && !again) return
+      pair.moved.clear()
+      const c = centre(pair.a, pair.b)
+      if (!pair.engaged) {
+        const travel = Math.hypot(c.cx - pair.cx0, c.cy - pair.cy0)
+        const spread = Math.abs(c.d - pair.d0)
+        if (travel < TOUCH_SLOP_PX && spread < TOUCH_SLOP_PX) return
+        // The dominant movement wins and holds until the fingers lift.
+        pair.engaged = true
+        pair.mode = travel >= spread ? 'orbit' : 'zoom'
+        if (pair.mode === 'orbit') emit('orbit', { phase: 'start', clientX: pair.cx, clientY: pair.cy })
+      }
+      if (pair.mode === 'orbit') {
+        const dx = c.cx - pair.cx
+        const dy = c.cy - pair.cy
+        if (dx !== 0 || dy !== 0) emit('orbit', { phase: 'move', clientX: c.cx, clientY: c.cy, dx, dy })
+      } else if (c.d > 0 && pair.d > 0 && c.d !== pair.d) {
+        emit('zoom', { phase: 'tap', delta: -Math.log(c.d / pair.d) * 1000, clientX: c.cx, clientY: c.cy })
+      }
+      Object.assign(pair, c)
+      return
+    }
+    if (drag && e.pointerId === drag.id) {
+      const dx = e.clientX - drag.x
+      const dy = e.clientY - drag.y
+      drag.x = e.clientX
+      drag.y = e.clientY
+      emit('fold', { phase: 'move', clientX: e.clientX, clientY: e.clientY, dx, dy, pointerId: e.pointerId })
+    }
+  }
+
+  const touchUp = (e: PointerEvent, cancelled: boolean) => {
+    if (!touches.delete(e.pointerId)) return
+    if (pair && (e.pointerId === pair.a || e.pointerId === pair.b)) endPair()
+    else if (drag && e.pointerId === drag.id) {
+      endDrag(cancelled, { phase: 'end', clientX: e.clientX, clientY: e.clientY })
+    }
+    if (touches.size === 0) leftover = false
+  }
+
   const onPointerDown = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') return touchDown(e)
     // A press on the canvas takes focus back from any island control (a slider, a
     // field), so the shortcuts are never left dead behind a stale focus.
     const active = document.activeElement
@@ -140,6 +257,7 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
   }
 
   const onPointerMove = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') return touchMove(e)
     if (!drag || e.pointerId !== drag.id) return
     if (e.buttons === 0 && e.pointerType !== 'touch') {
       endDrag(true, { phase: 'end', clientX: e.clientX, clientY: e.clientY }) // the release was missed
@@ -153,10 +271,12 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
   }
 
   const onPointerUp = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') return touchUp(e, false)
     if (!drag || e.pointerId !== drag.id) return
     endDrag(false, { phase: 'end', clientX: e.clientX, clientY: e.clientY })
   }
   const onPointerCancel = (e: PointerEvent) => {
+    if (e.pointerType === 'touch') return touchUp(e, true)
     if (!drag || e.pointerId !== drag.id) return
     endDrag(true, { phase: 'end', clientX: e.clientX, clientY: e.clientY })
   }
@@ -167,6 +287,9 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
   }
   const onBlur = () => {
     endDrag(true)
+    endPair()
+    touches.clear()
+    leftover = false
     releaseHeld()
   }
 
@@ -191,6 +314,13 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
     if (bound('zoom')) {
       e.preventDefault()
       emit('zoom', { phase: 'tap', delta: dy, clientX: e.clientX, clientY: e.clientY })
+      return
+    }
+    // A trackpad pinch arrives as ctrl+wheel: zoom, never the browser's page zoom,
+    // unless the user bound Ctrl+wheel to something.
+    if (e.ctrlKey && handlers.zoom && !(Object.keys(b) as Action[]).some(a => handlers[a] && b[a].some(x => x.type === 'wheel' && x.mods.mod))) {
+      e.preventDefault()
+      emit('zoom', { phase: 'tap', delta: dy * PINCH_WHEEL_GAIN, clientX: e.clientX, clientY: e.clientY })
     }
   }
 
@@ -256,6 +386,8 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   return () => {
+    if (prevTouchAction) el.style.setProperty('touch-action', prevTouchAction)
+    else el.style.removeProperty('touch-action')
     el.removeEventListener('pointerdown', onPointerDown)
     el.removeEventListener('lostpointercapture', onLost)
     el.removeEventListener('wheel', onWheel)

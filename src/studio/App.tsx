@@ -3,7 +3,7 @@
 // hint line. The Stage follows the store (model, preview, paper). Islands fade
 // to 40% while a fold gesture is active (App.css, [data-folding]).
 import './App.css'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { current, poses } from '@engine'
 import type { Stage } from '../render/Stage'
 import { setPaperDefaultsSource, useStudio, type StudioState } from './store'
@@ -19,6 +19,7 @@ import { PaperPanel } from './islands/PaperPanel'
 import { Notice } from './islands/Notice'
 import { bootStudio } from './boot'
 import { exportPng } from '../persistence/png'
+import { measureInsets } from './insets'
 import { LiveLog } from './LiveLog'
 import { SheetHost } from './SheetHost'
 import { useUi } from './ui'
@@ -47,6 +48,7 @@ export function App() {
   const folding = useStudio(s => s.gesture !== null)
   const [paperOpen, setPaperOpen] = useState(false)
   const hostRef = useRef<HTMLDivElement>(null)
+  const [sheetOpen, setSheetOpen] = useState(false)
   const [stageReady, setStageReady] = useState<Stage | null>(null)
   useInput(stageReady)
   // Restore the autosave first; only an unrestored studio opens on the user's
@@ -78,18 +80,55 @@ export function App() {
       stage?.dispose()
     }
   }, [])
+  // Keep the camera framing centred on the area the islands leave free.
+  const dockRef = useRef<HTMLDivElement>(null)
+  const layout = useCallback(() => {
+    if (!stageReady) return
+    const q = (sel: string) => document.querySelector(sel)?.getBoundingClientRect() ?? null
+    stageReady.setInsets(
+      measureInsets({ width: window.innerWidth, height: window.innerHeight }, { tools: q('.tools'), steps: q('.steps'), dock: dockRef.current?.getBoundingClientRect() }),
+    )
+  }, [stageReady])
+  useEffect(() => {
+    layout()
+    window.addEventListener('resize', layout)
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(layout) : null
+    for (const sel of ['.tools', '.steps']) {
+      const el = document.querySelector(sel)
+      if (el) ro?.observe(el)
+    }
+    if (dockRef.current) ro?.observe(dockRef.current)
+    return () => {
+      window.removeEventListener('resize', layout)
+      ro?.disconnect()
+    }
+  }, [layout, sheetOpen])
   return (
     <main className="studio" data-folding={folding ? '' : undefined}>
       <div className="stage-host" data-stage-host ref={hostRef} />
-      <TopBar paperOpen={paperOpen} onTogglePaper={() => setPaperOpen(o => !o)}
+      <TopBar paperOpen={paperOpen} onTogglePaper={() => {
+          setSheetOpen(true)
+          setPaperOpen(o => !o)
+        }}
         onExport={stageReady ? t => void exportPng(stageReady, useStudio.getState().history.cursor, t) : undefined}
         onSettings={() => useUi.getState().open('settings')} />
-      <Tools />
-      <Steps />
-      {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
-      <div className="bottom">
-        <FoldBar />
-        <HintLine />
+      <div className="lower">
+        <div className="bottom">
+          <FoldBar />
+          <HintLine />
+        </div>
+        {/* Wide: the islands float where they are. Narrow (< 720 px): this is the bottom sheet. */}
+        <div className="dock" ref={dockRef} data-open={sheetOpen ? '' : undefined}>
+          <button type="button" className="dock-handle" aria-expanded={sheetOpen} aria-controls="dock-body" onClick={() => setSheetOpen(o => !o)}>
+            <span className="grabber" aria-hidden="true" />
+            Steps, presets and paper
+          </button>
+          <Tools />
+          <div className="dock-body" id="dock-body">
+            <Steps />
+            {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
+          </div>
+        </div>
       </div>
       <Notice />
       <LiveLog />

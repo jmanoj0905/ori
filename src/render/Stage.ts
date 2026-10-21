@@ -14,6 +14,7 @@ import { clientToPlane, pxPerUnit, toNdc } from './pickMath'
 import * as THREE from 'three'
 import type { FacePose, FoldKind, Frame, Preview, Tool, Vec2 } from '@engine'
 import { DEFAULT_PAPER, type PaperSettings } from '../studio/store'
+import { NO_INSETS, sameInsets, type Insets } from '../studio/insets'
 import { tween } from '../studio/motion'
 import {
   DEFAULT_TILT,
@@ -98,6 +99,10 @@ export class Stage {
   private paper: PaperSettings = DEFAULT_PAPER
   private sheet = { width: 1, height: 1 }
   private framed = false
+  /** Islands' footprint: the sheet is framed and centred in the area left free. */
+  private insets: Insets = NO_INSETS
+  /** The user has orbited, panned or zoomed since the last framing: do not refit on their behalf. */
+  private userMoved = false
   /** Wall time of the last setPreview, ms (dev diagnostics). */
   lastPreviewMs = 0
 
@@ -166,6 +171,7 @@ export class Stage {
       this.framed = true
       const c = this.modelCenter()
       this.stopView()
+      this.userMoved = false
       this.cam = { ...this.cam, tx: c.x, ty: c.y, distance: this.fitDistance() }
       this.applyCamera(this.cam)
     }
@@ -179,6 +185,20 @@ export class Stage {
     this.buildPreview()
     this.lastPreviewMs = performance.now() - t0
     this.invalidate()
+  }
+
+  /**
+   * Tell the Stage how much of the viewport the islands cover (CSS px). The
+   * camera view is offset so the sheet is centred in the free area; picking
+   * stays exact because the offset lives in the projection matrix, which every
+   * pick, ray and pxPerUnit goes through, against the full canvas rect.
+   */
+  setInsets(i: Insets): void {
+    if (sameInsets(i, this.insets)) return
+    this.insets = i
+    if (!this.userMoved) this.cam.distance = this.fitDistance()
+    this.applyViewOffset()
+    this.applyCamera(this.cam)
   }
 
   setPaper(s: PaperSettings): void {
@@ -280,6 +300,7 @@ export class Stage {
       distance: this.fitDistance(),
     }
     this.stopView()
+    this.userMoved = false
     const from = { ...this.cam }
     const ctl = (this.viewCtl = new AbortController())
     // The shared tween (studio/motion): instant, one frame, when `animate` is false.
@@ -301,6 +322,7 @@ export class Stage {
   /** Orbit by a pointer delta in pixels (Task 6 binds this to actions). */
   orbit(dx: number, dy: number): void {
     this.stopView()
+    this.userMoved = true
     this.cam.azimuth -= dx * 0.006
     this.cam.tilt = clamp(this.cam.tilt - dy * 0.006, 0, MAX_TILT)
     this.applyCamera(this.cam)
@@ -309,6 +331,7 @@ export class Stage {
   /** Pan by a pointer delta in pixels, in the view plane. */
   pan(dx: number, dy: number): void {
     this.stopView()
+    this.userMoved = true
     const worldPerPx = (2 * this.cam.distance * Math.tan((FOV_DEG * Math.PI) / 360)) / this.height
     const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0)
     const up = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 1)
@@ -321,6 +344,7 @@ export class Stage {
   /** Zoom by a wheel-like delta (positive = out). */
   zoom(delta: number): void {
     this.stopView()
+    this.userMoved = true
     this.cam.distance = clamp(this.cam.distance * Math.exp(delta * 0.001), 0.3, 40)
     this.applyCamera(this.cam)
   }
@@ -337,6 +361,7 @@ export class Stage {
     this.washiUniforms.uResolution.value.set(w, h)
     this.syncLines(w, h, scale)
     this.camera.aspect = w / h
+    this.camera.clearViewOffset() // an export is centred on the sheet, not on the free area
     this.camera.updateProjectionMatrix()
     this.washi.visible = !transparent
     this.renderer.setClearAlpha(transparent ? 0 : 1)
@@ -541,8 +566,18 @@ export class Stage {
     this.washiUniforms.uResolution.value.set(this.width * this.dpr, this.height * this.dpr)
     this.syncLines(this.width * this.dpr, this.height * this.dpr, this.dpr)
     this.camera.aspect = this.width / this.height
-    this.camera.updateProjectionMatrix()
+    this.applyViewOffset()
     this.invalidate()
+  }
+
+  /** Shift the image so the sheet's centre falls in the middle of the free area (see setInsets). */
+  private applyViewOffset(): void {
+    const { left, right, top, bottom } = this.insets
+    const sx = (left - right) / 2
+    const sy = (top - bottom) / 2
+    if (sx === 0 && sy === 0) this.camera.clearViewOffset()
+    else this.camera.setViewOffset(this.width, this.height, -sx, -sy, this.width, this.height)
+    this.camera.updateProjectionMatrix()
   }
 
   /** Crease dash shaders work in pixels: keep their viewport current. */
@@ -553,8 +588,11 @@ export class Stage {
   }
 
   private fitDistance(): number {
-    // Extra air around the sheet so the floating islands (fold bar, hint) never sit on its edges.
-    return frameBounds(this.sheet, FOV_DEG, this.width / this.height).distance * ISLAND_AIR
+    // Fit the free area between the islands, with extra air so the fold bar and hint never sit on the edges.
+    const { left, right, top, bottom } = this.insets
+    const fw = Math.max(this.width * 0.3, this.width - left - right)
+    const fh = Math.max(this.height * 0.3, this.height - top - bottom)
+    return frameBounds(this.sheet, FOV_DEG, fw / fh).distance * (this.height / fh) * ISLAND_AIR
   }
 
   private applyCamera(c: CamState): void {

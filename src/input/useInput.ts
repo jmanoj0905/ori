@@ -71,7 +71,7 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
     const dispose = createRouter(el, () => useSettings.getState().bindings, handlers)
     // While the keyboard cursor is up it owns the marker: pointer hover must not fight it.
     const hover = (e: PointerEvent) => {
-      if (kf.phase() === 'idle') g.hover(e)
+      if (e.pointerType !== 'touch' && kf.phase() === 'idle') g.hover(e) // no hover on glass
     }
     const leave = () => {
       if (kf.phase() === 'idle') g.leave()

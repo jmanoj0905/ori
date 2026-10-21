@@ -352,18 +352,23 @@ describe('useStudio store', () => {
 
 describe('settle animation', () => {
   let now = 0
-  let queue: ((t: number) => void)[] = []
+  let queue = new Map<number, (t: number) => void>()
+  let nextId = 1
   const flush = (dt: number) => {
     now += dt
-    const q = queue
-    queue = []
+    const q = [...queue.values()]
+    queue = new Map()
     q.forEach(cb => cb(now))
   }
   beforeEach(() => {
     now = 0
-    queue = []
-    vi.stubGlobal('requestAnimationFrame', (cb: (t: number) => void) => queue.push(cb))
-    vi.stubGlobal('cancelAnimationFrame', () => { queue = [] })
+    queue = new Map()
+    vi.stubGlobal('requestAnimationFrame', (cb: (t: number) => void) => {
+      const id = nextId++
+      queue.set(id, cb)
+      return id
+    })
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => { queue.delete(id) })
   })
   afterEach(() => vi.unstubAllGlobals())
 
@@ -397,22 +402,63 @@ describe('settle animation', () => {
     expect(s.getState().history.steps).toHaveLength(1)
     expect(s.getState().settling).toBeNull()
     expect(seen.every(a => a === null)).toBe(true)
-    expect(queue).toHaveLength(0)
+    expect(queue.size).toBe(0)
   })
 
-  test('undo, begin or a new fold mid-settle cancels it and shows the final state', async () => {
-    for (const act of [
-      (s: ReturnType<typeof fresh>) => s.getState().undo(),
-      (s: ReturnType<typeof fresh>) => s.getState().begin([0, 1]),
-    ]) {
+  test('undo, begin, turnOver or a tool change mid-settle cancels it; no frame lands afterwards', async () => {
+    const acts: ((s: ReturnType<typeof fresh>) => void)[] = [
+      s => s.getState().undo(),
+      s => s.getState().begin([0, 1]),
+      s => void s.getState().turnOver(),
+      s => s.getState().setTool('squash'),
+      s => s.getState().newSheet('a4'),
+    ]
+    for (const act of acts) {
       const { s } = await released(false)
       flush(0)
       flush(50)
       expect(s.getState().settling).not.toBeNull()
       act(s)
       expect(s.getState().settling).toBeNull()
+      expect(queue.size).toBe(0)
+      flush(10)
+      expect(s.getState().settling).toBeNull()
+      expect(s.getState().settleStyle).toBeNull()
       flush(500)
       expect(s.getState().settling).toBeNull()
     }
+  })
+
+  test('a release without angleDeg commits the flat fold, whatever progress it was released at', async () => {
+    const flat = async (progress: number) => {
+      const s = createStudioStore({ committer: inProcessCommitter, reduced: () => true })
+      s.getState().begin([1, 1])
+      s.getState().drag([0, 0], progress)
+      await s.getState().release()
+      return current(s.getState().history).vertices_coords
+    }
+    expect(await flat(0.6)).toEqual(await flat(1))
+  })
+
+  test('the settle keeps the released gesture style (mountain) for the Stage', async () => {
+    const s = createStudioStore({ committer: inProcessCommitter, reduced: () => false })
+    const calls: { p: unknown; style: Record<string, unknown> }[] = []
+    const stage = {
+      setPaper() {}, setFrame() {},
+      setPreview: (p: unknown, style: Record<string, unknown> = {}) => calls.push({ p, style }),
+    }
+    const { syncStage } = await import('./App')
+    s.subscribe((st, prev) => syncStage(stage as never, st, prev))
+    s.getState().setKind('mountain')
+    s.getState().begin([1, 1])
+    s.getState().drag([0, 0], 0.6)
+    await s.getState().release()
+    flush(0)
+    flush(100)
+    const during = calls.filter(c => c.p && s.getState().gesture === null).slice(-2)
+    expect(during.length).toBeGreaterThan(0)
+    for (const c of during) expect(c.style).toMatchObject({ kind: 'mountain', tool: 'fold' })
+    flush(400)
+    expect(calls.at(-1)!.p).toBeNull()
   })
 })

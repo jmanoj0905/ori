@@ -21,7 +21,7 @@ import './islands/islands.css'
 setReducedMotionSource(() => prefersReducedMotion(useSettings.getState().reducedMotion))
 
 /** Push the store's model, preview and paper into the Stage (only what changed). */
-function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
+export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
   if (!prev || s.paper !== prev.paper) stage.setPaper(s.paper)
   if (!prev || s.history !== prev.history) {
     const frame = current(s.history)
@@ -30,7 +30,7 @@ function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
   const shown = s.preview ?? s.settling
   const was = prev && (prev.preview ?? prev.settling)
   if (!prev || shown !== was) {
-    const g = s.gesture
+    const g = s.gesture ?? (s.settling ? s.settleStyle : null)
     stage.setPreview(shown, g ? { kind: g.kind, tool: g.tool, progress: g.progress } : {})
   }
 }

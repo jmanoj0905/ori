@@ -3,19 +3,24 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { SETTLE_MS, prefersReducedMotion, tween } from './motion'
 
 let now = 0
-let queue: ((t: number) => void)[] = []
+let queue = new Map<number, (t: number) => void>()
+let nextId = 1
 const flush = (dt: number) => {
   now += dt
-  const q = queue
-  queue = []
+  const q = [...queue.values()]
+  queue = new Map()
   q.forEach(cb => cb(now))
 }
 
 beforeEach(() => {
   now = 0
-  queue = []
-  vi.stubGlobal('requestAnimationFrame', (cb: (t: number) => void) => queue.push(cb))
-  vi.stubGlobal('cancelAnimationFrame', () => { queue = [] })
+  queue = new Map()
+  vi.stubGlobal('requestAnimationFrame', (cb: (t: number) => void) => {
+    const id = nextId++
+    queue.set(id, cb)
+    return id
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => { queue.delete(id) })
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -27,7 +32,7 @@ describe('motion', () => {
     await tween(0, 10, 250, f, true)
     expect(f).toHaveBeenCalledTimes(1)
     expect(f).toHaveBeenCalledWith(10)
-    expect(queue).toHaveLength(0)
+    expect(queue.size).toBe(0)
   })
 
   test('animated: eases through intermediates and ends exactly on `to`', async () => {

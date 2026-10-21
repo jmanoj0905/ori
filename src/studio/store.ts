@@ -120,6 +120,8 @@ export type StudioState = {
   preview: Preview | null
   /** Visual only: the flap easing into its committed angle after a release. */
   settling: Preview | null
+  /** The released gesture's draw style (kind / tool / progress), kept for the settle. */
+  settleStyle: { kind: FoldKind; tool: Tool; progress: number } | null
   refusal: string | null
   paper: PaperSettings
   hint: string
@@ -166,7 +168,7 @@ const sizeOf = (size: SheetSize): PaperSize | null => {
   return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? { width, height } : null
 }
 
-const idle = { gesture: null, preview: null, refusal: null, settling: null } as const
+const idle = { gesture: null, preview: null, refusal: null, settling: null, settleStyle: null } as const
 
 export function createStudioStore({ committer = createWorkerCommitter(), reduced = isReducedMotion }: StudioOptions = {}) {
   return create<StudioState>()((set, get) => {
@@ -180,17 +182,18 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
     /** Ease the just-committed flap from its released progress to 1 (see header). */
     const startSettle = (base: History, g: Gesture | undefined, shown: Preview | null, isReduced: boolean) => {
       if (!g || !shown || g.tool !== 'fold' || g.angleDeg !== undefined || g.progress >= 1) return
-      if (!isReduced) set({ settling: shown })
+      const style = { kind: g.kind, tool: g.tool, progress: g.progress }
+      if (!isReduced) set({ settling: shown, settleStyle: style })
       const ctl = (settleCtl = new AbortController())
       void tween(g.progress, 1, SETTLE_MS, p => {
         if (ctl.signal.aborted) return
         if (p >= 1) {
           settleCtl = null
-          set({ settling: null })
+          set({ settling: null, settleStyle: null })
           return
         }
         const r = previewFold(current(base), { ...g, progress: p })
-        if (r.ok) set({ settling: r.preview })
+        if (r.ok) set({ settling: r.preview, settleStyle: { ...style, progress: p } })
       }, isReduced, ctl.signal)
     }
 
@@ -210,7 +213,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       const shown = get().preview
       const isReduced = reduced()
       endSettle()
-      set({ pending: true, settling: null })
+      set({ pending: true, settling: null, settleStyle: null })
       let result
       try {
         result = await committer(req)
@@ -256,7 +259,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
         ...(last.face === undefined ? {} : { face: last.face }),
       }
       endSettle()
-      set({ pending: true, settling: null })
+      set({ pending: true, settling: null, settleStyle: null })
       let result
       try {
         result = await committer({ frame: current(prev), gesture: g })

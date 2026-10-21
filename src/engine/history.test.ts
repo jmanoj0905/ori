@@ -76,3 +76,11 @@ describe('history', () => {
     }
   })
 })
+
+describe('jumpTo with a non-finite index (final review 1)', () => {
+  it('keeps the cursor', () => {
+    const { h } = build()
+    const u = undo(h)
+    for (const i of [NaN, Infinity, -Infinity]) expect(jumpTo(u, i)).toBe(u)
+  })
+})

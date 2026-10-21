@@ -326,3 +326,20 @@ describe('commit', () => {
     })
   })
 })
+
+describe('non-finite gestures are refused (final review 1)', () => {
+  const g = fold({ grab: [0.9, 0.5], target: [0.1, 0.5] })
+  const bad: [string, Gesture][] = [
+    ['progress NaN', { ...g, progress: NaN }],
+    ['progress Infinity', { ...g, progress: Infinity }],
+    ['grab NaN', { ...g, grab: [NaN, 0.5] }],
+    ['target Infinity', { ...g, target: [0.1, Infinity] }],
+  ]
+  for (const tool of ['fold', 'reverse', 'squash', 'petal'] as const)
+    for (const [what, b] of bad)
+      test(`${tool}: ${what}`, () => {
+        const x = { ...b, tool }
+        expect(preview(halfFolded(), x)).toEqual({ ok: false, reason: 'Drag further to fold.' })
+        expect(commit(halfFolded(), x)).toEqual({ ok: false, reason: 'Drag further to fold.' })
+      })
+})

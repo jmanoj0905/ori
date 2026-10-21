@@ -19,6 +19,7 @@ export const push = (h: History, step: Step, f: Frame): History =>
   make([...h.frames.slice(0, h.cursor + 1), f], [...h.steps.slice(0, h.cursor), step], h.cursor + 1)
 
 export const jumpTo = (h: History, index: number): History => {
+  if (!Number.isFinite(index)) return h // NaN / ±Infinity: keep the cursor
   const i = Math.min(Math.max(Math.trunc(index), 0), h.frames.length - 1)
   return i === h.cursor ? h : make(h.frames, h.steps, i)
 }

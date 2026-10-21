@@ -147,6 +147,8 @@ export const isFlatFrame = (f: Frame) => f.edges_foldAngle.every(isFlatAngle)
 // ---- dispatch ----
 
 export function preview(frame: Frame, g: Gesture): Result<{ preview: Preview }> {
+  const bad = checkGesture(g)
+  if (bad) return bad
   switch (g.tool) {
     case 'fold':
       return previewFold(frame, g)
@@ -158,6 +160,8 @@ export function preview(frame: Frame, g: Gesture): Result<{ preview: Preview }> 
 }
 
 export function commit(frame: Frame, g: Gesture): Result<{ frame: Frame; step: Step }> {
+  const bad = checkGesture(g)
+  if (bad) return bad
   switch (g.tool) {
     case 'fold':
       return commitFold(frame, g)
@@ -168,6 +172,19 @@ export function commit(frame: Frame, g: Gesture): Result<{ frame: Frame; step: S
     case 'petal':
       return petalFold(frame, g)
   }
+}
+
+const finite = (...xs: readonly number[]) => xs.every(Number.isFinite)
+
+/**
+ * Input validation shared by `preview` and `commit`: a gesture with a
+ * non-finite grab, target or progress is refused "Drag further to fold."
+ * (the same quiet refusal as a zero-length drag), so NaN never reaches the
+ * geometry, a label or the history.
+ */
+function checkGesture(g: Gesture): Refusal | null {
+  if (!finite(g.grab[0], g.grab[1], g.target[0], g.target[1], g.progress)) return refuse(TOO_SHORT)
+  return null
 }
 
 // ---- paper and turn over ----

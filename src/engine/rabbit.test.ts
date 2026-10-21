@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest'
 import {
   BASE_NAMES,
   baseFrame,
+  firstSolution,
   foldThrough,
   foldedCoords,
   layerOrders,
@@ -10,6 +11,7 @@ import {
   windings,
 } from './rabbit'
 import { area, footprintWidth, halfFolded } from './testkit'
+import { PRESETS, runPreset } from '../presets'
 
 // Step 1 spike: confirm the namespace paths recorded at the top of rabbit.ts.
 describe('rabbit-ear 0.9.41 namespace (spike)', () => {
@@ -163,4 +165,49 @@ test.each(BASE_NAMES)('baseFrame(%s) is a solved flat frame', name => {
   expect(b.edges_foldAngle).toHaveLength(b.edges_vertices.length)
   expect(b.faceOrders.length).toBeGreaterThan(0)
   expect(area(b)).toBeCloseTo(1)
+})
+
+describe('layerOrders searches the solver tree when the default pick is a dead branch (final review 2)', () => {
+  // Rabbit Ear's default faceOrders() takes choice 0 at every branch and throws
+  // when that choice dead-ends, though another branch holds a valid order.
+  const planeFrames = () => {
+    const r = runPreset(PRESETS.find(p => p.id === 'plane')!)
+    if (!r.ok) throw new Error(r.reason)
+    return r.history.frames
+  }
+  for (const i of [6, 8])
+    test(`plane frame ${i} with its faceOrders cleared re-solves to a valid order`, () => {
+      const f = planeFrames()[i]
+      const orders = layerOrders({ ...f, faceOrders: [] })
+      expect(orders).not.toBeNull()
+      // the order found is self-consistent: fed back as constraints it still solves, unchanged
+      const again = layerOrders({ ...f, faceOrders: orders! })
+      expect(again).not.toBeNull()
+      const key = (o: readonly number[]) => `${Math.min(o[0], o[1])} ${Math.max(o[0], o[1])}`
+      const pairs = new Set(orders!.map(key))
+      for (const o of again!) expect(pairs.has(key(o))).toBe(true)
+      // and it covers every overlapping pair the stored (incrementally solved) order does
+      for (const o of f.faceOrders) expect(pairs.has(key(o))).toBe(true)
+    })
+  test('every Rabbit Ear base gets a solved order (no silent [] fallback)', () => {
+    for (const name of BASE_NAMES) expect(baseFrame(name).faceOrders.length, name).toBeGreaterThan(0)
+  })
+})
+
+describe('firstSolution', () => {
+  test('skips a choice that dead-ends deeper down', () => {
+    const dead = { orders: [[1, 2, 1]] as [number, number, number][], branches: [[]] }
+    const good = { orders: [[1, 2, -1]] as [number, number, number][] }
+    const tree = { orders: [[0, 1, 1]] as [number, number, number][], branches: [[dead, good], [{ orders: [[3, 4, 1]] as [number, number, number][] }]] }
+    expect(firstSolution(tree)).toEqual([[0, 1, 1], [1, 2, -1], [3, 4, 1]])
+    expect(firstSolution({ orders: [], branches: [[dead]] })).toBeNull()
+  })
+  test("matches Rabbit Ear's default pick where that pick completes", () => {
+    const f = baseFrame('bird')
+    const g = structuredClone(f) as unknown as Record<string, unknown>
+    g.faceOrders = []
+    g.vertices_coords = foldedCoords(f).map(p => [p[0], p[1]])
+    const tree = (ear as any).layer(g)
+    expect(firstSolution(tree)).toEqual(tree.faceOrders())
+  })
 })

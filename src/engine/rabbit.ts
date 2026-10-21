@@ -73,7 +73,17 @@ type RE = {
     makeFacesWinding(g: { vertices_coords: number[][]; faces_vertices: number[][] }): boolean[]
     populate(g: REGraph): REGraph
   } & Record<BaseName, () => REGraph>
-  layer(g: REGraph): { faceOrders(): [number, number, number][] | undefined }
+  layer(g: REGraph): SolverNode
+}
+/**
+ * Rabbit Ear's layer-solver result tree (module/layer/solver.js, solve.js):
+ * `orders` hold at this node; `branches` are independent groups (AND), each a
+ * list of alternative choices (OR) — 0, 1 or 2 of them, each itself a node.
+ * A group with no choices is a dead end.
+ */
+type SolverNode = {
+  orders: [number, number, number][]
+  branches?: SolverNode[][]
 }
 const re = ear as unknown as RE
 
@@ -120,14 +130,35 @@ function folded2D(g: REGraph): number[][] {
   return re.graph.makeVerticesCoordsFolded(g, [0]).map(p => [p[0], p[1]])
 }
 
+/**
+ * One complete layer order from the solver tree, or null if none exists:
+ * depth-first, the first choice of each group that itself completes.
+ * Rabbit Ear's own `faceOrders()` always takes choice 0 and throws when that
+ * choice dead-ends further down, even though a sibling choice completes (seen
+ * on the paper plane's frames 6 and 8 with their orders cleared). Groups are
+ * independent, so any completing choice per group combines into a valid
+ * order. Where choice 0 completes everywhere this is exactly `faceOrders()`.
+ */
+export function firstSolution(node: SolverNode): [number, number, number][] | null {
+  const out: [number, number, number][][] = [node.orders]
+  for (const group of node.branches ?? []) {
+    let found: [number, number, number][] | null = null
+    for (const choice of group) if ((found = firstSolution(choice))) break
+    if (!found) return null
+    out.push(found)
+  }
+  return out.flat()
+}
+
 function solveOrders(g: REGraph): [number, number, number][] | null {
   if (!allFlat(g)) return null
+  let tree: SolverNode
   try {
-    const solved = re.layer({ ...g, vertices_coords: folded2D(g) }).faceOrders()
-    return solved ?? null
+    tree = re.layer({ ...g, vertices_coords: folded2D(g) })
   } catch {
-    return null
+    return null // the solver itself found no order
   }
+  return firstSolution(tree)
 }
 
 const quiet = <T>(fn: () => T): T => {
@@ -150,7 +181,9 @@ export function makeSheet(size: PaperSize): Frame {
 
 export function baseFrame(name: BaseName): Frame {
   const g = repopulate(re.graph[name]())
-  g.faceOrders = solveOrders(g) ?? []
+  const orders = solveOrders(g)
+  if (!orders) throw new Error(`Rabbit Ear base "${name}" has no layer order`)
+  g.faceOrders = orders
   return toFrame(g)
 }
 

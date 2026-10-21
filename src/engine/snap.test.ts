@@ -146,3 +146,34 @@ describe('snapPoint', () => {
     expect(r.snapped).toBeUndefined()
   })
 })
+
+describe('cached landmarks cannot be corrupted through results (final review 5c)', () => {
+  const tryMutate = (fn: () => void) => {
+    try {
+      fn()
+    } catch {
+      // frozen: a TypeError in strict mode is fine, silent corruption is not
+    }
+  }
+  test('mutating snapPoint results leaves the per-frame cache intact', () => {
+    const f = sheet()
+    const before = JSON.stringify(landmarks(f, { edges: true }))
+    const corner = snapPoint([0.99, 0.99], landmarks(f), 0.05)
+    tryMutate(() => ((corner.p as number[])[0] = 42))
+    tryMutate(() => ((corner.snapped!.p as number[])[1] = 42))
+    tryMutate(() => ((corner.snapped as { kind: string }).kind = 'edge'))
+    const edge = snapPoint([0.3, 0.01], landmarks(f, { edges: true }).filter(l => l.kind === 'edge'), 0.05)
+    expect(edge.snapped?.kind).toBe('edge')
+    tryMutate(() => ((edge.snapped!.seg![0] as number[])[0] = 42))
+    expect(JSON.stringify(landmarks(f, { edges: true }))).toBe(before)
+  })
+  test('so does mutating the landmarks list itself', () => {
+    const f = sheet()
+    const before = JSON.stringify(landmarks(f, { edges: true }))
+    const ls = landmarks(f, { edges: true })
+    tryMutate(() => ((ls[0].p as number[])[0] = 42))
+    tryMutate(() => ((ls[ls.length - 1].seg![1] as number[])[1] = 42))
+    ls.length = 0
+    expect(JSON.stringify(landmarks(f, { edges: true }))).toBe(before)
+  })
+})

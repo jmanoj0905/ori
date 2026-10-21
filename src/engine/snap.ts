@@ -30,6 +30,9 @@
  * and returns its point (for an edge, the nearest point on its segment);
  * `snapped` is that landmark (an edge's `p` is the projected point). With
  * nothing in range it returns the raw point and no `snapped`.
+ * Landmarks are cached per frame and shared, so they are frozen (with their
+ * points and segments); `landmarks()` returns a fresh array of them, and
+ * `snapPoint`'s `p` is a fresh copy the caller may keep or change.
  */
 import { cross, dot, sub } from './geometry'
 import { foldedCoords } from './rabbit'
@@ -114,7 +117,18 @@ function compute(frame: Frame): { points: Landmark[]; edges: Landmark[] } {
     })
     if (!same) edges.push({ p: mid(s.a, s.b), kind: 'edge', seg: [s.a, s.b] })
   }
-  return { points, edges }
+  return { points: points.map(freeze), edges: edges.map(freeze) }
+}
+
+/** Cached landmarks are shared by every caller: freeze them, points and segments included. */
+function freeze(l: Landmark): Landmark {
+  Object.freeze(l.p)
+  if (l.seg) {
+    Object.freeze(l.seg[0])
+    Object.freeze(l.seg[1])
+    Object.freeze(l.seg)
+  }
+  return Object.freeze(l)
 }
 
 /** The crossing point of segments ab and cd (endpoints included); null if parallel or apart. */
@@ -151,6 +165,7 @@ export function snapPoint(p: Vec2, ls: readonly Landmark[], radius: number): { p
     if (!best || RANK[l.kind] < RANK[best.l.kind] || (RANK[l.kind] === RANK[best.l.kind] && d < best.d)) best = { q, d, l }
   }
   if (!best) return { p }
-  const snapped: Landmark = best.l.kind === 'edge' ? { ...best.l, p: best.q } : best.l
-  return { p: best.q, snapped }
+  const q: Vec2 = [best.q[0], best.q[1]]
+  const snapped: Landmark = best.l.kind === 'edge' ? freeze({ ...best.l, p: [q[0], q[1]] }) : best.l
+  return { p: q, snapped }
 }

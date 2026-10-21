@@ -1,7 +1,7 @@
 // @engine: the public API (spec §6). The UI imports the engine only from here.
-// Runtime exports are exactly the R5 list plus layerRanks (final review 4a;
-// pinned by api.test.ts); everything
-// else is types. Nothing here imports rabbit-ear (only rabbit.ts may).
+// Runtime exports are exactly the R5 list plus layerRanks (final review 4a),
+// pinned by api.test.ts; everything else is types. Nothing here imports
+// rabbit-ear (only rabbit.ts may).
 export { createPaper, PAPER_SIZES, preview, commit, turnOver } from './ops'
 export { poses } from './poses'
 export { landmarks, snapPoint } from './snap'

@@ -11,7 +11,8 @@
 // shortcut sheets, the preset player) and the engine Worker (spawned on the
 // first commit).
 //
-// Also asserts that the shipped build carries no e2e test hook (window.__ori,
+// Also asserts that the build ships LICENSE.txt and THIRD_PARTY_NOTICES.txt,
+// and that the shipped build carries no e2e test hook (window.__ori,
 // exposed only by `vite build --mode e2e`).
 //
 // Runs after every `npm run build` (postbuild), so a build over budget fails;
@@ -71,6 +72,14 @@ console.log(`First load: ${kb(total)} KB gzip of JS (limit ${LIMIT_KB} KB)`)
 
 let failed = total >= LIMIT_KB * 1024
 if (failed) console.error(`FAIL: first-load JS ${kb(total)} KB ≥ ${LIMIT_KB} KB gzip`)
+
+// The licences ship with the site (vite.config.ts, licences()).
+for (const f of ['LICENSE.txt', 'THIRD_PARTY_NOTICES.txt']) {
+  if (!existsSync(join(dist, f)) || readFileSync(join(dist, f), 'utf8').length < 200) {
+    console.error(`FAIL: ${f} missing from the build`)
+    failed = true
+  } else console.log(`Ships ${f}.`)
+}
 
 if (dist === 'dist') {
   const hooked = all.filter(f => readFileSync(join(dist, f), 'utf8').includes('__ori'))

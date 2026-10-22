@@ -365,7 +365,10 @@ export function SettingsSheet({ onClose }: { onClose(): void }) {
           <section aria-labelledby={`${id}-about`} className="sheet-sec">
             <h3 id={`${id}-about`}>About</h3>
             <p>Ori · 折り, a browser origami studio. Version {version}.</p>
-            <p>Free software under the GNU General Public License v3 (GPLv3).</p>
+            <p>
+              Free software under the{' '}
+              <a href="/LICENSE.txt" target="_blank" rel="noopener">GNU General Public License v3</a> (GPLv3).
+            </p>
             <p>
               Source:{' '}
               <a href={SOURCE_URL} target="_blank" rel="noopener noreferrer">{SOURCE_URL}</a>
@@ -374,6 +377,10 @@ export function SettingsSheet({ onClose }: { onClose(): void }) {
               Credits: folding geometry by{' '}
               <a href="https://rabbitear.org" target="_blank" rel="noopener noreferrer">Rabbit Ear</a>
               {' '}(Robby Kraft), drawn with Three.js.
+            </p>
+            <p>
+              <a href="/THIRD_PARTY_NOTICES.txt" target="_blank" rel="noopener">Third-party licences</a>
+              {' '}(React, Three.js, Zustand, Rabbit Ear, IBM Plex and Instrument Serif fonts).
             </p>
           </section>
         </div>

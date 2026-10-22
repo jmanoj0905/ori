@@ -225,3 +225,9 @@ describe('settings sheet: preferences', () => {
     expect(s).toHaveTextContent('Esc')
   })
 })
+
+test('About links the GPL text and the third-party licences', () => {
+  render(<SettingsSheet onClose={() => {}} />)
+  expect(screen.getByRole('link', { name: 'GNU General Public License v3' })).toHaveAttribute('href', '/LICENSE.txt')
+  expect(screen.getByRole('link', { name: 'Third-party licences' })).toHaveAttribute('href', '/THIRD_PARTY_NOTICES.txt')
+})

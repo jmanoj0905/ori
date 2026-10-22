@@ -10,3 +10,9 @@
 
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+/LICENSE.txt
+  Content-Type: text/plain; charset=utf-8
+
+/THIRD_PARTY_NOTICES.txt
+  Content-Type: text/plain; charset=utf-8

@@ -3,7 +3,9 @@ import { PAPER_SIZES, commit, createPaper, push, startHistory, turnOver } from '
 import type { Frame, History, Step } from '@engine'
 import { DEFAULT_PAPER, type PaperSettings } from '../paper'
 import { PRESETS, runPreset } from '../presets'
-import { CODEC_VERSION, NEWER, DAMAGED, decodeShare, encodeShare, inflateBounded } from './shareCodec'
+import { GOLDEN_V1 } from './shareGolden.fixtures'
+import { cleanPaper } from '../paper'
+import { CODEC_VERSION, NEWER, DAMAGED, decoders, decodeShare, encodeShare, inflateBounded } from './shareCodec'
 import { MAX_RESTORE_STEPS, replayStepOf, replaySave, type ReplayStep } from './replay'
 import { deflateSync, strToU8 } from 'fflate'
 
@@ -150,5 +152,50 @@ describe('share codec', () => {
   test('encode of a non-replayable step does not throw an unrelated error type', () => {
     const bad: Step = { kind: 'fold', params: {}, label: 'x', at: 0 }
     expect(() => encodeShare(DEFAULT_PAPER, [bad])).toThrow()
+  })
+})
+
+describe('golden v1 links (frozen: old links must keep decoding)', () => {
+  for (const [id, g] of Object.entries(GOLDEN_V1)) {
+    test(`${id}: the literal v1 link decodes and replays to the recorded final frame`, () => {
+      expect(g.link.startsWith('v1:')).toBe(true)
+      const d = decodeShare(g.link)
+      if (!d.ok) throw new Error(d.reason)
+      expect(d.paper).toEqual(g.paper)
+      expect(d.steps).toHaveLength(g.steps)
+      const steps = d.steps.map(s => replayStepOf(s)) as ReplayStep[]
+      const r = replaySave({ paper: d.paper, steps, cursor: steps.length })
+      expect(r).not.toBeNull()
+      expect(r!.history.frames).toHaveLength(g.frames)
+      const f = r!.history.frames[r!.history.cursor]!
+      expect(f.faces_vertices).toEqual(g.final.faces_vertices)
+      expect(f.edges_assignment).toEqual(g.final.edges_assignment)
+      expect(f.edges_foldAngle).toEqual(g.final.edges_foldAngle)
+      const got = f.vertices_coords as unknown as number[][]
+      expect(got).toHaveLength(g.final.vertices_coords.length)
+      got.forEach((p, i) => p.forEach((c, k) => expect(Math.abs(c - g.final.vertices_coords[i]![k]!)).toBeLessThan(1e-9)))
+    })
+  }
+
+  test('versions above the newest decoder say "newer Ori"; a registered v2 does not disturb v1', () => {
+    const link = GOLDEN_V1.plane.link
+    expect(decodeShare('v2:AAAA')).toEqual({ ok: false, reason: NEWER })
+    const before = decodeShare(link)
+    decoders[2] = () => ({ ok: true, paper: DEFAULT_PAPER, steps: [] })
+    try {
+      expect(decodeShare(link)).toEqual(before)
+      expect(decodeShare('v2:' + link.slice(3))).toEqual({ ok: true, paper: DEFAULT_PAPER, steps: [] })
+      expect(decodeShare('v3:AAAA')).toEqual({ ok: false, reason: NEWER })
+    } finally {
+      delete decoders[2]
+    }
+    expect(decodeShare('v2:AAAA')).toEqual({ ok: false, reason: NEWER })
+  })
+
+  test('encodeShare sanitises the paper, so every link decodes with its own decoder', () => {
+    const wild = { ...DEFAULT_PAPER, thickness: 5, translucency: -2, front: 'red', size: { width: -1, height: 99999 } } as unknown as PaperSettings
+    const d = decodeShare(encodeShare(wild, []))
+    expect(d.ok).toBe(true)
+    if (d.ok) expect(d.paper).toEqual(cleanPaper(wild))
   })
 })

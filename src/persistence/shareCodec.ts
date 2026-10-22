@@ -118,7 +118,8 @@ function packPaper(p: PaperSettings): unknown[] {
 
 /** `v1:<base64url>` (no leading '#') for the paper settings and step sequence. Throws on a step that cannot replay. */
 export function encodeShare(paper: PaperSettings, steps: Step[]): string {
-  const json = JSON.stringify([packPaper(paper), steps.map(packStep)])
+  // Sanitise first: a link must never be one its own decoder refuses (out-of-range thickness, bad colour, ...).
+  const json = JSON.stringify([packPaper(cleanPaper(paper)), steps.map(packStep)])
   return `v${CODEC_VERSION}:${toB64(deflateSync(strToU8(json), { level: 9 }))}`
 }
 
@@ -169,17 +170,28 @@ function unpackStep(v: unknown): Step {
   return replayStepOf(step) ? step : bad()
 }
 
+type Decoded = { paper: PaperSettings; steps: Step[] }
+
+/** Payload decoders by link version. A new format adds an entry; old versions keep decoding. */
+export const decoders: Record<number, (payload: unknown) => Result<Decoded>> = {
+  1: raw => {
+    if (!isArr(raw) || raw.length !== 2 || !isArr(raw[1]) || raw[1].length > MAX_RESTORE_STEPS) return bad()
+    return { ok: true, paper: unpackPaper(raw[0]), steps: raw[1].map(unpackStep) }
+  },
+}
+
 /** The paper and steps for a share hash (with or without '#'), or a refusal. Never throws. */
-export function decodeShare(hash: string): Result<{ paper: PaperSettings; steps: Step[] }> {
+export function decodeShare(hash: string): Result<Decoded> {
   try {
     const text = hash.startsWith('#') ? hash.slice(1) : hash
     const m = /^v([1-9]\d{0,5}):/.exec(text) // canonical version only (no v01)
     if (!m || text.length > MAX_HASH_CHARS) return bad()
-    if (Number(m[1]) > CODEC_VERSION) return { ok: false, reason: NEWER }
-    if (Number(m[1]) !== CODEC_VERSION) return bad()
+    const version = Number(m[1])
+    if (version > Math.max(...Object.keys(decoders).map(Number))) return { ok: false, reason: NEWER }
+    const decode = Object.hasOwn(decoders, version) ? decoders[version] : undefined
+    if (!decode) return bad()
     const raw: unknown = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(inflateBounded(fromB64(text.slice(m[0].length)))))
-    if (!isArr(raw) || raw.length !== 2 || !isArr(raw[1]) || raw[1].length > MAX_RESTORE_STEPS) return bad()
-    return { ok: true, paper: unpackPaper(raw[0]), steps: raw[1].map(unpackStep) }
+    return decode(raw)
   } catch {
     return { ok: false, reason: DAMAGED }
   }

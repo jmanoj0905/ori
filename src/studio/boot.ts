@@ -12,6 +12,7 @@
 // meanwhile, the restored model is dropped and the user's choice is saved. A
 // restore that fails (a step does not replay, the worker dies or times out)
 // shows RESTORE_FAILED once and opens a blank sheet.
+import { createStore } from 'zustand/vanilla'
 import { flushSave, readSave, saveHistory } from '../persistence/autosave'
 import { RESTORE_FAILED, noticeOnce } from '../persistence/notice'
 import { isShareHash, openFromHash } from '../persistence/openFromHash'
@@ -30,6 +31,7 @@ let teardown: (() => void)[] = []
 export function resetBootForTests(): void {
   teardown.forEach(f => f())
   teardown = []
+  recordingGate.setState({ busy: false })
   booted = new WeakMap()
   restoring = new WeakSet()
 }
@@ -69,12 +71,30 @@ function startAutosave(store: Store, opts: BootOptions = {}): void {
  * listen for it: ask if there is work, replay, replace, save, clear the hash.
  * Our own clearHash uses replaceState (no hashchange); a non-share hash is ignored.
  */
+/** True while a recording owns the Stage: a pasted share link waits until it ends (the dialog's onBusy drives this). */
+export const recordingGate = createStore<{ busy: boolean }>(() => ({ busy: false }))
+
 function startShareListener(store: Store, opts: BootOptions): void {
   const untouchedPaper = store.getState().paper
   let opening = false
+  let waiting: (() => void) | null = null
   const onHash = async () => {
     const hash = location.hash
     if (!isShareHash(hash) || opening || restoring.has(store)) return
+    if (recordingGate.getState().busy) {
+      // Defer: nothing may touch the model, or ask a question, under a recording. The hash stays in place.
+      if (!waiting) {
+        const stop = recordingGate.subscribe(g => {
+          if (g.busy) return
+          stop()
+          waiting = null
+          void onHash()
+        })
+        waiting = stop
+        teardown.push(stop)
+      }
+      return
+    }
     opening = true
     const worker = opts.restorer ? { restore: opts.restorer, dispose() {} } : defaultRestorer()
     try {

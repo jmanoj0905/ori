@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { current } from '@engine'
 import { inProcessCommitter } from '../studio/committer'
 import { createStudioStore, DEFAULT_PAPER } from '../studio/store'
-import { bootStudio, resetBootForTests } from '../studio/boot'
+import { bootStudio, recordingGate, resetBootForTests } from '../studio/boot'
 import { AUTOSAVE_KEY, cancelSave, flushSave, saveHistory } from './autosave'
 import { resetNotices, notices } from './notice'
 import { NEWER, DAMAGED, encodeShare } from './shareCodec'
@@ -186,6 +186,29 @@ describe('a link pasted into an open tab (hashchange)', () => {
     const saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)!)
     expect(saved.steps).toHaveLength(2)
     expect(saved.paper.front).toBe('#2F4A8A')
+  })
+
+  test('a link pasted during a recording waits until the recording ends, then opens as usual', async () => {
+    const a = await twoFolds()
+    const b = fresh()
+    const confirm = vi.fn(() => Promise.resolve(true))
+    await bootStudio(b, { confirm })
+    await fold(b, [1, 1], [0, 0])
+    recordingGate.setState({ busy: true })
+    try {
+      history.replaceState(null, '', '/' + link(a))
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+      window.dispatchEvent(new HashChangeEvent('hashchange')) // a second event must not queue a second open
+      await new Promise(r => setTimeout(r, 30))
+      expect(confirm).not.toHaveBeenCalled()
+      expect(location.hash).not.toBe('') // link kept for after the recording
+      expect(b.getState().history.steps).toHaveLength(1)
+    } finally {
+      recordingGate.setState({ busy: false })
+    }
+    await vi.waitFor(() => expect(b.getState().history.steps).toHaveLength(2))
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(location.hash).toBe('')
   })
 
   test('a non-share hash change is ignored', async () => {

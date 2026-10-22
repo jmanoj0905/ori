@@ -21,7 +21,7 @@ import { HintLine } from './islands/HintLine'
 import { Steps } from './islands/Steps'
 import { PaperPanel } from './islands/PaperPanel'
 import { Notice } from './islands/Notice'
-import { bootStudio } from './boot'
+import { bootStudio, recordingGate } from './boot'
 import { exportPng } from '../persistence/png'
 import { EXPORT_FAILED, notify } from '../persistence/notice'
 import { measureInsets, NARROW_PX } from './insets'
@@ -107,7 +107,16 @@ export function App() {
   const [recordOpen, setRecordOpen] = useState(false)
   /** A recording owns the Stage: the replay bar (and its Player) step aside meanwhile. */
   const [recording, setRecording] = useState(false)
+  const setBusy = useCallback((busy: boolean) => {
+    recordingGate.setState({ busy })
+    setRecording(busy)
+  }, [])
   const [stageReady, setStageReady] = useState<Stage | null>(null)
+  // A recording leaves the Stage showing its last captured frame. When it ends, redraw the model
+  // from the store (a no-op visually when nothing changed) unless replay is drawing it.
+  useEffect(() => {
+    if (!recording && stageReady && !useStudio.getState().replaying) syncStage(stageReady, useStudio.getState())
+  }, [recording, stageReady])
   useInput(stageReady)
   // Restore the autosave first; only an unrestored studio opens on the user's
   // paper defaults (settings, section 5). Then autosave starts (see boot.ts).
@@ -252,15 +261,16 @@ export function App() {
         </div>
         <CoachMark stage={stageReady && !stageDown(stageStatus) ? stageReady : null} reduced={reducedMotion} />
         <Notice />
-        <OpenPrompt />
         {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
         {recordOpen && stageReady && (
           <Suspense fallback={null}>
-            <RecordDialog stage={stageReady} onClose={() => setRecordOpen(false)} onBusy={setRecording} />
+            <RecordDialog stage={stageReady} onClose={() => setRecordOpen(false)} onBusy={setBusy} />
           </Suspense>
         )}
         <LiveLog />
         <SheetHost />
+        {/* Last, so it is top-most. A share link waits for a recording to end (recordingGate), so it never sits under the record scrim. */}
+        <OpenPrompt />
       </main>
     </div>
   )

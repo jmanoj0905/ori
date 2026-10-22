@@ -68,3 +68,20 @@ test('the replay bar: no serious or critical violations', async ({ page }) => {
   await expect(bar).toBeVisible()
   expect(await scan(page, '.replaybar')).toEqual([])
 })
+
+test('the Share dialog: no serious or critical violations', async ({ page }) => {
+  await openStudio(page)
+  await drag(page, [0.99, 0.99], [0, 0])
+  await page.getByRole('button', { name: 'Share' }).click()
+  await expect(page.getByRole('textbox', { name: 'Share link' })).not.toHaveValue('')
+  expect(await scan(page, '.dialog.share')).toEqual([])
+})
+
+test('the Record dialog: no serious or critical violations', async ({ page }) => {
+  await openStudio(page)
+  await drag(page, [0.99, 0.99], [0, 0])
+  await page.getByRole('button', { name: 'Export' }).click()
+  await page.getByRole('button', { name: 'Record replay…' }).click()
+  await expect(page.getByRole('dialog', { name: 'Record the replay' })).toBeVisible()
+  expect(await scan(page, '.dialog.record')).toEqual([])
+})

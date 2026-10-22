@@ -289,6 +289,24 @@ describe('useStudio store', () => {
       expect(s.getState().history).toBe(h)
     })
 
+    test('R53: after undo (cursor before the end) the re-commit is refused and redo history survives', async () => {
+      const s = fresh()
+      for (const [grab, target, k] of [[[1, 0.5], [0, 0.5], 1], [[0, 0.5], [0.5, 0.5], 2]] as const) {
+        s.getState().begin(grab)
+        s.getState().setLayers(k)
+        s.getState().drag(target, 1)
+        expect(await s.getState().release()).toBe(true)
+      }
+      expect(s.getState().history.steps).toHaveLength(2)
+      s.getState().undo()
+      const h = s.getState().history
+      expect(lastFold(h)).toBeNull() // the step under the cursor is not the last fold
+      await expect(s.getState().setLastFold({ angleDeg: 120 })).resolves.toBe(false)
+      await expect(s.getState().setLastFold({ kind: 'mountain' })).resolves.toBe(false)
+      expect(s.getState().history).toBe(h)
+      expect(s.getState().history.steps).toHaveLength(2)
+    })
+
     test('without a gesture setNumeric re-commits the last fold', async () => {
       const s = fresh()
       await foldTo90(s)

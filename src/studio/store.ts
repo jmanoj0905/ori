@@ -62,7 +62,7 @@ export const COMMIT_FAILED = 'Something went wrong with that fold. Try again.'
 let paperDefaultsSource: (() => PaperSettings) | null = null
 export const setPaperDefaultsSource = (fn: (() => PaperSettings) | null): void => { paperDefaultsSource = fn }
 
-/** The recorded parameters of the fold step the cursor sits on, if it is a fold. */
+/** The recorded parameters of the last fold step, when the cursor sits on it. */
 export type LastFold = {
   tool: Tool
   grab: Vec2
@@ -75,7 +75,14 @@ export type LastFold = {
   face?: number
 }
 
+/**
+ * R53: only the LAST fold of the history is offered for the post-release
+ * slider / kind toggle (spec 03: "the last fold, until the next fold is made").
+ * With the cursor before the end (after undo or a jump back) there is none, so
+ * a re-commit can never truncate the redo steps.
+ */
 export function lastFold(h: History): LastFold | null {
+  if (h.cursor !== h.steps.length) return null
   const step = h.cursor > 0 ? h.steps[h.cursor - 1] : undefined
   if (!step || step.kind !== 'fold') return null
   const p = step.params as Partial<LastFold> | null

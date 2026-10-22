@@ -1,6 +1,7 @@
 // The fold bar: Valley / Mountain, the angle slider, the layer badge and the
 // crease readout (click it to type exact values). It shows while a gesture is
-// active and, after release, for the last fold until the next fold begins.
+// active and, after release, for the last fold until the next fold begins
+// (only while the cursor is on it, R53: never after undo / a jump back).
 //   - during a gesture the slider sets the live preview angle (Gesture.angleDeg);
 //   - after release it re-commits the last step at the new angle (R28), see
 //     the store's setLastFold.

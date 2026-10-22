@@ -125,6 +125,18 @@ describe('fold bar', () => {
     expect(slider).toHaveValue('90')
   })
 
+  test('R53: jumped back to an earlier step, the bar (slider and kind toggle) is not offered', () => {
+    const h = quarterFolded()
+    useStudio.setState({ history: h })
+    render(<FoldBar />)
+    expect(screen.getByRole('region', { name: 'Fold' })).toBeInTheDocument()
+    act(() => useStudio.getState().undo()) // cursor 1 of 2 steps
+    expect(screen.queryByRole('region', { name: 'Fold' })).toBeNull()
+    expect(screen.queryByRole('slider', { name: 'Fold angle' })).toBeNull()
+    act(() => useStudio.getState().redo())
+    expect(screen.getByRole('slider', { name: 'Fold angle' })).toBeInTheDocument()
+  })
+
   test('R28: a refused re-commit snaps the slider back and the hint shows the reason', async () => {
     useStudio.setState({ history: quarterFolded() })
     render(

@@ -8,6 +8,7 @@ export const RESTORE_FAILED = "Couldn't restore your last model."
 export const AUTOSAVE_OFF = 'Autosave is off — your browser storage is full or blocked.'
 
 export const EXPORT_FAILED = "Couldn't export the file."
+export const RECORD_FAILED = "Couldn't record the replay."
 
 export type NoticeState = { message: string | null; dismiss(): void }
 

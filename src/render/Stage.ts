@@ -166,6 +166,8 @@ export class Stage {
   /** The dragged flap's lift (R55) and the landing tween after a commit. */
   private ghostLift = 0
   private landing: AbortController | null = null
+  /** A recording in progress (beginCapture): the live view to put back, or null. */
+  private capture: { cam: CamState; width: number; height: number } | null = null
 
   private readonly onLost = (e: Event): void => {
     e.preventDefault()
@@ -508,6 +510,53 @@ export class Stage {
     return blob
   }
 
+  /** The live canvas's width / height (CSS px). */
+  get aspect(): number {
+    return this.width / this.height
+  }
+
+  /**
+   * Recording (Plan 3 Task 5): until endCapture, captureFrame renders at
+   * width × height device px, centred on the model (no island offset, like a
+   * snapshot), with the paper and washi desk as on screen. The canvas keeps its
+   * CSS size (only its drawing buffer changes), the on-demand loop and
+   * resizes wait, and endCapture restores the camera and the live view.
+   */
+  beginCapture(width: number, height: number): void {
+    if (this.capture) this.endCapture()
+    this.stopView()
+    this.endLanding()
+    this.capture = { cam: { ...this.cam }, width, height }
+    this.renderer.setPixelRatio(1)
+    this.renderer.setSize(width, height, false)
+    this.washiUniforms.uResolution.value.set(width, height)
+    // Crease dashes and widths scale with the output, as they do with the canvas.
+    this.syncLines(width, height, height / this.height)
+    this.camera.aspect = width / height
+    this.camera.clearViewOffset()
+    this.camera.updateProjectionMatrix()
+  }
+
+  /** Render the current scene into the capture buffer now; read the canvas before yielding. */
+  captureFrame(): HTMLCanvasElement {
+    if (!this.capture) throw new Error('captureFrame outside a capture')
+    if (this.contextLost || this.disposed) throw new Error('the 3D view is unavailable')
+    this.washi.visible = true
+    this.renderer.render(this.scene, this.camera)
+    return this.renderer.domElement
+  }
+
+  /** End a capture: the user's camera, canvas size and island offset come back exactly. */
+  endCapture(): void {
+    const c = this.capture
+    if (!c) return
+    this.capture = null
+    this.stopView()
+    this.cam = c.cam
+    this.applyCamera(this.cam)
+    this.resize()
+  }
+
   dispose(): void {
     if (this.disposed) return
     this.endLanding()
@@ -740,7 +789,7 @@ export class Stage {
   // ---- internals ---------------------------------------------------------
 
   private readonly resize = (): void => {
-    if (this.disposed) return
+    if (this.disposed || this.capture) return // endCapture resizes
     const rect = this.host.getBoundingClientRect()
     this.width = Math.max(1, Math.floor(rect.width))
     this.height = Math.max(1, Math.floor(rect.height))
@@ -756,6 +805,7 @@ export class Stage {
 
   /** Shift the image so the sheet's centre falls in the middle of the free area (see setInsets). */
   private applyViewOffset(): void {
+    if (this.capture) return // a capture is centred; endCapture re-applies the offset
     const { left, right, top, bottom } = this.shown
     const sx = (left - right) / 2
     const sy = (top - bottom) / 2
@@ -806,6 +856,7 @@ export class Stage {
   private readonly tick = (): void => {
     this.raf = 0
     if (this.disposed) return
+    if (this.capture) return // captureFrame renders; the live frame is drawn after endCapture
     if (this.dirty) {
       this.dirty = false
       this.renderer.render(this.scene, this.camera)

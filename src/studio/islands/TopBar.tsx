@@ -16,9 +16,11 @@ export type TopBarProps = {
   onSettings?: () => void
   /** Opens the Share dialog; the button is disabled when there is nothing to share. */
   onShare?: () => void
+  /** Opens the Record dialog (GIF / WebM of the replay); off when absent or there is nothing to replay. */
+  onRecord?: () => void
 }
 
-export function TopBar({ paperOpen, onTogglePaper, onExport, onExportFile, onSettings, onShare }: TopBarProps) {
+export function TopBar({ paperOpen, onTogglePaper, onExport, onExportFile, onSettings, onShare, onRecord }: TopBarProps) {
   const undoable = useStudio(s => !s.replaying && canUndo(s.history))
   const redoable = useStudio(s => !s.replaying && canRedo(s.history))
   const undo = useStudio(s => s.undo)
@@ -74,6 +76,17 @@ export function TopBar({ paperOpen, onTogglePaper, onExport, onExportFile, onSet
               <button type="button" className="tbtn text" onClick={() => choose(true)} disabled={!onExport}>PNG · transparent</button>
               <button type="button" className="tbtn text" onClick={() => chooseFile('fold')}>.fold file</button>
               <button type="button" className="tbtn text" onClick={() => chooseFile('svg')}>Crease pattern (SVG)</button>
+              <button
+                type="button"
+                className="tbtn text"
+                onClick={() => {
+                  setExportOpen(false)
+                  onRecord?.()
+                }}
+                disabled={!onRecord || !shareable}
+              >
+                Record replay…
+              </button>
               <label className="export-opt">
                 <input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} /> Grid
               </label>

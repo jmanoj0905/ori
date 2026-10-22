@@ -884,3 +884,51 @@ input[type='range'] {
     width: 140px;
   }
 }
+
+/* ---- record dialog (Plan 3 Task 5) ---- */
+.record {
+  width: min(400px, calc(100% - 2 * var(--space)));
+}
+.record-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  font-size: 13.5px;
+}
+.record-opts legend {
+  float: left;
+  width: 88px;
+  padding: 0;
+  color: var(--ink-soft);
+}
+.record-opts label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.record-note {
+  font-size: 12px;
+}
+.record-progress {
+  height: 8px;
+  margin: 0 0 14px;
+  border-radius: 4px;
+  background: var(--ink-faint);
+  overflow: hidden;
+}
+.record-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .record-progress > span {
+    transition: none;
+  }
+}

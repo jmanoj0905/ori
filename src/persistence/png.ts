@@ -11,7 +11,7 @@ const pad = (n: number): string => String(n).padStart(2, '0')
  * user is living in, not UTC), so callers building a Date from a literal should
  * use the local constructor (`new Date(2026, 9, 20)`).
  */
-export const exportName = (date: Date, step: number, ext: 'png' | 'fold' | 'svg'): string =>
+export const exportName = (date: Date, step: number, ext: 'png' | 'fold' | 'svg' | 'gif' | 'webm'): string =>
   `ori-${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}-${step}.${ext}`
 
 export const pngName = (date: Date, step: number): string => exportName(date, step, 'png')

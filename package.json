@@ -18,6 +18,7 @@
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@fontsource/instrument-serif": "^5.3.0",
     "fflate": "^0.8.3",
+    "gifenc": "^1.0.3",
     "rabbit-ear": "0.9.41",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

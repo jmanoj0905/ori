@@ -76,6 +76,7 @@ export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): voi
 }
 
 const ReplayBar = lazy(() => import('./replay/ReplayBar'))
+const RecordDialog = lazy(() => import('./RecordDialog'))
 
 /** Enter replay: stops preset playback first (the Steps island), refused while a commit is pending. */
 const enterReplay = (): boolean => useStudio.getState().setReplaying(true)
@@ -103,6 +104,9 @@ export function App() {
   const hostRef = useRef<HTMLDivElement>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
+  const [recordOpen, setRecordOpen] = useState(false)
+  /** A recording owns the Stage: the replay bar (and its Player) step aside meanwhile. */
+  const [recording, setRecording] = useState(false)
   const [stageReady, setStageReady] = useState<Stage | null>(null)
   useInput(stageReady)
   // Restore the autosave first; only an unrestored studio opens on the user's
@@ -208,6 +212,7 @@ export function App() {
           ).catch(() => notify(EXPORT_FAILED))
         }}
         onShare={() => setShareOpen(true)}
+        onRecord={stageReady ? () => setRecordOpen(true) : undefined}
         onSettings={() => useUi.getState().open('settings')} />
       <main className="studio-main">
         <div className="stage-host" data-stage-host ref={hostRef} />
@@ -223,7 +228,7 @@ export function App() {
           <div className="bottom">
             {replaying && stageReady ? (
               <Suspense fallback={null}>
-                <ReplayBar stage={stageReady} onExit={exitReplay} />
+                {!recording && <ReplayBar stage={stageReady} onExit={exitReplay} />}
               </Suspense>
             ) : (
               <>
@@ -249,6 +254,11 @@ export function App() {
         <Notice />
         <OpenPrompt />
         {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
+        {recordOpen && stageReady && (
+          <Suspense fallback={null}>
+            <RecordDialog stage={stageReady} onClose={() => setRecordOpen(false)} onBusy={setRecording} />
+          </Suspense>
+        )}
         <LiveLog />
         <SheetHost />
       </main>

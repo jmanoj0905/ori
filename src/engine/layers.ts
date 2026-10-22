@@ -380,18 +380,22 @@ export function withLayerOrder(frame: Frame): Result<{ frame: Frame }> {
 // ---- the layer budget (R52) ----
 
 /**
- * Refused before the layer solve: the solver's cost grows steeply with the
- * number of overlapping face pairs (one order each). Measured on repeated
- * halving of a square, every layer folded (Node 24 / Chromium):
- *   fold 7: 128 faces, 128 layers, 8 128 orders: 1.9 s / 0.9 s
- *   fold 8: 256 faces, 256 layers, 32 640 orders: 16.9 s / 8.3 s
+ * Refused before the layer solve. The solver's cost grows steeply with the
+ * face pairs it must newly order (overlapping pairs without an order among
+ * the frame's faceOrders, which it takes as constraints) and, less steeply,
+ * with all overlapping pairs. Measured (Node 24; Chromium is about 2× faster):
+ *   halving a square, all layers:
+ *     fold 7: 128 layers, 8 128 pairs, 4 032 new: 1.8 s
+ *     fold 8: 256 layers, 32 640 pairs, 16 256 new: 16.1 s
+ *   the perf gate's 320-face model (6 halvings, then 4 corners folded in):
+ *     corner 4: 128 layers, 26 464 pairs, 4 032 new: 6.2 s
  */
 export const TOO_MANY_LAYERS = 'Too many layers to fold here.'
 
-export type LayerBudget = { maxLayers: number; maxOrders: number }
+export type LayerBudget = { maxLayers: number; maxNewOrders: number; maxOrders: number }
 
-/** The limits: the 7th halving (128 layers, 8 128 orders) passes, the 8th is refused. */
-export const LAYER_BUDGET: Readonly<LayerBudget> = Object.freeze({ maxLayers: 128, maxOrders: 10_000 })
+/** The limits: halving fold 7 and the perf model pass; halving fold 8 (and deeper) is refused. */
+export const LAYER_BUDGET: Readonly<LayerBudget> = Object.freeze({ maxLayers: 128, maxNewOrders: 6_000, maxOrders: 30_000 })
 
 const AXIS_EPS = 1e-9
 
@@ -421,19 +425,23 @@ function separates(a: readonly Vec2[], b: readonly Vec2[]): boolean {
 }
 
 /**
- * Whether the layer solve of flat `frame` fits the budget: a cheap,
- * pure pre-check (box-pruned pair scan, O(faces²) at worst), refused with
+ * Whether the layer solve of flat `frame` fits the budget: a cheap, pure
+ * pre-check (box-pruned pair scan, O(faces²) at worst), refused with
  * TOO_MANY_LAYERS when the folded faces overlap in more than `maxOrders`
- * pairs (the orders the solver must find) or more than `maxLayers` of them
- * stack at one point (counted at each face's centre). Faces are convex (cut
- * from a convex sheet by straight creases), so overlap is a separating-axis
- * test; faces that only touch along an edge do not overlap.
+ * pairs, more than `maxNewOrders` of them have no order yet in
+ * `frame.faceOrders`, or more than `maxLayers` faces stack at one point
+ * (counted at each face's centre). Faces are convex (cut from a convex sheet
+ * by straight creases), so overlap is a separating-axis test; faces that only
+ * touch along an edge do not overlap.
  */
 export function layerBudget(frame: Frame, limits: LayerBudget = LAYER_BUDGET): Refusal | null {
   const { polys, boxes } = foldedPolygons(frame)
   const n = polys.length
   const refused: Refusal = { ok: false, reason: TOO_MANY_LAYERS }
+  const known = new Set<number>()
+  for (const [a, b] of frame.faceOrders) known.add(a < b ? a * n + b : b * n + a)
   let pairs = 0
+  let fresh = 0
   for (let f = 0; f < n; f++) {
     const bf = boxes[f]
     for (let g = f + 1; g < n; g++) {
@@ -441,6 +449,7 @@ export function layerBudget(frame: Frame, limits: LayerBudget = LAYER_BUDGET): R
       if (bf[2] <= bg[0] + AXIS_EPS || bg[2] <= bf[0] + AXIS_EPS || bf[3] <= bg[1] + AXIS_EPS || bg[3] <= bf[1] + AXIS_EPS) continue
       if (separates(polys[f], polys[g]) || separates(polys[g], polys[f])) continue
       if (++pairs > limits.maxOrders) return refused
+      if (!known.has(f * n + g) && ++fresh > limits.maxNewOrders) return refused
     }
   }
   // Stack depth at each face's centre (convex, so the vertex mean is inside it).

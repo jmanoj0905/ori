@@ -12,13 +12,16 @@ export type TopBarProps = {
   onExport?: (transparent: boolean) => void
   /** Opens the settings sheet (the gear). */
   onSettings?: () => void
+  /** Opens the Share dialog; the button is disabled when there is nothing to share. */
+  onShare?: () => void
 }
 
-export function TopBar({ paperOpen, onTogglePaper, onExport, onSettings }: TopBarProps) {
+export function TopBar({ paperOpen, onTogglePaper, onExport, onSettings, onShare }: TopBarProps) {
   const undoable = useStudio(s => canUndo(s.history))
   const redoable = useStudio(s => canRedo(s.history))
   const undo = useStudio(s => s.undo)
   const redo = useStudio(s => s.redo)
+  const shareable = useStudio(s => s.history.cursor > 0)
   const keys = useSettings(s => s.bindings)
   const [exportOpen, setExportOpen] = useState(false)
   const choose = (transparent: boolean) => {
@@ -64,6 +67,9 @@ export function TopBar({ paperOpen, onTogglePaper, onExport, onSettings }: TopBa
             </div>
           )}
         </span>
+        <button type="button" className="tbtn text" onClick={onShare} disabled={!onShare || !shareable} title={shareable ? 'Share a link to this model' : 'Fold something to share it'}>
+          Share
+        </button>
         <button type="button" className="tbtn" aria-label="Settings" title={withShortcut('Settings', keys.settings)} onClick={onSettings} disabled={!onSettings}>
           <svg viewBox="0 0 20 20" aria-hidden="true">
             <circle cx="10" cy="10" r="2.6" />

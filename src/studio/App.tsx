@@ -23,6 +23,8 @@ import { measureInsets, NARROW_PX } from './insets'
 import { LiveLog } from './LiveLog'
 import { SheetHost } from './SheetHost'
 import { CoachMark } from './CoachMark'
+import { ShareDialog } from './ShareDialog'
+import { OpenPrompt } from './islands/OpenPrompt'
 import { STAGE_MESSAGES, stageDown, useUi } from './ui'
 import './islands/islands.css'
 
@@ -64,6 +66,7 @@ export function App() {
   const [paperOpen, setPaperOpen] = useState(false)
   const hostRef = useRef<HTMLDivElement>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [shareOpen, setShareOpen] = useState(false)
   const [stageReady, setStageReady] = useState<Stage | null>(null)
   useInput(stageReady)
   // Restore the autosave first; only an unrestored studio opens on the user's
@@ -162,6 +165,7 @@ export function App() {
           } else setPaperOpen(o => !o)
         }}
         onExport={stageReady ? t => void exportPng(stageReady, useStudio.getState().history.cursor, t) : undefined}
+        onShare={() => setShareOpen(true)}
         onSettings={() => useUi.getState().open('settings')} />
       <main className="studio-main">
         <div className="stage-host" data-stage-host ref={hostRef} />
@@ -193,6 +197,8 @@ export function App() {
         </div>
         <CoachMark stage={stageReady && !stageDown(stageStatus) ? stageReady : null} reduced={reducedMotion} />
         <Notice />
+        <OpenPrompt />
+        {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
         <LiveLog />
         <SheetHost />
       </main>

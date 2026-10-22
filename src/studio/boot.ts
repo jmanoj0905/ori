@@ -14,7 +14,11 @@
 // shows RESTORE_FAILED once and opens a blank sheet.
 import { flushSave, readSave, saveHistory } from '../persistence/autosave'
 import { RESTORE_FAILED, noticeOnce } from '../persistence/notice'
+import { isShareHash, openFromHash } from '../persistence/openFromHash'
+import { askReplace } from './openPrompt'
 import { createWorkerRestorer, inProcessRestorer, type Restorer } from './committer'
+import type { History } from '@engine'
+import type { SavedModel } from '../persistence/replay'
 import type { useStudio } from './store'
 
 type Store = typeof useStudio
@@ -33,6 +37,8 @@ export function resetBootForTests(): void {
 export type BootOptions = {
   /** Replays the save. Default: a Worker restorer where Workers exist, else in-process. */
   restorer?: Restorer
+  /** Asks "Replace your current model?" when a share link meets autosaved work. Default: the in-app dialog. */
+  confirm?: () => Promise<boolean>
 }
 
 function defaultRestorer(): { restore: Restorer; dispose(): void } {
@@ -67,19 +73,54 @@ export function bootStudio(store: Store, opts: BootOptions = {}): Promise<void> 
     if (!restoring.has(store) && store.getState().history.steps.length === 0) store.getState().newSheet()
     return done
   }
+  const hash = typeof location === 'undefined' ? '' : location.hash
+  const share = isShareHash(hash)
   const saved = readSave()
-  if (!saved) {
-    if (store.getState().history.steps.length === 0) store.getState().newSheet()
-    startAutosave(store)
-    const p = Promise.resolve()
+  const worker = opts.restorer ? { restore: opts.restorer, dispose() {} } : defaultRestorer()
+  const base = store.getState().history
+  if (share) {
+    // R59: the link takes precedence. Fold input waits while it decodes, is
+    // confirmed and replays; any outcome other than "opened" carries on below.
+    restoring.add(store)
+    store.setState({ pending: true, restoring: true })
+    const p = openFromHash(hash, { hasWork: saved !== null, confirm: opts.confirm ?? askReplace, restore: worker.restore })
+      .catch(() => ({ kind: 'kept' as const }))
+      .then(async r => {
+        if (r.kind === 'opened') {
+          worker.dispose()
+          restoring.delete(store)
+          store.setState({ pending: false, restoring: false })
+          if (store.getState().history === base) {
+            store.getState().restoreHistory(r.restored.history)
+            store.getState().setPaper(r.restored.paper)
+          }
+          startAutosave(store)
+          saveHistory(store.getState().history, store.getState().paper) // the opened model is now the autosave
+          return
+        }
+        restoring.delete(store)
+        store.setState({ pending: false, restoring: false })
+        await restoreOrSeed(store, saved, base, worker)
+      })
     booted.set(store, p)
     return p
   }
-  const base = store.getState().history
-  const worker = opts.restorer ? { restore: opts.restorer, dispose() {} } : defaultRestorer()
+  const p = restoreOrSeed(store, saved, base, worker)
+  booted.set(store, p)
+  return p
+}
+
+/** The normal start: replay the save (in the worker), or seed a blank sheet when there is none. */
+function restoreOrSeed(store: Store, saved: SavedModel | null, base: History, worker: { restore: Restorer; dispose(): void }): Promise<void> {
+  if (!saved) {
+    worker.dispose()
+    if (store.getState().history.steps.length === 0) store.getState().newSheet()
+    startAutosave(store)
+    return Promise.resolve()
+  }
   restoring.add(store)
   store.setState({ pending: true, restoring: true })
-  const p = worker
+  return worker
     .restore(saved)
     .catch(() => null)
     .then(r => {
@@ -98,6 +139,4 @@ export function bootStudio(store: Store, opts: BootOptions = {}): Promise<void> 
       // The user started over while the save was replaying: that is what to keep.
       if (moved) saveHistory(store.getState().history, store.getState().paper)
     })
-  booted.set(store, p)
-  return p
 }

@@ -806,3 +806,27 @@ input[type='range'] {
   transform: translateX(-50%);
   z-index: 6;
 }
+
+/* ---- share dialog ---- */
+.share {
+  width: min(460px, calc(100% - 2 * var(--space)));
+}
+.share-field {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--frost-border);
+  border-radius: 8px;
+  background: var(--ivory);
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.share-warn {
+  color: var(--ink);
+}
+.share-copied {
+  min-height: 1.2em;
+  margin: 0 0 8px;
+}

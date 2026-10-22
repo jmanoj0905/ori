@@ -25,7 +25,8 @@ describe('toFoldFile', () => {
     expect(j.file_frames[0].frame_classes).toEqual(['creasePattern'])
     expect(j.file_frames[0].frame_title).toBe('Blank sheet')
     expect(j.file_frames[1].frame_title).toBe(h.steps[0]!.label)
-    expect(j.file_frames[h.cursor].frame_classes).toContain('foldedForm')
+    expect(j.file_frames.every((f: { frame_classes: string[] }) => f.frame_classes.join() === 'creasePattern')).toBe(true)
+    expect(j.frame_classes).toEqual(['creasePattern'])
   })
 
   test('re-imported through frameFromFold: same faces_vertices count and edges_assignment (also every frame)', () => {

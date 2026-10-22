@@ -15,8 +15,12 @@ function geometry(f: Frame) {
   }
 }
 
-/** The blank sheet is a crease pattern with no folds; any other frame is a folded form. */
-const classesOf = (f: Frame): string[] => (f.edges_foldAngle.every(a => a === 0) ? ['creasePattern'] : ['foldedForm'])
+/**
+ * Every exported frame is a crease pattern: vertices_coords are the unfolded
+ * sheet and edges_foldAngle describes the fold. ("foldedForm" would tell a
+ * consumer the coordinates are already folded, which they are not.)
+ */
+const classesOf = (_f: Frame): string[] => ['creasePattern']
 
 /**
  * `file_frames[i]` is the frame after i steps (0 = the blank sheet), titled by

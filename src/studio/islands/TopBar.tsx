@@ -10,7 +10,7 @@ export type TopBarProps = {
   onTogglePaper(): void
   /** PNG export of the current view; the button is disabled when absent. */
   onExport?: (transparent: boolean) => void
-  /** .fold or crease-pattern SVG export; the file items are disabled when absent. */
+  /** .fold or crease-pattern SVG export; independent of the Stage (data export always works). */
   onExportFile?: (kind: 'fold' | 'svg', opts: { grid: boolean; style: 'diagram' | 'mv-color' }) => void
   /** Opens the settings sheet (the gear). */
   onSettings?: () => void
@@ -64,16 +64,16 @@ export function TopBar({ paperOpen, onTogglePaper, onExport, onExportFile, onSet
             aria-haspopup="true"
             onClick={() => setExportOpen(o => !o)}
             onKeyDown={e => e.key === 'Escape' && setExportOpen(false)}
-            disabled={!onExport}
+            disabled={!onExport && !onExportFile}
           >
             Export
           </button>
           {exportOpen && (
             <div className="export-menu" role="group" aria-label="Export">
-              <button type="button" className="tbtn text" onClick={() => choose(false)}>PNG · washi background</button>
-              <button type="button" className="tbtn text" onClick={() => choose(true)}>PNG · transparent</button>
-              <button type="button" className="tbtn text" onClick={() => chooseFile('fold')} disabled={!onExportFile}>.fold file</button>
-              <button type="button" className="tbtn text" onClick={() => chooseFile('svg')} disabled={!onExportFile}>Crease pattern (SVG)</button>
+              <button type="button" className="tbtn text" onClick={() => choose(false)} disabled={!onExport}>PNG · washi background</button>
+              <button type="button" className="tbtn text" onClick={() => choose(true)} disabled={!onExport}>PNG · transparent</button>
+              <button type="button" className="tbtn text" onClick={() => chooseFile('fold')}>.fold file</button>
+              <button type="button" className="tbtn text" onClick={() => chooseFile('svg')}>Crease pattern (SVG)</button>
               <label className="export-opt">
                 <input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} /> Grid
               </label>

@@ -365,6 +365,6 @@ describe('PNG export', () => {
     const stage = { snapshot: vi.fn(async () => { throw new Error('boom') }) }
     await expect(exportPng(stage as never, 1, false)).resolves.toBeUndefined()
     expect(click).not.toHaveBeenCalled()
-    expect(notices.getState().message).toBe("Couldn't export the image.")
+    expect(notices.getState().message).toBe("Couldn't export the file.")
   })
 })

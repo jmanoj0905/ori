@@ -67,10 +67,29 @@ test('App restores the autosave on mount; the paper-defaults seed does not overw
   useSettings.setState(defaultSettings())
 })
 
-test('Export stays disabled while there is no Stage to snapshot', async () => {
+test('without a Stage the PNG exports are disabled but .fold and SVG still work', async () => {
   render(<App />)
   const btn = screen.getByRole('button', { name: 'Export' })
-  await waitFor(() => expect(btn).toBeDisabled()) // no WebGL in jsdom: stage never becomes ready
+  expect(btn).toBeEnabled()
+  fireEvent.click(btn)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'PNG · washi background' })).toBeDisabled()) // no WebGL in jsdom
+  expect(screen.getByRole('button', { name: 'PNG · transparent' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '.fold file' })).toBeEnabled()
+  expect(screen.getByRole('button', { name: 'Crease pattern (SVG)' })).toBeEnabled()
+})
+
+test('a file-export chunk that fails to load shows the export notice', async () => {
+  vi.resetModules()
+  vi.doMock('../persistence/fileExport', () => Promise.reject(new Error('Failed to fetch dynamically imported module')))
+  const { App: Fresh } = await import('./App')
+  const { notices, resetNotices } = await import('../persistence/notice')
+  resetNotices()
+  render(<Fresh />)
+  fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+  fireEvent.click(screen.getByRole('button', { name: '.fold file' }))
+  await waitFor(() => expect(notices.getState().message).toBe("Couldn't export the file."))
+  vi.doUnmock('../persistence/fileExport')
+  vi.resetModules()
 })
 
 test('without WebGL the studio says so calmly and the fold and preset controls are disabled', async () => {

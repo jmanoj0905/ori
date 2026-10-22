@@ -19,6 +19,7 @@ import { PaperPanel } from './islands/PaperPanel'
 import { Notice } from './islands/Notice'
 import { bootStudio } from './boot'
 import { exportPng } from '../persistence/png'
+import { EXPORT_FAILED, notify } from '../persistence/notice'
 import { measureInsets, NARROW_PX } from './insets'
 import { LiveLog } from './LiveLog'
 import { SheetHost } from './SheetHost'
@@ -169,7 +170,7 @@ export function App() {
           const { history } = useStudio.getState()
           void import('../persistence/fileExport').then(m =>
             kind === 'fold' ? m.exportFold(history) : m.exportSvg(history, { style: o.style, grid: o.grid ? 8 : undefined }),
-          )
+          ).catch(() => notify(EXPORT_FAILED))
         }}
         onShare={() => setShareOpen(true)}
         onSettings={() => useUi.getState().open('settings')} />

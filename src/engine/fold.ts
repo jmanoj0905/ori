@@ -50,7 +50,8 @@ function faceOrdersOf(raw: unknown, faces: number): FaceOrder[] {
  * a missing edges_foldAngle is filled from the assignments (V +180, M -180,
  * else 0). faceOrders are kept when every entry is valid, else dropped to [].
  * Adjacency arrays (faces_edges, …) are not carried over. Never mutates or
- * aliases the input.
+ * aliases the input. Callers importing untrusted files must bound the input's
+ * byte size (and nesting) before parsing; this function only validates shape.
  */
 export function frameFromFold(json: unknown): Result<{ frame: Frame }> {
   if (!isObj(json)) return fail('That is not a FOLD object.')

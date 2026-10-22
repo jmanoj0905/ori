@@ -59,6 +59,17 @@ function gestureOf(params: unknown): Gesture | null {
 }
 
 /**
+ * One recorded step ({kind, params, ...}) -> its ReplayStep, or null when it is
+ * malformed. Shared by the autosave parser and the share codec (DRY).
+ */
+export function replayStepOf(s: unknown): ReplayStep | null {
+  if (!isObj(s)) return null
+  if (s.kind === 'turnOver') return { turnOver: true }
+  const g = gestureOf(s.params)
+  return g && s.kind === g.tool ? { gesture: g } : null
+}
+
+/**
  * A parsed JSON payload → a SavedModel, or null when it is not a usable save:
  * unknown version, malformed step, more than MAX_RESTORE_STEPS steps. The
  * paper must be an object; its fields are cleaned like the settings' paper
@@ -70,14 +81,9 @@ export function parseSave(raw: unknown): SavedModel | null {
   if (!Array.isArray(steps) || steps.length > MAX_RESTORE_STEPS || !num(cursor)) return null
   const out: ReplayStep[] = []
   for (const s of steps as unknown[]) {
-    if (!isObj(s)) return null
-    if (s.kind === 'turnOver') {
-      out.push({ turnOver: true })
-      continue
-    }
-    const g = gestureOf(s.params)
-    if (!g || s.kind !== g.tool) return null
-    out.push({ gesture: g })
+    const r = replayStepOf(s)
+    if (!r) return null
+    out.push(r)
   }
   const c = Math.min(out.length, Math.max(0, Math.trunc(cursor)))
   return { paper: cleanPaper(raw.paper), steps: out, cursor: c }

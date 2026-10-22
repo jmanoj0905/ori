@@ -19,6 +19,8 @@ export type OpenDeps = {
   hasWork: boolean
   /** Ask whether to replace it; resolves true to replace. */
   confirm(): Promise<boolean>
+  /** Called once the link is confirmed (or needs no confirm), just before the replay starts. */
+  onReplaying?(): void | Promise<void>
   /** Replay the decoded steps (a Worker in the app). Null when a step does not replay. */
   restore(saved: SavedModel): Promise<Restored | null>
 }
@@ -65,6 +67,7 @@ export async function openFromHash(hash: string, deps: OpenDeps): Promise<OpenRe
       return { kind: 'kept' }
     }
     if (deps.hasWork && !(await deps.confirm())) return { kind: 'kept' }
+    await deps.onReplaying?.()
     const restored = await deps.restore({ paper: decoded.paper, steps, cursor: steps.length }).catch(() => null)
     if (!restored) {
       notify(DAMAGED_LINK)

@@ -62,6 +62,7 @@ describe('ShareDialog', () => {
     const field = (await screen.findByRole('textbox', { name: 'Share link' })) as HTMLInputElement
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
     await waitFor(() => expect(field.selectionEnd).toBe(field.value.length))
+    expect(document.activeElement).toBe(field)
     expect(await screen.findByText(/to copy/)).toBeInTheDocument()
   })
 

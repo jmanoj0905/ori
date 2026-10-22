@@ -45,6 +45,7 @@ export function ShareDialog({ onClose }: { onClose(): void }) {
       await navigator.clipboard.writeText(url)
       setCopy('copied')
     } catch {
+      field.current?.focus() // Ctrl+C copies from the focused field (select() alone may not move focus)
       select()
       let ok = false
       try {

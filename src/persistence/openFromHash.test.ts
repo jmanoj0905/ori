@@ -137,3 +137,46 @@ describe('opening a share link', () => {
     expect(notices.getState().message).toBeNull()
   })
 })
+
+describe('a link pasted into an open tab (hashchange)', () => {
+  const paste = async (hash: string) => {
+    history.replaceState(null, '', '/' + hash)
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await vi.waitFor(() => expect(location.hash).toBe(''))
+  }
+
+  test('with no work it replaces the blank sheet without asking', async () => {
+    const a = await twoFolds()
+    const b = fresh()
+    await bootStudio(b, { confirm: () => Promise.reject(new Error('must not ask')) })
+    await paste(link(a))
+    await vi.waitFor(() => expect(b.getState().history.steps).toHaveLength(2))
+    expect(b.getState()).toMatchObject({ pending: false, restoring: false })
+  })
+
+  test('with work it asks: Cancel keeps it, Replace opens the link', async () => {
+    const a = await twoFolds()
+    const b = fresh()
+    let answer = false
+    const confirm = vi.fn(() => Promise.resolve(answer))
+    await bootStudio(b, { confirm })
+    await fold(b, [1, 1], [0, 0])
+    await paste(link(a))
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(b.getState().history.steps).toHaveLength(1)
+    answer = true
+    await paste(link(a))
+    await vi.waitFor(() => expect(b.getState().history.steps).toHaveLength(2))
+    flushSave()
+    expect(JSON.parse(localStorage.getItem(AUTOSAVE_KEY)!).steps).toHaveLength(2)
+  })
+
+  test('a non-share hash change is ignored', async () => {
+    const b = fresh()
+    await bootStudio(b)
+    history.replaceState(null, '', '/#about')
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    await new Promise(r => setTimeout(r, 20))
+    expect(location.hash).toBe('#about')
+  })
+})

@@ -48,19 +48,61 @@ function defaultRestorer(): { restore: Restorer; dispose(): void } {
 }
 
 /** Every change to the model or the paper queues a debounced save; flush when the page hides. */
-function startAutosave(store: Store): void {
+function startAutosave(store: Store, opts: BootOptions = {}): void {
   teardown.push(store.subscribe((s, prev) => {
     if (s.history !== prev.history || s.paper !== prev.paper) saveHistory(s.history, s.paper)
   }))
   const onHide = () => {
     if (document.visibilityState === 'hidden') flushSave()
   }
+  startShareListener(store, opts)
   addEventListener('pagehide', flushSave)
   document.addEventListener('visibilitychange', onHide)
   teardown.push(() => {
     removeEventListener('pagehide', flushSave)
     document.removeEventListener('visibilitychange', onHide)
   })
+}
+
+/**
+ * A share link pasted into an open tab changes only the hash (no reload), so
+ * listen for it: ask if there is work, replay, replace, save, clear the hash.
+ * Our own clearHash uses replaceState (no hashchange); a non-share hash is ignored.
+ */
+function startShareListener(store: Store, opts: BootOptions): void {
+  const untouchedPaper = store.getState().paper
+  let opening = false
+  const onHash = async () => {
+    const hash = location.hash
+    if (!isShareHash(hash) || opening || restoring.has(store)) return
+    opening = true
+    const worker = opts.restorer ? { restore: opts.restorer, dispose() {} } : defaultRestorer()
+    try {
+      store.getState().cancel() // a live gesture or keyboard fold ends; preset playback stops when the history moves
+      const s = store.getState()
+      const r = await openFromHash(hash, {
+        hasWork: s.history.steps.length > 0 || s.paper !== untouchedPaper,
+        confirm: opts.confirm ?? askReplace,
+        onReplaying: async () => {
+          for (let i = 0; i < 400 && store.getState().pending; i++) await new Promise(res => setTimeout(res, 5))
+          store.setState({ pending: true, restoring: true })
+        },
+        restore: worker.restore,
+      }).catch(() => ({ kind: 'kept' as const }))
+      store.setState({ pending: false, restoring: false })
+      if (r.kind === 'opened') {
+        store.getState().restoreHistory(r.restored.history)
+        store.getState().setPaper(r.restored.paper)
+        saveHistory(store.getState().history, store.getState().paper)
+      }
+    } finally {
+      worker.dispose()
+      opening = false
+    }
+  }
+  const listener = () => void onHash()
+  addEventListener('hashchange', listener)
+  teardown.push(() => removeEventListener('hashchange', listener))
 }
 
 /** Restore the autosave (or seed a blank sheet), then start autosaving. Resolves when the restore has landed. */
@@ -82,8 +124,13 @@ export function bootStudio(store: Store, opts: BootOptions = {}): Promise<void> 
     // R59: the link takes precedence. Fold input waits while it decodes, is
     // confirmed and replays; any outcome other than "opened" carries on below.
     restoring.add(store)
-    store.setState({ pending: true, restoring: true })
-    const p = openFromHash(hash, { hasWork: saved !== null, confirm: opts.confirm ?? askReplace, restore: worker.restore })
+    store.setState({ pending: true })
+    const p = openFromHash(hash, {
+      hasWork: saved !== null && saved.steps.length > 0,
+      confirm: opts.confirm ?? askReplace,
+      onReplaying: () => void store.setState({ restoring: true }),
+      restore: worker.restore,
+    })
       .catch(() => ({ kind: 'kept' as const }))
       .then(async r => {
         if (r.kind === 'opened') {
@@ -94,28 +141,28 @@ export function bootStudio(store: Store, opts: BootOptions = {}): Promise<void> 
             store.getState().restoreHistory(r.restored.history)
             store.getState().setPaper(r.restored.paper)
           }
-          startAutosave(store)
+          startAutosave(store, opts)
           saveHistory(store.getState().history, store.getState().paper) // the opened model is now the autosave
           return
         }
         restoring.delete(store)
         store.setState({ pending: false, restoring: false })
-        await restoreOrSeed(store, saved, base, worker)
+        await restoreOrSeed(store, saved, base, worker, opts)
       })
     booted.set(store, p)
     return p
   }
-  const p = restoreOrSeed(store, saved, base, worker)
+  const p = restoreOrSeed(store, saved, base, worker, opts)
   booted.set(store, p)
   return p
 }
 
 /** The normal start: replay the save (in the worker), or seed a blank sheet when there is none. */
-function restoreOrSeed(store: Store, saved: SavedModel | null, base: History, worker: { restore: Restorer; dispose(): void }): Promise<void> {
+function restoreOrSeed(store: Store, saved: SavedModel | null, base: History, worker: { restore: Restorer; dispose(): void }, opts: BootOptions): Promise<void> {
   if (!saved) {
     worker.dispose()
     if (store.getState().history.steps.length === 0) store.getState().newSheet()
-    startAutosave(store)
+    startAutosave(store, opts)
     return Promise.resolve()
   }
   restoring.add(store)
@@ -135,7 +182,7 @@ function restoreOrSeed(store: Store, saved: SavedModel | null, base: History, wo
           store.getState().setPaper(r.paper)
         } else store.getState().newSheet()
       }
-      startAutosave(store)
+      startAutosave(store, opts)
       // The user started over while the save was replaying: that is what to keep.
       if (moved) saveHistory(store.getState().history, store.getState().paper)
     })

@@ -66,9 +66,9 @@ describe('settings sheet: controls', () => {
     fireEvent.keyDown(capture(), { key: 'b', code: 'KeyB' })
     expect(binds('Valley')).toHaveTextContent(/^B$/)
     expect(screen.queryByText('Press a key or mouse button…')).toBeNull()
-    expect(useSettings.getState().bindings.valley[0]).toMatchObject({ code: 'KeyV' }) // not saved yet
+    expect(useSettings.getState().bindings.valley[0]).toMatchObject({ key: 'v' }) // not saved yet
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(useSettings.getState().bindings.valley).toEqual([{ type: 'key', code: 'KeyB', mods: none }])
+    expect(useSettings.getState().bindings.valley).toEqual([{ type: 'key', key: 'b', mods: none }])
   })
 
   test('a modifier-only press is ignored while capturing a key; chords keep their modifiers', () => {
@@ -156,7 +156,7 @@ describe('settings sheet: controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Change Keyboard fold' }))
     fireEvent.keyDown(capture(), { key: 'k', code: 'KeyK' })
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(useSettings.getState().bindings.keyboardFold).toEqual([{ type: 'key', code: 'KeyK', mods: none }])
+    expect(useSettings.getState().bindings.keyboardFold).toEqual([{ type: 'key', key: 'k', mods: none }])
   })
 })
 

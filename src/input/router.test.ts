@@ -337,3 +337,21 @@ describe('live bindings and dispose', () => {
     expect(key('KeyV').defaultPrevented).toBe(false)
   })
 })
+
+describe('layout-aware keys (final review item 5)', () => {
+  test('QWERTZ: Ctrl + the key printed Z (code KeyY) is undo; "?" typed on any layout opens the sheet', async () => {
+    const { DEFAULT_BINDINGS, cloneBindings } = await import('../settings/bindings')
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    const seen: string[] = []
+    const dispose = createRouter(el, () => cloneBindings(DEFAULT_BINDINGS), {
+      undo: () => void seen.push('undo'), redo: () => void seen.push('redo'), shortcuts: () => void seen.push('shortcuts'),
+    })
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', code: 'KeyY', ctrlKey: true, bubbles: true, cancelable: true }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'y', code: 'KeyZ', ctrlKey: true, bubbles: true, cancelable: true }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '?', code: 'Minus', shiftKey: true, bubbles: true, cancelable: true }))
+    expect(seen).toEqual(['undo', 'shortcuts'])
+    dispose()
+    el.remove()
+  })
+})

@@ -50,7 +50,9 @@ const BUTTONS = ['Left-drag', 'Middle-drag', 'Right-drag'] as const
 export function describeBinding(b: Binding): string {
   switch (b.type) {
     case 'key':
-      // Shift + / is the "?" key (the shortcut sheet): say what is printed on it.
+      // A character binding is labelled by its character, as printed on the key.
+      if (b.key !== undefined) return [...modPrefix(b.mods), b.key.toUpperCase()].join(' + ')
+      // (Legacy code binding) Shift + / is the "?" key: say what is printed on it.
       if (b.code === 'Slash' && b.mods.shift && !b.mods.mod && !b.mods.alt) return '?'
       return [...modPrefix(b.mods), keyName(b.code)].join(' + ')
     case 'mouse':

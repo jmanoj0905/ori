@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { DEFAULT_PAPER, cleanPaper } from '../paper'
 import { DEFAULT_BINDINGS, cloneBindings, findConflicts } from './bindings'
+import { migrateKeyBinding } from './keys'
 import {
   ACTIONS, SETTINGS_KEY, SETTINGS_VERSION,
   type Action, type Binding, type Bindings, type ReducedMotion, type Settings, type SnapSettings,
@@ -32,7 +33,10 @@ const validMods = (m: unknown) =>
 function validBinding(b: unknown): b is Binding {
   if (!isObj(b)) return false
   switch (b.type) {
-    case 'key': return typeof b.code === 'string' && validMods(b.mods)
+    case 'key':
+      return validMods(b.mods) && (
+        (typeof b.key === 'string' && b.key.length > 0 && b.code === undefined) ||
+        (typeof b.code === 'string' && b.key === undefined))
     case 'mouse': return (b.button === 0 || b.button === 1 || b.button === 2) && validMods(b.mods)
     case 'wheel': return validMods(b.mods)
     case 'modifier': return b.key === 'shift' || b.key === 'alt' || b.key === 'mod'
@@ -48,7 +52,8 @@ function cleanBindings(raw: unknown): Bindings {
   if (!isObj(raw)) return out
   for (const a of ACTIONS) {
     const v = raw[a]
-    if (Array.isArray(v) && v.every(validBinding)) out[a] = v as Binding[]
+    // Pre-layout-aware saves stored every key by code: migrate (keys.ts).
+    if (Array.isArray(v) && v.every(validBinding)) out[a] = (v as Binding[]).map(b => migrateKeyBinding(b))
   }
   return findConflicts(out).length ? cloneBindings(DEFAULT_BINDINGS) : out
 }

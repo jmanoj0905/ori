@@ -25,8 +25,16 @@ export type ModKey = 'shift' | 'alt' | 'mod'
  * `modifier` is a hold-only binding (angle snap = hold Shift). It is a separate
  * class: it is compared only against other `modifier` bindings, never keys.
  */
+/**
+ * A key: by the character it types (`key`: letters lower-case, '?', '[', …) or,
+ * for named keys (Escape, arrows, …), by physical `code`. See keys.ts.
+ */
+export type KeyBinding =
+  | { type: 'key'; key: string; code?: undefined; mods: Mods }
+  | { type: 'key'; code: string; key?: undefined; mods: Mods }
+
 export type Binding =
-  | { type: 'key'; code: string; mods: Mods }
+  | KeyBinding
   | { type: 'mouse'; button: 0 | 1 | 2; mods: Mods }
   | { type: 'wheel'; mods: Mods }
   | { type: 'modifier'; key: ModKey }

@@ -15,11 +15,11 @@ describe('default bindings', () => {
     expect(d.fold).toEqual([mouse(0)])
     expect(d.orbit).toEqual([mouse(2)])
     expect(d.pan).toEqual([mouse(1)])
-    expect(d.layersLess[0]).toMatchObject({ type: 'key', code: 'BracketLeft' })
-    expect(d.layersMore[0]).toMatchObject({ type: 'key', code: 'BracketRight' })
+    expect(d.layersLess[0]).toMatchObject({ type: 'key', key: '[' })
+    expect(d.layersMore[0]).toMatchObject({ type: 'key', key: ']' })
     expect(d.angleSnap).toEqual([{ type: 'modifier', key: 'shift' }])
-    expect(d.redo[0]).toMatchObject({ code: 'KeyZ', mods: { mod: true, shift: true } })
-    expect(d.shortcuts[0]).toMatchObject({ code: 'Slash', mods: { shift: true } })
+    expect(d.redo[0]).toMatchObject({ key: 'z', mods: { mod: true, shift: true } })
+    expect(d.shortcuts[0]).toMatchObject({ key: '?' }) // layout-aware: the character, Shift implied
     expect(d.cancel[0]).toMatchObject({ code: 'Escape' })
   })
 })
@@ -64,7 +64,7 @@ describe('migrate', () => {
     expect(s.reducedMotion).toBe('always')
     expect(s.snapRadiusPx).toBe(20)
     expect(s.toolReturnsToFold).toBe(false)
-    expect(s.bindings.valley).toEqual([{ type: 'key', code: 'KeyB', mods: { mod: false, shift: false, alt: false } }])
+    expect(s.bindings.valley).toEqual([{ type: 'key', key: 'b', mods: { mod: false, shift: false, alt: false } }]) // migrated to the letter
     expect(s.bindings.mountain).toEqual(DEFAULT_BINDINGS.mountain)
   })
   test('v1 with conflicting bindings falls back to defaults', () => {
@@ -132,7 +132,7 @@ describe('useSettings', () => {
 
 describe('Task 10 carried fixes', () => {
   test('keyboardFold is a remappable action, F by default, with no conflict', () => {
-    expect(DEFAULT_BINDINGS.keyboardFold).toEqual([{ type: 'key', code: 'KeyF', mods: { mod: false, shift: false, alt: false } }])
+    expect(DEFAULT_BINDINGS.keyboardFold).toEqual([{ type: 'key', key: 'f', mods: { mod: false, shift: false, alt: false } }])
   })
 
   test('migrate validates and clamps paperDefaults field by field', () => {

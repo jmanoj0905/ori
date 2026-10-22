@@ -1,7 +1,11 @@
+import { migrateKeyBinding } from './keys'
 import type { Action, Binding, Bindings, Mods } from './schema'
 
 const NONE: Mods = { mod: false, shift: false, alt: false }
-const key = (code: string, mods: Partial<Mods> = {}): Binding => ({ type: 'key', code, mods: { ...NONE, ...mods } })
+/** A character key (layout-aware, keys.ts). */
+const key = (k: string, mods: Partial<Mods> = {}): Binding => ({ type: 'key', key: k, mods: { ...NONE, ...mods } })
+/** A named key, by physical code. */
+const named = (code: string): Binding => ({ type: 'key', code, mods: { ...NONE } })
 const mouse = (button: 0 | 1 | 2): Binding => ({ type: 'mouse', button, mods: { ...NONE } })
 const wheel = (): Binding => ({ type: 'wheel', mods: { ...NONE } })
 
@@ -15,24 +19,24 @@ export const DEFAULT_BINDINGS: Bindings = {
   orbit: [mouse(2)],
   pan: [mouse(1)],
   zoom: [wheel()],
-  layersLess: [key('BracketLeft'), wheel()],
-  layersMore: [key('BracketRight'), wheel()],
+  layersLess: [key('['), wheel()],
+  layersMore: [key(']'), wheel()],
   angleSnap: [{ type: 'modifier', key: 'shift' }],
-  valley: [key('KeyV')],
-  mountain: [key('KeyM')],
-  reverse: [key('KeyR')],
-  squash: [key('KeyS')],
-  petal: [key('KeyP')],
-  turnOver: [key('KeyT')],
-  undo: [key('KeyZ', { mod: true })],
-  redo: [key('KeyZ', { mod: true, shift: true })],
-  cancel: [key('Escape')],
+  valley: [key('v')],
+  mountain: [key('m')],
+  reverse: [key('r')],
+  squash: [key('s')],
+  petal: [key('p')],
+  turnOver: [key('t')],
+  undo: [key('z', { mod: true })],
+  redo: [key('z', { mod: true, shift: true })],
+  cancel: [named('Escape')],
   topView: [],
   resetView: [],
-  shortcuts: [key('Slash', { shift: true })],
+  shortcuts: [key('?')],
   settings: [],
   // Not in the spec 04 table: the keyboard-only entry point (Task 10). Remappable.
-  keyboardFold: [key('KeyF')],
+  keyboardFold: [key('f')],
 }
 
 export const cloneBindings = (b: Bindings): Bindings =>
@@ -43,7 +47,12 @@ const sameMods = (a: Mods, b: Mods) => a.mod === b.mod && a.shift === b.shift &&
 export function sameBinding(a: Binding, b: Binding): boolean {
   if (a.type !== b.type) return false
   switch (a.type) {
-    case 'key': return a.code === (b as typeof a).code && sameMods(a.mods, (b as typeof a).mods)
+    case 'key': {
+      // Compare in the migrated form, so a legacy code binding equals its character binding.
+      const x = migrateKeyBinding(a)
+      const y = migrateKeyBinding(b as typeof a)
+      return x.key === y.key && x.code === y.code && sameMods(x.mods, y.mods)
+    }
     case 'mouse': return a.button === (b as typeof a).button && sameMods(a.mods, (b as typeof a).mods)
     case 'wheel': return sameMods(a.mods, (b as typeof a).mods)
     case 'modifier': return a.key === (b as typeof a).key

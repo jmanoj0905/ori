@@ -8,7 +8,9 @@
 //    clientX/clientY (and dx/dy since the previous event, in CSS pixels).
 //    A `start` handler may return `false` to refuse the drag (e.g. the press
 //    missed the paper): the router then treats it as never begun.
-//  - Key actions emit a single `tap`. Modifier bindings (angleSnap) emit
+//  - Key actions emit a single `tap`. Keys match layout-aware (settings/keys.ts):
+//    letters and symbols by the character typed, named keys by code.
+//  - Modifier bindings (angleSnap) emit
 //    `start` on press and `end` on release of the key, once per hold.
 //  - Wheel: while a fold drag is active the wheel means layers (deltaY < 0,
 //    wheel up = layersMore; deltaY > 0, wheel down = layersLess), otherwise
@@ -36,6 +38,7 @@
 //    ([aria-modal="true"]: the confirm dialog, the settings and shortcut
 //    sheets), so Esc / Z / V never reach the fold underneath.
 import type { Action, Bindings, Mods } from '../settings/schema'
+import { matchesKey } from '../settings/keys'
 
 export interface ActionEvent {
   phase: 'start' | 'move' | 'end' | 'tap'
@@ -342,9 +345,9 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
       }
       return
     }
-    const mods = eventMods(e)
+    // Layout-aware: character keys match what the key types, named keys their code (settings/keys.ts).
     const action = (Object.keys(b) as Action[]).find(a =>
-      handlers[a] && b[a].some(x => x.type === 'key' && x.code === e.code && sameMods(x.mods, mods)))
+      handlers[a] && b[a].some(x => x.type === 'key' && matchesKey(x, e)))
     if (!action) return
     e.preventDefault()
     if (e.repeat && action !== 'layersLess' && action !== 'layersMore') return

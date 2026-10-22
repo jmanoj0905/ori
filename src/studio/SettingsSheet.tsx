@@ -20,6 +20,7 @@ import { announce } from './announce'
 import { useModal } from './useModal'
 import { Swatches } from './islands/PaperPanel'
 import { DEFAULT_BINDINGS, cloneBindings, findConflicts, sameBinding } from '../settings/bindings'
+import { bindingFromKeyEvent } from '../settings/keys'
 import { ACTION_LABELS, describeBindings } from '../settings/describe'
 import { ACTIONS, type Action, type Binding, type Bindings, type ModKey, type Mods, type SnapSettings } from '../settings/schema'
 import { useSettings } from '../settings/store'
@@ -119,7 +120,7 @@ function ControlRow({
       return
     }
     if (mk) return // wait for the key the modifier belongs to
-    done(withBinding(list, { type: 'key', code: e.code, mods: modsOf(e) }))
+    done(withBinding(list, bindingFromKeyEvent(e)))
   }
   const onMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()

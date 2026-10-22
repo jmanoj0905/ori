@@ -9,7 +9,7 @@ import { handleRequest } from '../committer'
 import { lastFold, useStudio } from '../store'
 import { useSettings, defaultSettings } from '../../settings/store'
 import { FoldBar } from './FoldBar'
-import { HintLine } from './HintLine'
+import { BUSY_AFTER_MS, FOLDING, HintLine, RESTORING } from './HintLine'
 import { PaperPanel } from './PaperPanel'
 import { Tools } from './Tools'
 import { TopBar } from './TopBar'
@@ -358,6 +358,29 @@ describe('hint line', () => {
       useStudio.setState({ preview })
     })
     expect(screen.getByRole('status')).toHaveTextContent(/^Flap would pass through paper\.$/)
+  })
+
+  test(`a commit pending for ${BUSY_AFTER_MS} ms shows "Folding…" (not before), and it clears when the commit lands`, () => {
+    vi.useFakeTimers()
+    render(<HintLine />)
+    act(() => useStudio.setState({ pending: true }))
+    act(() => vi.advanceTimersByTime(BUSY_AFTER_MS - 1))
+    expect(screen.getByRole('status')).not.toHaveTextContent(FOLDING)
+    act(() => vi.advanceTimersByTime(1))
+    expect(screen.getByRole('status')).toHaveTextContent(/^Folding…$/)
+    expect(screen.getByRole('status')).toHaveAttribute('data-busy', '')
+    act(() => useStudio.setState({ pending: false }))
+    expect(screen.getByRole('status')).not.toHaveTextContent(FOLDING)
+    vi.useRealTimers()
+  })
+
+  test('a slow autosave restore says so', () => {
+    vi.useFakeTimers()
+    render(<HintLine />)
+    act(() => useStudio.setState({ pending: true, restoring: true }))
+    act(() => vi.advanceTimersByTime(BUSY_AFTER_MS))
+    expect(screen.getByRole('status')).toHaveTextContent(RESTORING)
+    vi.useRealTimers()
   })
 })
 

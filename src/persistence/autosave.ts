@@ -3,99 +3,29 @@
 //   { version: 1, paper, steps, cursor }
 // Redo entries are part of `steps`; `cursor` says how many are applied.
 //
-// Load replays every step through the engine, synchronously and on the calling
-// thread (the Worker committer is async and the restore must land before the
-// first paint; a few hundred ms on a long history is acceptable). Each fold is
-// re-committed from its recorded {tool, grab, target, layers, kind, crease,
-// angleDeg, face} with snapAngle off and progress 1; crease + angleDeg make the
-// replay exact for plain folds (compound tools record neither and replay from
-// grab / target / layers / kind). Any refusal, throw or malformed field means the save is corrupt:
-// loadHistory returns null and shows RESTORE_FAILED once.
-import { PAPER_SIZES, commit, createPaper, jumpTo, push, startHistory, turnOver } from '@engine'
-import type { Gesture, History, Line, Step, Tool, Vec2 } from '@engine'
-import type { PaperSettings, SheetSize } from '../paper'
+// Restore (R52) is bounded: `readSave` reads and validates the payload on the
+// main thread (cheap: JSON plus shape checks, at most MAX_RESTORE_STEPS steps),
+// and the replay itself (`replaySave`, persistence/replay.ts) runs through the
+// engine Worker at boot (studio/boot.ts), behind a light loading state, with a
+// timeout. `loadHistory` is the synchronous read + replay, for tests and tools.
+// An unusable save (bad JSON, unknown version, too many steps, a step that does
+// not replay) shows RESTORE_FAILED once; an absent save or unreadable storage
+// is silent.
+import type { History, Step } from '@engine'
+import type { PaperSettings } from '../paper'
 import { AUTOSAVE_OFF, RESTORE_FAILED, noticeOnce } from './notice'
+import { parseSave, replaySave, type Restored, type SavedModel } from './replay'
+
+export { MAX_RESTORE_STEPS, type Restored, type SavedModel } from './replay'
 
 export const AUTOSAVE_KEY = 'ori.autosave.v1'
 export const SAVE_DEBOUNCE_MS = 500
 
-export type Restored = { history: History; paper: PaperSettings }
-
-const TOOLS: readonly string[] = ['fold', 'reverse', 'squash', 'petal']
-const MODES: readonly string[] = ['kami', 'washi', 'plain', 'custom']
-
-const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
-const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
-const vec = (v: unknown): v is Vec2 => Array.isArray(v) && v.length === 2 && v.every(num)
-const line = (v: unknown): v is Line => isObj(v) && vec(v.origin) && vec(v.vector)
-
-function sizeOf(size: SheetSize): { width: number; height: number } | null {
-  if (size === 'square' || size === 'a4') return PAPER_SIZES[size]
-  return size.width > 0 && size.height > 0 ? { width: size.width, height: size.height } : null
-}
-
-function parsePaper(v: unknown): PaperSettings | null {
-  if (!isObj(v) || typeof v.mode !== 'string' || !MODES.includes(v.mode)) return null
-  if (typeof v.front !== 'string' || typeof v.back !== 'string' || !num(v.thickness) || !num(v.translucency)) return null
-  const s = v.size
-  const size: SheetSize | null =
-    s === 'square' || s === 'a4' ? s : isObj(s) && num(s.width) && num(s.height) && s.width > 0 && s.height > 0 ? { width: s.width, height: s.height } : null
-  if (!size) return null
-  const pattern = v.pattern === 'seigaiha' || v.pattern === 'asanoha' ? v.pattern : undefined
-  return {
-    mode: v.mode as PaperSettings['mode'], front: v.front, back: v.back, thickness: v.thickness,
-    translucency: v.translucency, size, ...(pattern ? { pattern } : {}),
-  }
-}
-
-/** The replay Gesture for a recorded fold step, or null when its params are malformed. */
-function gestureOf(params: unknown): Gesture | null {
-  if (!isObj(params)) return null
-  const { tool, grab, target, layers, kind, angleDeg, crease, face } = params
-  if (typeof tool !== 'string' || !TOOLS.includes(tool) || !vec(grab) || !vec(target)) return null
-  if (!num(layers) || (kind !== 'valley' && kind !== 'mountain')) return null
-  if (face !== undefined && !num(face)) return null
-  // Plain folds record crease + angleDeg (exact replay). Compound tools (reverse,
-  // squash, petal) record neither: the engine derives their geometry from the gesture.
-  const exact = tool === 'fold'
-  if (exact ? !num(angleDeg) || !line(crease) : (angleDeg !== undefined && !num(angleDeg)) || (crease !== undefined && !line(crease))) return null
-  return {
-    tool: tool as Tool, grab, target, layers, kind, progress: 1, snapAngle: false,
-    ...(crease === undefined ? {} : { crease: crease as Line }),
-    ...(angleDeg === undefined ? {} : { angleDeg: angleDeg as number }),
-    ...(face === undefined ? {} : { face }),
-  }
-}
-
-/** Rebuild the history from a parsed payload, or null if anything does not replay. */
-function replay(raw: Record<string, unknown>): Restored | null {
-  const paper = parsePaper(raw.paper)
-  const { steps, cursor } = raw
-  if (!paper || !Array.isArray(steps) || !num(cursor)) return null
-  const dims = sizeOf(paper.size)
-  if (!dims) return null
-  let h = startHistory(createPaper(dims))
-  for (const s of steps as unknown[]) {
-    if (!isObj(s)) return null
-    let res
-    if (s.kind === 'turnOver') res = turnOver(h.frames[h.cursor])
-    else {
-      const g = gestureOf(s.params)
-      if (!g || s.kind !== g.tool) return null
-      res = commit(h.frames[h.cursor], g)
-    }
-    if (!res.ok) return null
-    h = push(h, res.step, res.frame)
-  }
-  return { history: jumpTo(h, Math.trunc(cursor)), paper }
-}
-
 /**
- * Restore the autosaved model, or null (nothing saved, or the save is unusable).
- * An unusable save (bad JSON, unknown version, a step that does not replay)
- * shows RESTORE_FAILED once; an absent save or unreadable storage is silent.
+ * The saved model, validated and ready to replay; null when nothing is saved,
+ * storage is unreadable (silent) or the save is unusable (RESTORE_FAILED once).
  */
-export function loadHistory(): Restored | null {
+export function readSave(): SavedModel | null {
   let text: string | null
   try {
     text = globalThis.localStorage?.getItem(AUTOSAVE_KEY) ?? null
@@ -103,17 +33,28 @@ export function loadHistory(): Restored | null {
     return null
   }
   if (text === null) return null
+  let saved: SavedModel | null = null
   try {
-    const raw: unknown = JSON.parse(text)
-    if (isObj(raw) && raw.version === 1) {
-      const r = replay(raw)
-      if (r) return r
-    }
+    saved = parseSave(JSON.parse(text))
   } catch {
-    /* fall through */
+    /* bad JSON: fall through */
   }
-  noticeOnce(RESTORE_FAILED)
-  return null
+  if (!saved) noticeOnce(RESTORE_FAILED)
+  return saved
+}
+
+/** Restore the autosaved model synchronously (read + replay on this thread), or null. */
+export function loadHistory(): Restored | null {
+  const saved = readSave()
+  if (!saved) return null
+  let r: Restored | null = null
+  try {
+    r = replaySave(saved)
+  } catch {
+    /* an engine throw is a corrupt save */
+  }
+  if (!r) noticeOnce(RESTORE_FAILED)
+  return r
 }
 
 let timer: ReturnType<typeof setTimeout> | undefined

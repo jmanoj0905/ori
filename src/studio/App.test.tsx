@@ -57,7 +57,8 @@ test('App restores the autosave on mount; the paper-defaults seed does not overw
   resetBootForTests()
   useStudio.getState().newSheet('square')
   render(<App />)
-  expect(useStudio.getState().history.steps).toHaveLength(1)
+  // The replay runs off the main thread (in-process in jsdom): it lands after mount.
+  await waitFor(() => expect(useStudio.getState().history.steps).toHaveLength(1))
   expect(useStudio.getState().paper).toMatchObject({ front: '#2F4A8A', mode: 'plain', size: 'square' })
   expect(await screen.findByText(/Valley fold/)).toBeInTheDocument()
   cleanup()

@@ -6,8 +6,9 @@ import { current } from '@engine'
 import { PRESETS, runPreset } from '../presets'
 import { inProcessCommitter } from '../studio/committer'
 import { DEFAULT_PAPER, createStudioStore } from '../studio/store'
-import { bootStudio } from '../studio/boot'
-import { AUTOSAVE_KEY, cancelSave, flushSave, loadHistory, saveHistory } from './autosave'
+import { bootStudio, resetBootForTests } from '../studio/boot'
+import { AUTOSAVE_KEY, MAX_RESTORE_STEPS, cancelSave, flushSave, loadHistory, readSave, saveHistory } from './autosave'
+import type { Restored } from './replay'
 import { AUTOSAVE_OFF, RESTORE_FAILED, resetNotices, notices } from './notice'
 import { pngName } from './png'
 
@@ -134,33 +135,119 @@ describe('autosave', () => {
 })
 
 describe('boot ordering', () => {
+  afterEach(() => resetBootForTests())
+
   test('a restored model is not replaced by the blank-sheet seed', async () => {
     const a = await twoFoldsOneUndone()
     saveHistory(a.getState().history, a.getState().paper)
     flushSave()
     const b = fresh()
-    bootStudio(b)
+    await bootStudio(b)
     expect(b.getState().history.steps).toHaveLength(2)
     expect(b.getState().history.cursor).toBe(1)
-    bootStudio(b) // idempotent (StrictMode)
+    await bootStudio(b) // idempotent (StrictMode)
     expect(b.getState().history.steps).toHaveLength(2)
   })
 
   test('with nothing saved the blank sheet is seeded, and later changes autosave', async () => {
     const b = fresh()
-    bootStudio(b)
+    await bootStudio(b)
     expect(b.getState().history.steps).toHaveLength(0)
     await fold(b, [0, 0])
     flushSave()
     expect(JSON.parse(localStorage.getItem(AUTOSAVE_KEY)!).steps).toHaveLength(1)
   })
 
-  test('a corrupt save boots a fresh sheet with one toast', () => {
+  test('a corrupt save boots a fresh sheet with one toast', async () => {
     localStorage.setItem(AUTOSAVE_KEY, 'nope')
     const b = fresh()
-    bootStudio(b)
+    await bootStudio(b)
     expect(b.getState().history.steps).toHaveLength(0)
     expect(notices.getState().message).toBe(RESTORE_FAILED)
+  })
+})
+
+describe('bounded restore (R52)', () => {
+  afterEach(() => resetBootForTests())
+
+  /** A restorer the test resolves by hand, recording what it was asked to replay. */
+  function manualRestorer() {
+    let resolve!: (r: Restored | null) => void
+    let reject!: (e: Error) => void
+    const calls: unknown[] = []
+    const restorer = (saved: unknown) => {
+      calls.push(saved)
+      return new Promise<Restored | null>((res, rej) => { resolve = res; reject = rej })
+    }
+    return { restorer, calls, resolve: (r: Restored | null) => resolve(r), reject: (e: Error) => reject(e) }
+  }
+
+  async function savedTwoFolds() {
+    const a = await twoFoldsOneUndone()
+    saveHistory(a.getState().history, a.getState().paper)
+    flushSave()
+    return a
+  }
+
+  test('the replay goes to the restorer, behind a loading state that blocks folding', async () => {
+    const a = await savedTwoFolds()
+    const m = manualRestorer()
+    const b = fresh()
+    const booting = bootStudio(b, { restorer: m.restorer })
+    expect(m.calls).toHaveLength(1)
+    expect(b.getState()).toMatchObject({ pending: true, restoring: true })
+    b.getState().begin([1, 1]) // ignored while restoring
+    expect(b.getState().gesture).toBeNull()
+    m.resolve({ history: a.getState().history, paper: a.getState().paper })
+    await booting
+    expect(b.getState()).toMatchObject({ pending: false, restoring: false })
+    expect(b.getState().history.steps).toHaveLength(2)
+  })
+
+  test('a restore that fails (worker died / timed out) toasts once and opens a blank sheet', async () => {
+    await savedTwoFolds()
+    const m = manualRestorer()
+    const b = fresh()
+    const booting = bootStudio(b, { restorer: m.restorer })
+    m.reject(new Error('The engine took too long.'))
+    await booting
+    expect(b.getState()).toMatchObject({ pending: false, restoring: false })
+    expect(b.getState().history.steps).toHaveLength(0)
+    expect(notices.getState().message).toBe(RESTORE_FAILED)
+  })
+
+  test('a new sheet made while restoring wins: the restored model is dropped and the new sheet saved', async () => {
+    const a = await savedTwoFolds()
+    const m = manualRestorer()
+    const b = fresh()
+    const booting = bootStudio(b, { restorer: m.restorer })
+    b.getState().newSheet('a4')
+    m.resolve({ history: a.getState().history, paper: a.getState().paper })
+    await booting
+    expect(b.getState().history.steps).toHaveLength(0)
+    flushSave()
+    expect(JSON.parse(localStorage.getItem(AUTOSAVE_KEY)!).steps).toHaveLength(0)
+  })
+
+  test(`more than ${MAX_RESTORE_STEPS} steps is refused without replaying, with the toast`, async () => {
+    const step = { kind: 'turnOver', params: { axisX: 0.5 }, label: 'Turn over', at: 0 }
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+      version: 1, paper: DEFAULT_PAPER, steps: Array.from({ length: MAX_RESTORE_STEPS + 1 }, () => step), cursor: 0,
+    }))
+    const m = manualRestorer()
+    const b = fresh()
+    await bootStudio(b, { restorer: m.restorer })
+    expect(m.calls).toHaveLength(0)
+    expect(notices.getState().message).toBe(RESTORE_FAILED)
+    expect(b.getState().pending).toBe(false)
+  })
+
+  test(`exactly ${MAX_RESTORE_STEPS} steps is still a usable save`, () => {
+    const step = { kind: 'turnOver', params: { axisX: 0.5 }, label: 'Turn over', at: 0 }
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+      version: 1, paper: DEFAULT_PAPER, steps: Array.from({ length: MAX_RESTORE_STEPS }, () => step), cursor: 0,
+    }))
+    expect(readSave()?.steps).toHaveLength(MAX_RESTORE_STEPS)
   })
 })
 

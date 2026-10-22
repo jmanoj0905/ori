@@ -60,7 +60,9 @@ export function App() {
   useInput(stageReady)
   // Restore the autosave first; only an unrestored studio opens on the user's
   // paper defaults (settings, section 5). Then autosave starts (see boot.ts).
-  useEffect(() => bootStudio(useStudio), [])
+  useEffect(() => {
+    void bootStudio(useStudio)
+  }, [])
   useEffect(() => {
     const host = hostRef.current
     if (!host) return

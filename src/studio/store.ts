@@ -112,8 +112,10 @@ export type StudioState = {
   refusal: string | null
   paper: PaperSettings
   hint: string
-  /** A commit (release or turn over) is in flight. */
+  /** A commit (release or turn over) is in flight, or boot is replaying the autosave. */
   pending: boolean
+  /** Boot is replaying the autosave in the Worker (pending is true meanwhile; see boot.ts). */
+  restoring: boolean
 
   /** Start a fold gesture; `face` is the face hit at grab (Gesture.face). */
   begin(grab: Vec2, face?: number): void
@@ -297,6 +299,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       paper: DEFAULT_PAPER,
       hint: HINT_START,
       pending: false,
+      restoring: false,
 
       begin(grab, face) {
         if (get().pending) return

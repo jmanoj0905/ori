@@ -1,7 +1,12 @@
-import { describe, expect, test } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { PAPER_SIZES, createPaper } from '@engine'
 import type { Gesture } from '@engine'
-import { createWorkerCommitter, handleRequest, inProcessCommitter, type WorkerLike, type WorkerReply, type WorkerRequest } from './committer'
+import {
+  COMMIT_TIMEOUT_MS, RESTORE_TIMEOUT_MS, createWorkerCommitter, createWorkerRestorer, handleRequest, inProcessCommitter, inProcessRestorer,
+  type WorkerLike, type WorkerReply, type WorkerRequest,
+} from './committer'
+import { DEFAULT_PAPER } from '../paper'
+import type { SavedModel } from '../persistence/replay'
 
 const sheet = createPaper(PAPER_SIZES.square)
 const corner: Gesture = { tool: 'fold', grab: [1, 1], target: [0, 0], layers: 1, kind: 'valley', progress: 1, snapAngle: false }
@@ -13,6 +18,7 @@ function fakeWorker(): WorkerLike & { posted: number; terminated: boolean } {
     terminated: false,
     onmessage: null as ((e: MessageEvent) => void) | null,
     onerror: null as ((e: ErrorEvent) => void) | null,
+    onmessageerror: null as ((e: MessageEvent) => void) | null,
     postMessage(msg: unknown) {
       w.posted++
       const { id, req } = structuredClone(msg) as WorkerRequest
@@ -60,7 +66,7 @@ describe('committers', () => {
   })
 
   test('a worker error rejects pending commits and the next call makes a new worker', async () => {
-    const dead: WorkerLike = { onmessage: null, onerror: null, postMessage() {}, terminate() {} }
+    const dead: WorkerLike = { onmessage: null, onerror: null, onmessageerror: null, postMessage() {}, terminate() {} }
     const workers: WorkerLike[] = [dead, fakeWorker()]
     const commit = createWorkerCommitter(() => workers.shift()!)
     const p = commit({ frame: sheet, gesture: corner })
@@ -69,4 +75,79 @@ describe('committers', () => {
     const r = await commit({ frame: sheet, gesture: corner })
     expect(r.ok).toBe(true)
   })
+
+  test(`a worker that never answers times out after ${COMMIT_TIMEOUT_MS / 1000} s: rejected, terminated, replaced`, async () => {
+    vi.useFakeTimers()
+    let terminated = 0
+    const silent: WorkerLike = { onmessage: null, onerror: null, onmessageerror: null, postMessage() {}, terminate() { terminated++ } }
+    const workers: WorkerLike[] = [silent, fakeWorker()]
+    const commit = createWorkerCommitter(() => workers.shift()!)
+    const p = commit({ frame: sheet, gesture: corner })
+    const caught = p.catch((e: Error) => e)
+    await vi.advanceTimersByTimeAsync(COMMIT_TIMEOUT_MS - 1)
+    expect(terminated).toBe(0)
+    await vi.advanceTimersByTimeAsync(1)
+    expect((await caught as Error).message).toMatch(/took too long/)
+    expect(terminated).toBe(1)
+    vi.useRealTimers()
+    const r = await commit({ frame: sheet, gesture: corner })
+    expect(r.ok).toBe(true)
+  })
+
+  test('a reply that arrives in time clears its timeout', async () => {
+    vi.useFakeTimers()
+    const w = fakeWorker()
+    const commit = createWorkerCommitter(() => w)
+    const r = await commit({ frame: sheet, gesture: corner })
+    expect(r.ok).toBe(true)
+    await vi.advanceTimersByTimeAsync(COMMIT_TIMEOUT_MS * 2)
+    expect(w.terminated).toBe(false)
+  })
+
+  test('a reply that cannot be deserialised (messageerror) rejects and drops the worker', async () => {
+    const w = fakeWorker()
+    w.postMessage = () => { w.posted++ } // swallow: the reply "arrives" as a messageerror instead
+    const workers: WorkerLike[] = [w, fakeWorker()]
+    const commit = createWorkerCommitter(() => workers.shift()!)
+    const p = commit({ frame: sheet, gesture: corner })
+    w.onmessageerror?.({} as MessageEvent)
+    await expect(p).rejects.toThrow()
+    expect(w.terminated).toBe(true)
+    expect((await commit({ frame: sheet, gesture: corner })).ok).toBe(true)
+  })
 })
+
+describe('restorers', () => {
+  const saved: SavedModel = {
+    paper: DEFAULT_PAPER,
+    steps: [{ turnOver: true }, { gesture: corner }],
+    cursor: 1,
+  }
+
+  test('in-process restorer replays the steps', async () => {
+    const r = await inProcessRestorer(saved)
+    expect(r?.history.steps.map(s => s.kind)).toEqual(['turnOver', 'fold'])
+    expect(r?.history.cursor).toBe(1)
+  })
+
+  test('worker restorer replays off the main thread and frees its worker', async () => {
+    const w = fakeWorker()
+    const restore = createWorkerRestorer(() => w)
+    const r = await restore(saved)
+    expect(w.posted).toBe(1)
+    expect(r?.history.steps).toHaveLength(2)
+    restore.dispose()
+    expect(w.terminated).toBe(true)
+  })
+
+  test(`a restore that runs past ${RESTORE_TIMEOUT_MS / 1000} s rejects`, async () => {
+    vi.useFakeTimers()
+    const silent: WorkerLike = { onmessage: null, onerror: null, onmessageerror: null, postMessage() {}, terminate() {} }
+    const restore = createWorkerRestorer(() => silent)
+    const caught = restore(saved).catch((e: Error) => e)
+    await vi.advanceTimersByTimeAsync(RESTORE_TIMEOUT_MS)
+    expect(await caught).toBeInstanceOf(Error)
+  })
+})
+
+afterEach(() => vi.useRealTimers())

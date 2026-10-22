@@ -31,6 +31,8 @@
 // Player and the Stage come in through the structural RecordSource /
 // RecordStage interfaces (the Record dialog adapts the real ones).
 
+import { GIF_BYTES_PER_PIXEL, GIF_MAX_BYTES, GIF_MAX_FRAMES } from './gifBudget'
+
 export type RecordFormat = 'gif' | 'webm'
 export type RecordSize = 480 | 720 | 1080
 export type RecordFps = 15 | 30
@@ -131,19 +133,14 @@ export class RecordHiddenError extends Error {
 }
 
 // ---- GIF budget -------------------------------------------------------------
-// A GIF of a long replay at 1080p / 30 fps runs to hundreds of MB, and the
-// encoder's growing stream plus the transfer and the Blob can hold 2–3× that
-// at the peak — enough to kill a mobile tab, for a file nobody can use. The
-// estimate is deliberately pessimistic (a reviewer's probe of noisy washi
-// frames gave ≈ 0.26 B/px with per-frame palettes); combinations over it are
-// refused (the dialog disables Record and says why; record() throws).
+// A GIF of a long replay at 1080p / 30 fps can run to hundreds of MB, and the
+// encoder's growing stream plus the transfer and the Blob can hold 2-3x that
+// at the peak. The estimate (gifBudget.ts: 0.1 B/px/frame, about 2x the 0.04-0.06
+// measured on real 1080p washi/kami GIFs) refuses combinations over the cap
+// (the dialog disables Record and says why; record() throws), and the worker
+// aborts a recording whose real stream passes 1.5x the cap.
 
-/** Estimated GIF bytes per output pixel per frame. */
-export const GIF_BYTES_PER_PIXEL = 0.3
-/** Largest estimated GIF the recorder will make. */
-export const GIF_MAX_BYTES = 64 * 1024 * 1024
-/** Absolute frame cap for a GIF (20 s at 30 fps), whatever the size. */
-export const GIF_MAX_FRAMES = 600
+export { GIF_BYTES_PER_PIXEL, GIF_MAX_BYTES, GIF_MAX_FRAMES, GIF_ABORT_BYTES } from './gifBudget'
 
 export type GifEstimate = {
   frames: number

@@ -203,7 +203,7 @@ describe('RecordDialog: GIF budget and hidden tabs (fix round 1)', () => {
     supportWebm(false)
     render(<RecordDialog stage={stage} onClose={() => {}} />)
     // 2 steps at 480p / 15 fps: 768 × 480 × 25 frames.
-    expect(screen.getByText(/768 × 480 · 25 frames · about 2\.6 MB/)).toBeInTheDocument()
+    expect(screen.getByText(/768 × 480 · 25 frames · about 0\.9 MB/)).toBeInTheDocument()
   })
 
   test('over budget: Record is off with an explanation; a smaller combination turns it back on', () => {
@@ -212,6 +212,8 @@ describe('RecordDialog: GIF budget and hidden tabs (fix round 1)', () => {
     render(<RecordDialog stage={stage} onClose={() => {}} />)
     expect(screen.getByRole('button', { name: 'Record' })).toBeEnabled() // 480p / 15 fps fits
     fireEvent.click(screen.getByRole('radio', { name: '1080p' }))
+    expect(screen.getByRole('button', { name: 'Record' })).toBeEnabled() // 1080p / 15 fps is ~49 MB at 0.1 B/px
+    fireEvent.click(screen.getByRole('radio', { name: '30 fps' }))
     expect(screen.getByRole('button', { name: 'Record' })).toBeDisabled()
     expect(screen.getByText(/Too large for a GIF/)).toHaveTextContent(/smaller size.*WebM/)
     fireEvent.click(screen.getByRole('radio', { name: /WebM/ }))
@@ -224,6 +226,7 @@ describe('RecordDialog: GIF budget and hidden tabs (fix round 1)', () => {
     craneLength()
     render(<RecordDialog stage={stage} onClose={() => {}} />)
     fireEvent.click(screen.getByRole('radio', { name: '1080p' }))
+    fireEvent.click(screen.getByRole('radio', { name: '30 fps' }))
     expect(screen.getByText(/Too large for a GIF/)).not.toHaveTextContent(/WebM/)
   })
 

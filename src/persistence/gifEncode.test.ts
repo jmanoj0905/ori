@@ -2,6 +2,7 @@
 // frames, finish → a real GIF89a, encoded with gifenc.
 import { describe, expect, test } from 'vitest'
 import { createGifHandler } from './gifEncode'
+import { GIF_ABORT_BYTES, GIF_BYTES_PER_PIXEL, GIF_MAX_BYTES } from './gifBudget'
 import type { GifReply } from './record'
 
 function frame(w: number, h: number, rgb: [number, number, number]): ArrayBuffer {
@@ -67,5 +68,38 @@ describe('GIF encoder handler', () => {
     }
     expect(packed).toHaveLength(4)
     expect(packed.every(p => (p & 0x80) === 0)).toBe(true)
+  })
+
+  test('budget constants: 0.1 B/px estimate, abort at 1.5x the cap', () => {
+    expect(GIF_BYTES_PER_PIXEL).toBeCloseTo(0.1, 5)
+    expect(GIF_ABORT_BYTES).toBe(1.5 * GIF_MAX_BYTES)
+  })
+
+  test('a stream that grows past the abort size is an error reply, and nothing more is encoded', () => {
+    const noisy = (seed: number) => {
+      const a = new Uint8ClampedArray(16 * 16 * 4)
+      for (let i = 0; i < a.length; i++) a[i] = i % 4 === 3 ? 255 : (i * 37 + seed * 91 + ((i * i) >> 3)) % 256
+      return a.buffer
+    }
+    // Measure the stream after one frame, then allow only a little more than that.
+    const probe: GifReply[] = []
+    const measure = createGifHandler(m => probe.push(m))
+    measure({ type: 'start', width: 16, height: 16 })
+    measure({ type: 'frame', index: 0, delay: 50, rgba: noisy(0) })
+    measure({ type: 'finish' })
+    const one = (probe.at(-1) as Extract<GifReply, { type: 'done' }>).length
+
+    const out: GifReply[] = []
+    const handle = createGifHandler(m => out.push(m), one + 20)
+    handle({ type: 'start', width: 16, height: 16 })
+    for (let i = 0; i < 6; i++) handle({ type: 'frame', index: i, delay: 50, rgba: noisy(i) })
+    handle({ type: 'finish' })
+    const err = out.findIndex(m => m.type === 'error')
+    expect(err).toBeGreaterThan(0)
+    expect(out[err - 1]).toEqual({ type: 'encoded', index: err - 1 })
+    expect((out[err] as Extract<GifReply, { type: 'error' }>).message).toMatch(/too large/i)
+    // The encoder is dropped: later frames and finish only error, never ack or finish a GIF.
+    expect(out.slice(err + 1).every(m => m.type === 'error')).toBe(true)
+    expect(out.some(m => m.type === 'done')).toBe(false)
   })
 })

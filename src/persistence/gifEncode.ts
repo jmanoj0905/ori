@@ -16,9 +16,15 @@
 // running total minus what was already emitted, so 30 fps (33.3 ms) plays at
 // the right overall speed (3, 3, 4 cs …) instead of drifting 10% fast.
 import { GIFEncoder, applyPalette, quantize, type Encoder, type Palette } from 'gifenc'
+import { GIF_ABORT_BYTES } from './gifBudget'
 import type { GifReply, GifRequest } from './record'
 
-export function createGifHandler(post: (m: GifReply, transfer?: Transferable[]) => void): (m: GifRequest) => void {
+/**
+ * `abortBytes`: the estimate is only an estimate, so after each frame the real
+ * stream is checked and the recording fails (error reply, encoder dropped) once
+ * it passes this (default 1.5x the GIF cap).
+ */
+export function createGifHandler(post: (m: GifReply, transfer?: Transferable[]) => void, abortBytes = GIF_ABORT_BYTES): (m: GifRequest) => void {
   let enc: Encoder | null = null
   let width = 0
   let height = 0
@@ -57,6 +63,10 @@ export function createGifHandler(post: (m: GifReply, transfer?: Transferable[]) 
         // With a global palette only the first frame passes it (it becomes the global colour table).
         enc.writeFrame(index, width, height, { palette: global && written > 0 ? undefined : palette, delay: cs * 10, repeat: 0 })
         written++
+        if (enc.bytesView().byteLength > abortBytes) {
+          enc = null
+          throw new Error('This GIF grew too large to keep. Try a smaller size or a lower frame rate.')
+        }
         post({ type: 'encoded', index: m.index })
         return
       }

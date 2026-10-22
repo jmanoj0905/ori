@@ -349,9 +349,13 @@ describe('GIF budget (fix round 1)', () => {
     expect(e.ok).toBe(true)
   })
 
-  test('a long replay at 1080p is over budget at either frame rate; 480p / 15 fps fits', () => {
+  test('calibrated to real GIFs: 0.1 B/px/frame, double the 0.04-0.06 measured at 1080p', () => {
+    expect(GIF_BYTES_PER_PIXEL).toBeCloseTo(0.1, 5)
+  })
+
+  test('a long replay at 1080p / 30 fps is over budget; 1080p / 15 and 480p / 15 fit', () => {
     expect(gifEstimate(crane, { size: 1080, fps: 30 }, 1.6)).toMatchObject({ ok: false, reason: 'bytes' })
-    expect(gifEstimate(crane, { size: 1080, fps: 15 }, 1.6)).toMatchObject({ ok: false, reason: 'bytes' })
+    expect(gifEstimate(crane, { size: 1080, fps: 15 }, 1.6).ok).toBe(true)
     expect(gifEstimate(crane, { size: 480, fps: 15 }, 1.6).ok).toBe(true)
     expect(gifEstimate(crane, { size: 480, fps: 15 }, 1.6).bytes).toBeLessThanOrEqual(GIF_MAX_BYTES)
   })

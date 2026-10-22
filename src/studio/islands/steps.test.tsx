@@ -62,7 +62,11 @@ describe('step list', () => {
     render(<Steps />)
     const list = screen.getByRole('list', { name: 'Fold steps' })
     const items = within(list).getAllByRole('button')
-    expect(items.map(b => b.textContent)).toEqual(['0 · Blank sheet', ...h.steps.map((s, i) => `${i + 1} · ${s.label}`)])
+    // Undone steps say so to a screen reader (visually: italic with a dashed marker, full contrast).
+    expect(items.map(b => b.textContent)).toEqual([
+      '0 · Blank sheet', ...h.steps.map((s, i) => `${i + 1} · ${s.label}${i + 1 > 1 ? ' (undone)' : ''}`),
+    ])
+    expect(within(items[2]!).getByText('(undone)')).toHaveClass('sr-only')
     expect(items[1]).not.toHaveAttribute('aria-disabled')
     expect(items[2]).toHaveAttribute('aria-disabled', 'true')
     expect(items[3]).toHaveAttribute('aria-disabled', 'true')
@@ -216,5 +220,22 @@ describe('presets', () => {
     const n = useStudio.getState().history.steps.length
     await new Promise(r => setTimeout(r, 700))
     expect(useStudio.getState().history.steps.length).toBeLessThanOrEqual(n + 1) // at most the in-flight commit
+  })
+})
+
+describe('preset failures (final review item 12)', () => {
+  test('a preset player that fails to load shows a notice instead of an unhandled rejection', async () => {
+    vi.resetModules()
+    vi.doMock('../presetPlayer', () => Promise.reject(new Error('Failed to fetch dynamically imported module')))
+    const { Steps: FreshSteps } = await import('./Steps')
+    const { notices } = await import('../../persistence/notice')
+    const { useStudio: store } = await import('../store')
+    store.setState({ ...store.getInitialState() }, true)
+    render(<FreshSteps />)
+    fireEvent.click(screen.getByRole('button', { name: 'Cup' }))
+    await waitFor(() => expect(notices.getState().message).toBe("Couldn't load the preset. Check your connection and try again."))
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+    vi.doUnmock('../presetPlayer')
+    vi.resetModules()
   })
 })

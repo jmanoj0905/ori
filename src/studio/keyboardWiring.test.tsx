@@ -205,3 +205,21 @@ describe('mouse and keyboard fold hand-over', () => {
     expect(useStudio.getState().gesture?.grab).toEqual([1, 1])
   })
 })
+
+describe('hints follow the live bindings (final review item 11)', () => {
+  test('the canvas label names the current keyboard-fold and shortcut-sheet keys, and follows a remap', () => {
+    render(<Harness />)
+    expect(canvas).toHaveAttribute('aria-label', 'Origami sheet. Press F to fold with the keyboard, ? for all shortcuts.')
+    act(() => {
+      useSettings.getState().setBinding('keyboardFold', [{ type: 'key', key: 'k', mods: { mod: false, shift: false, alt: false } }])
+    })
+    expect(canvas).toHaveAttribute('aria-label', 'Origami sheet. Press K to fold with the keyboard, ? for all shortcuts.')
+    act(() => {
+      useSettings.getState().setBinding('keyboardFold', [])
+      useSettings.getState().setBinding('shortcuts', [])
+    })
+    expect(canvas).toHaveAttribute('aria-label', 'Origami sheet.')
+    useSettings.setState(defaultSettings())
+  })
+})
+

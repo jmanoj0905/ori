@@ -134,6 +134,19 @@ describe('autosave', () => {
   })
 })
 
+describe('saved paper is cleaned like the settings paper (item 16)', () => {
+  test('a bad colour falls back, thickness and translucency are clamped; the model still restores', () => {
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+      version: 1,
+      paper: { ...DEFAULT_PAPER, front: 'red; background: url(x)', back: '#123456', thickness: 7, translucency: -3 },
+      steps: [], cursor: 0,
+    }))
+    const r = loadHistory()
+    expect(r?.paper).toEqual({ ...DEFAULT_PAPER, back: '#123456', thickness: 1, translucency: 0 })
+    expect(notices.getState().message).toBeNull()
+  })
+})
+
 describe('boot ordering', () => {
   afterEach(() => resetBootForTests())
 

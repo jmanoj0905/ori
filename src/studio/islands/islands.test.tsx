@@ -421,6 +421,25 @@ describe('top bar', () => {
     expect(screen.getByRole('button', { name: 'Redo' })).toBeEnabled()
   })
 
+  test('button tooltips name the live bindings, not hard-coded keys (item 11)', () => {
+    render(
+      <>
+        <TopBar paperOpen={false} onTogglePaper={() => {}} />
+        <Tools />
+      </>,
+    )
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveAttribute('title', 'Undo (Ctrl/⌘ + Z)')
+    expect(screen.getByRole('button', { name: 'Redo' })).toHaveAttribute('title', 'Redo (Ctrl/⌘ + Shift + Z)')
+    expect(screen.getByRole('button', { name: 'Reverse' })).toHaveAttribute('title', 'Reverse fold (R)')
+    expect(screen.getByRole('button', { name: 'Turn over' })).toHaveAttribute('title', 'Turn the model over (T)')
+    act(() => {
+      useSettings.getState().setBinding('undo', [{ type: 'key', key: 'u', mods: { mod: true, shift: false, alt: false } }])
+      useSettings.getState().setBinding('reverse', [])
+    })
+    expect(screen.getByRole('button', { name: 'Undo' })).toHaveAttribute('title', 'Undo (Ctrl/⌘ + U)')
+    expect(screen.getByRole('button', { name: 'Reverse' })).toHaveAttribute('title', 'Reverse fold')
+  })
+
   test('export and settings render, disabled until wired', () => {
     render(<TopBar paperOpen={false} onTogglePaper={() => {}} />)
     expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled()

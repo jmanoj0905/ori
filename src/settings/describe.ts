@@ -66,3 +66,7 @@ export function describeBinding(b: Binding): string {
 
 export const describeBindings = (list: readonly Binding[]): string =>
   list.length ? list.map(describeBinding).join(' or ') : 'Unbound'
+
+/** "Undo (Ctrl/⌘ + Z)" from the live bindings; just the label when the action is unbound. */
+export const withShortcut = (label: string, list: readonly Binding[]): string =>
+  list.length ? `${label} (${describeBindings(list)})` : label

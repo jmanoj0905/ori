@@ -2,12 +2,12 @@
 
 Ori is a browser origami studio. Fold a virtual sheet of paper directly in the
 browser: drag to fold, watch it settle in 3D, undo and redo, play built-in
-presets (crane, cup, plane), and export your model. It runs entirely
-client-side; the fold engine runs in a Web Worker and rendering uses Three.js.
+presets (crane, cup, plane), and export a PNG. It runs entirely client-side;
+the fold engine runs in a Web Worker and rendering uses Three.js.
 
 ## Features
 
-- Interactive folding on a 2D crease pattern with a live 3D view
+- Fold the 3D sheet by dragging it, with a live mini crease-pattern view
 - Folding engine built on Rabbit Ear, running off the main thread
 - Layer ordering and collision checks so folds stay physically valid
 - Snapping, fold gestures, keyboard folding, and touch input
@@ -23,6 +23,11 @@ Ori is free software, released under the
 Ori builds on [Rabbit Ear](https://github.com/rabbit-ear/rabbit-ear) by Kraft,
 the computational origami library that powers the crease-pattern and folding
 geometry. Rabbit Ear is also GPLv3.
+
+Third-party licences (React, Three.js, Zustand, Rabbit Ear and the IBM Plex
+and Instrument Serif fonts, under MIT, GPLv3 and the SIL Open Font License)
+are collected at build time into `THIRD_PARTY_NOTICES.txt`, served next to
+`LICENSE.txt` and linked from Settings → About.
 
 ## Getting started
 

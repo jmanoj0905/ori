@@ -742,8 +742,11 @@ input[type='range'] {
   color: var(--ivory);
 }
 .step-item[aria-disabled='true'] {
+  /* Undone (redo) steps: full-contrast ink-soft (AA), told apart by style, not fading. */
   color: var(--ink-soft);
-  opacity: 0.6;
+  font-style: italic;
+  border-left: 2px dashed var(--ink-soft);
+  border-radius: 0 6px 6px 0;
 }
 .presets {
   display: flex;

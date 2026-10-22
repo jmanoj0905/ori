@@ -5,11 +5,13 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { announce as _a, clearAnnouncements, useAnnouncements } from './announce'
 import { makeSheetHost } from './SheetHost'
 import { useUi } from './ui'
+import { notices, resetNotices } from '../persistence/notice'
 
 void _a
 beforeEach(() => {
   useUi.setState({ sheet: null, kf: 'idle' })
   clearAnnouncements()
+  resetNotices()
   vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => {
@@ -29,6 +31,7 @@ test('a failed chunk load closes the sheet, announces it, keeps the app mounted,
   await waitFor(() => expect(useUi.getState().sheet).toBeNull())
   expect(screen.getByText('app still here')).toBeInTheDocument()
   expect(useAnnouncements.getState().items.map(i => i.text)).toContain("Couldn't open settings. Check your connection and try again.")
+  expect(notices.getState().message).toBe("Couldn't open settings. Check your connection and try again.") // visible too
   expect(screen.queryByText('sheet ok')).toBeNull()
   act(() => useUi.getState().open('settings'))
   expect(await screen.findByText('sheet ok')).toBeInTheDocument()

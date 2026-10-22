@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useStudio } from '../studio/store'
 import { createFoldGesture, type GestureOptions, type GestureStage } from '../studio/useFoldGesture'
 import { useSettings } from '../settings/store'
+import { describeBindings } from '../settings/describe'
 import { prefersReducedMotion } from '../studio/motion'
 import { createKeyboardFold } from '../studio/keyboardFold'
 import { useUi } from '../studio/ui'
@@ -93,10 +94,23 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
     }
     el.tabIndex = 0
     el.setAttribute('role', 'application')
-    el.setAttribute('aria-label', 'Origami sheet. Press F to fold with the keyboard, ? for all shortcuts.')
+    // The label names the live keys (a remap or an unbound action updates it).
+    const label = () => {
+      const b = useSettings.getState().bindings
+      const parts = [
+        b.keyboardFold.length ? `Press ${describeBindings(b.keyboardFold)} to fold with the keyboard` : '',
+        b.shortcuts.length ? `${describeBindings(b.shortcuts)} for all shortcuts` : '',
+      ].filter(Boolean)
+      el.setAttribute('aria-label', parts.length ? `Origami sheet. ${parts.join(', ')}.` : 'Origami sheet.')
+    }
+    label()
+    const unlabel = useSettings.subscribe((s, prev) => {
+      if (s.bindings !== prev.bindings) label()
+    })
     el.addEventListener('pointermove', hover)
     el.addEventListener('pointerleave', leave)
     return () => {
+      unlabel()
       dispose()
       kf.dispose()
       window.removeEventListener('keydown', onKey, true)

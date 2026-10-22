@@ -9,6 +9,7 @@ import { useStudio } from '../store'
 import { useSettings } from '../../settings/store'
 import { ConfirmDialog } from './ConfirmDialog'
 import { MiniCP } from './MiniCP'
+import { notify } from '../../persistence/notice'
 import { stageDown, useUi } from '../ui'
 
 export const PRESET_MENU = [
@@ -20,6 +21,7 @@ type PresetId = (typeof PRESET_MENU)[number]['id']
 
 export const CONFIRM_PRESET = 'Playing a preset starts a new sheet and replaces your folds.'
 export const REDO_CLEARED = 'Redo history cleared'
+export const PRESET_FAILED = "Couldn't load the preset. Check your connection and try again."
 
 export function Steps() {
   const history = useStudio(s => s.history)
@@ -70,6 +72,9 @@ export function Steps() {
     try {
       const { playPreset } = await import('../presetPlayer')
       await playPreset(id, { signal: c.signal })
+    } catch {
+      // The player chunk failed to load (offline, a deploy replaced it): say so.
+      notify(PRESET_FAILED)
     } finally {
       if (ctl.current === c) {
         ctl.current = null
@@ -116,6 +121,7 @@ export function Steps() {
                 onClick={() => jumpTo(n)}
               >
                 {n} · {s.label}
+                {future && <span className="sr-only"> (undone)</span>}
               </button>
             </li>
           )

@@ -2,13 +2,15 @@
 // lazy chunks (R31): none of their code or CSS is in the main bundle.
 //
 // A failed chunk load (offline, a deploy replaced the file) must not take the
-// app down: an error boundary closes the sheet and announces it, and the
+// app down: an error boundary closes the sheet, announces it and shows the
+// notice toast, and the
 // loader is rebuilt (React.lazy caches a rejection) so the next open retries
 // with a fresh import().
 import { Component, Suspense, lazy, type ComponentType, type ReactNode } from 'react'
 import type { ShortcutSheet as ShortcutSheetType } from './ShortcutSheet'
 import type { SettingsSheet as SettingsSheetType } from './SettingsSheet'
 import { announce } from './announce'
+import { notify } from '../persistence/notice'
 import { useUi, type Sheet } from './ui'
 
 type Loader<P> = () => Promise<{ default: ComponentType<P> }>
@@ -44,7 +46,9 @@ export function makeSheetHost(
     if (sheet === 'settings') Settings = lazy(loadSettings)
     else Shortcuts = lazy(loadShortcuts)
     useUi.getState().close()
-    announce(`Couldn't open ${LABEL[sheet]}. Check your connection and try again.`)
+    const message = `Couldn't open ${LABEL[sheet]}. Check your connection and try again.`
+    announce(message)
+    notify(message) // visible too, not only to screen readers
   }
   return function SheetHost() {
     const sheet = useUi(s => s.sheet)

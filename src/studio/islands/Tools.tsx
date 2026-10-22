@@ -5,12 +5,14 @@ import { useStudio } from '../store'
 import { useSettings } from '../../settings/store'
 import { stageDown, useUi } from '../ui'
 import type { SnapSettings } from '../../settings/schema'
+import { withShortcut } from '../../settings/describe'
 
-const TOOLS: { tool: Tool; label: string; title: string }[] = [
+// Tooltips name the live bindings (describe.withShortcut), never a hard-coded key.
+const TOOLS: { tool: Tool; label: string; title: string; action?: 'reverse' | 'squash' | 'petal' }[] = [
   { tool: 'fold', label: 'Fold', title: 'Fold: drag the paper' },
-  { tool: 'reverse', label: 'Reverse', title: 'Reverse fold (R)' },
-  { tool: 'squash', label: 'Squash', title: 'Squash fold (S)' },
-  { tool: 'petal', label: 'Petal', title: 'Petal fold (P)' },
+  { tool: 'reverse', label: 'Reverse', title: 'Reverse fold', action: 'reverse' },
+  { tool: 'squash', label: 'Squash', title: 'Squash fold', action: 'squash' },
+  { tool: 'petal', label: 'Petal', title: 'Petal fold', action: 'petal' },
 ]
 
 const SNAPS: { key: keyof SnapSettings; label: string }[] = [
@@ -57,6 +59,7 @@ export function Tools({ onView }: ToolsProps = {}) {
   const pending = useStudio(s => s.pending)
   const down = useUi(s => stageDown(s.stage))
   const snap = useSettings(s => s.snap)
+  const keys = useSettings(s => s.bindings)
   const update = useSettings(s => s.update)
   return (
     <section className="island tools" aria-label="Tools">
@@ -68,20 +71,20 @@ export function Tools({ onView }: ToolsProps = {}) {
             className="tool"
             aria-pressed={tool === t.tool}
             disabled={down}
-            title={t.title}
+            title={t.action ? withShortcut(t.title, keys[t.action]) : t.title}
             onClick={() => setTool(t.tool)}
           >
             {t.label}
           </button>
         ))}
       </div>
-      <button type="button" className="tool action" disabled={pending || down} onClick={() => void turnOver()} title="Turn the model over (T)">
+      <button type="button" className="tool action" disabled={pending || down} onClick={() => void turnOver()} title={withShortcut('Turn the model over', keys.turnOver)}>
         Turn over
       </button>
       <div role="group" aria-label="View" className="stack views">
         <span className="group-label" aria-hidden="true">View</span>
         {VIEWS.map(v => (
-          <button key={v.view} type="button" className="tool view" title={v.title} disabled={!onView} onClick={() => onView?.(v.view)}>
+          <button key={v.view} type="button" className="tool view" title={withShortcut(v.title, keys[v.view === 'top' ? 'topView' : 'resetView'])} disabled={!onView} onClick={() => onView?.(v.view)}>
             {v.label}
           </button>
         ))}

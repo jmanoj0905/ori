@@ -38,7 +38,8 @@ const Q = 1e10 // coordinate quantum 1e-10 (1e-5 breaks replay: see below)
 const QA = 1e6 // angle quantum 1e-6 degrees
 const QU = 1e3 // thickness / translucency
 const MAX_JSON_BYTES = 1 << 20 // inflate bound: a hostile link must not balloon
-const MAX_HASH_CHARS = 200_000
+const MAX_HASH_CHARS = 32_768 // far above the 4096-char soft warning
+const SLICE = 4096
 
 const MODES = ['kami', 'washi', 'plain', 'custom'] as const
 const PATTERNS = [undefined, 'seigaiha', 'asanoha'] as const
@@ -67,15 +68,23 @@ function fromB64(t: string): Uint8Array {
   return out
 }
 
-function inflateBounded(data: Uint8Array): Uint8Array {
+/**
+ * Inflate with a hard output bound. fflate allocates a whole push's output
+ * before calling back, so the input is fed in small slices (a slice inflates to
+ * at most ~1000x its size) and the running total is checked after each: memory
+ * never exceeds MAX_JSON_BYTES plus one slice's output.
+ */
+export function inflateBounded(data: Uint8Array): Uint8Array {
   const chunks: Uint8Array[] = []
   let total = 0
   const inf = new Inflate(c => {
     total += c.length
-    if (total > MAX_JSON_BYTES) bad()
     chunks.push(c)
   })
-  inf.push(data, true)
+  for (let i = 0; i < data.length || i === 0; i += SLICE) {
+    inf.push(data.subarray(i, i + SLICE), i + SLICE >= data.length)
+    if (total > MAX_JSON_BYTES) bad()
+  }
   const out = new Uint8Array(total)
   let o = 0
   for (const c of chunks) {
@@ -141,7 +150,7 @@ function unpackPaper(v: unknown): PaperSettings {
 function unpackStep(v: unknown): Step {
   if (!isArr(v) || v.length < 1 || !v.every(isInt)) return bad()
   const n = v as number[]
-  if (n[0] === 4) return n.length === 1 ? { kind: 'turnOver', params: { axisX: 0 }, label: 'Turn over', at: 0 } : bad()
+  if (n[0] === 4) return n.length === 1 ? { kind: 'turnOver', params: { axisX: 0 } /* placeholder: replay recomputes the axis from the frame */, label: 'Turn over', at: 0 } : bad()
   const tool = TOOLS[n[0]!]
   if (!tool) return bad()
   const fold = tool === 'fold'
@@ -164,7 +173,7 @@ function unpackStep(v: unknown): Step {
 export function decodeShare(hash: string): Result<{ paper: PaperSettings; steps: Step[] }> {
   try {
     const text = hash.startsWith('#') ? hash.slice(1) : hash
-    const m = /^v(\d{1,6}):/.exec(text)
+    const m = /^v([1-9]\d{0,5}):/.exec(text) // canonical version only (no v01)
     if (!m || text.length > MAX_HASH_CHARS) return bad()
     if (Number(m[1]) > CODEC_VERSION) return { ok: false, reason: NEWER }
     if (Number(m[1]) !== CODEC_VERSION) return bad()

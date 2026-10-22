@@ -3,7 +3,7 @@ import { PAPER_SIZES, commit, createPaper, push, startHistory, turnOver } from '
 import type { Frame, History, Step } from '@engine'
 import { DEFAULT_PAPER, type PaperSettings } from '../paper'
 import { PRESETS, runPreset } from '../presets'
-import { CODEC_VERSION, NEWER, DAMAGED, decodeShare, encodeShare } from './shareCodec'
+import { CODEC_VERSION, NEWER, DAMAGED, decodeShare, encodeShare, inflateBounded } from './shareCodec'
 import { MAX_RESTORE_STEPS, replayStepOf, replaySave, type ReplayStep } from './replay'
 import { deflateSync, strToU8 } from 'fflate'
 
@@ -128,9 +128,23 @@ describe('share codec', () => {
     expect(decodeShare(forged([P, Array.from({ length: MAX_RESTORE_STEPS }, () => [4])])).ok).toBe(true)
   })
 
-  test('a decompression bomb is damaged', () => {
-    const bomb = forged([P, [], 'x'.repeat(20_000_000)])
-    expect(decodeShare(bomb)).toEqual({ ok: false, reason: DAMAGED })
+  test('a decompression bomb is refused fast, without materialising the output', () => {
+    const bomb = deflateSync(new Uint8Array(200 * 1024 * 1024)) // ~200 KB of input, 200 MB of output
+    const t0 = performance.now()
+    expect(() => inflateBounded(bomb)).toThrow(DAMAGED)
+    expect(performance.now() - t0).toBeLessThan(200)
+  })
+
+  test('a bomb inside the hash-size ceiling is damaged', () => {
+    const hash = 'v1:' + b64(deflateSync(new Uint8Array(16 * 1024 * 1024)))
+    expect(hash.length).toBeLessThan(32_768)
+    expect(decodeShare(hash)).toEqual({ ok: false, reason: DAMAGED })
+  })
+
+  test('oversized hashes and non-canonical versions are damaged', () => {
+    expect(decodeShare('v1:' + 'A'.repeat(40_000))).toEqual({ ok: false, reason: DAMAGED })
+    expect(decodeShare('v01:AAAA')).toEqual({ ok: false, reason: DAMAGED })
+    expect(decodeShare('v0:AAAA')).toEqual({ ok: false, reason: DAMAGED })
   })
 
   test('encode of a non-replayable step does not throw an unrelated error type', () => {

@@ -8,6 +8,9 @@
 //                 render, persistence, input or engine)
 //   persistence/  autosave and exporters: engine, the paper leaf; no render,
 //                 studio, settings, input or React (zustand/vanilla is fine)
+//   lessons/      lesson data and checking (.ts): engine, presets, the paper
+//                 leaf; no render, studio, settings, persistence, input, React
+//                 or zustand (lesson UI .tsx files are exempt)
 //   paper.ts      a dependency-free leaf (paper look types and validation)
 import { globSync, readFileSync } from 'node:fs'
 import { dirname, join, normalize, relative } from 'node:path'
@@ -73,6 +76,17 @@ describe('module boundaries', () => {
       .filter(f => !f.endsWith('.test.ts'))
       .filter(f => specifiers(f).some(s => s === 'zustand' || s === 'zustand/react'))
     expect([...bad, ...zustand]).toEqual([])
+  })
+
+  test('lessons logic (.ts) imports no render, studio, settings, persistence, input or React', () => {
+    // lesson data and checking are pure (engine, presets, the paper leaf); lesson UI (.tsx) may use React
+    const banned = ['render', 'studio', 'settings', 'persistence', 'input', 'react', 'react-dom', 'zustand']
+    const bad = globSync('src/lessons/**/*.ts')
+      .filter(f => !f.endsWith('.test.ts'))
+      .flatMap(f => specifiers(f).map(s => [area(f, s), f] as const))
+      .filter(([a]) => banned.includes(a))
+      .map(([a, f]) => `${a} ← ${f}`)
+    expect(bad).toEqual([])
   })
 
   test('paper.ts is a leaf', () => {

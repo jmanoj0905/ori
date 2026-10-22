@@ -1,9 +1,13 @@
+// Replay mode (R61): the Replay button (Steps island) enters it; the replay bar
+// (lazy, R58) takes the fold bar's place and the Player owns the Stage; the
+// editing islands go inert (the store ignores edits anyway); Exit / Esc leaves
+// and syncStage redraws the current history frame.
 // The studio shell: a full-bleed ivory canvas hosting the Stage, with the
 // floating islands around it (top bar, tools, fold bar, paper panel) and the
 // hint line. The Stage follows the store (model, preview, paper). Islands fade
 // to 40% while a fold gesture is active (App.css, [data-folding]).
 import './App.css'
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { current, poses } from '@engine'
 import type { Stage } from '../render/Stage'
 import { setPaperDefaultsSource, useStudio, type StudioState } from './store'
@@ -33,8 +37,24 @@ import './islands/islands.css'
 setReducedMotionSource(() => prefersReducedMotion(useSettings.getState().reducedMotion))
 setPaperDefaultsSource(() => useSettings.getState().paperDefaults)
 
-/** Push the store's model, preview and paper into the Stage (only what changed). */
+/**
+ * Push the store's model, preview and paper into the Stage (only what changed).
+ * R61: while replaying, the replay Player draws the model (only the paper look
+ * still follows the store); leaving replay redraws the current history frame
+ * exactly, as on a fresh sync.
+ */
 export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): void {
+  if (s.replaying) {
+    if (!prev || s.paper !== prev.paper) stage.setPaper(s.paper)
+    return
+  }
+  if (prev?.replaying) {
+    stage.setPaper(s.paper)
+    const frame = current(s.history)
+    stage.setFrame(frame, poses(frame))
+    stage.setPreview(s.preview ?? s.settling, {})
+    return
+  }
   if (!prev || s.paper !== prev.paper) stage.setPaper(s.paper)
   if (!prev || s.history !== prev.history) {
     const frame = current(s.history)
@@ -55,6 +75,14 @@ export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): voi
   }
 }
 
+const ReplayBar = lazy(() => import('./replay/ReplayBar'))
+
+/** Enter replay: stops preset playback first (the Steps island), refused while a commit is pending. */
+const enterReplay = (): boolean => useStudio.getState().setReplaying(true)
+const exitReplay = (): void => {
+  useStudio.getState().setReplaying(false)
+}
+
 const subscribeResize = (cb: () => void) => {
   window.addEventListener('resize', cb)
   return () => window.removeEventListener('resize', cb)
@@ -64,6 +92,13 @@ const isNarrow = () => window.innerWidth < NARROW_PX
 export function App() {
   const narrow = useSyncExternalStore(subscribeResize, isNarrow, () => false)
   const folding = useStudio(s => s.gesture !== null)
+  const replaying = useStudio(s => s.replaying)
+  // Leaving replay: focus goes back to the Replay button (once the dock is no longer inert).
+  const wasReplaying = useRef(false)
+  useEffect(() => {
+    if (wasReplaying.current && !replaying) document.querySelector<HTMLButtonElement>('.replay-btn')?.focus()
+    wasReplaying.current = replaying
+  }, [replaying])
   const [paperOpen, setPaperOpen] = useState(false)
   const hostRef = useRef<HTMLDivElement>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
@@ -157,7 +192,7 @@ export function App() {
     // Landmarks: the top bar is the page's banner, so it sits beside <main>, not
     // inside it (a banner nested in main is not a top-level landmark). <main> uses
     // display: contents, so the islands still position against .studio.
-    <div className="studio" data-folding={folding ? '' : undefined}>
+    <div className="studio" data-folding={folding ? '' : undefined} data-replaying={replaying ? '' : undefined}>
       <TopBar paperOpen={paperOpen && (sheetOpen || !narrow)} onTogglePaper={() => {
           // A collapsed sheet hides the panel: the button opens both rather than toggling blind.
           if (!sheetOpen && narrow) {
@@ -186,18 +221,26 @@ export function App() {
         )}
         <div className="lower">
           <div className="bottom">
-            <FoldBar />
-            <HintLine />
+            {replaying && stageReady ? (
+              <Suspense fallback={null}>
+                <ReplayBar stage={stageReady} onExit={exitReplay} />
+              </Suspense>
+            ) : (
+              <>
+                <FoldBar />
+                <HintLine />
+              </>
+            )}
           </div>
           {/* Wide: the islands float where they are. Narrow (< 720 px): this is the bottom sheet. */}
-          <div className="dock" ref={dockRef} data-open={sheetOpen ? '' : undefined}>
+          <div className="dock" ref={dockRef} data-open={sheetOpen ? '' : undefined} inert={replaying}>
             <button type="button" className="dock-handle" aria-expanded={sheetOpen} aria-controls="dock-body" onClick={() => setSheetOpen(o => !o)}>
               <span className="grabber" aria-hidden="true" />
               Steps, presets and paper
             </button>
             <Tools onView={stageReady ? v => stageReady.view(v, !prefersReducedMotion(useSettings.getState().reducedMotion)) : undefined} />
             <div className="dock-body" id="dock-body">
-              <Steps />
+              <Steps onReplay={stageReady ? enterReplay : undefined} />
               {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
             </div>
           </div>

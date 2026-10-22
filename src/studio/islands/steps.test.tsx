@@ -239,3 +239,26 @@ describe('preset failures (final review item 12)', () => {
     vi.resetModules()
   })
 })
+
+describe('Replay button (R61)', () => {
+  test('is off on a blank sheet or without a Stage; enters replay with history', () => {
+    const onReplay = vi.fn(() => useStudio.getState().setReplaying(true))
+    render(<Steps onReplay={onReplay} />)
+    expect(screen.getByRole('button', { name: 'Replay' })).toBeDisabled()
+    cleanup()
+    useStudio.setState({ history: threeFolds() })
+    render(<Steps />)
+    expect(screen.getByRole('button', { name: 'Replay' })).toBeDisabled()
+    cleanup()
+    render(<Steps onReplay={onReplay} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Replay' }))
+    expect(onReplay).toHaveBeenCalledTimes(1)
+    expect(useStudio.getState().replaying).toBe(true)
+    // Jumping in the step list is ignored while replaying.
+    fireEvent.click(screen.getByRole('button', { name: /^1 · / }))
+    expect(useStudio.getState().history.cursor).toBe(3)
+    act(() => {
+      useStudio.getState().setReplaying(false)
+    })
+  })
+})

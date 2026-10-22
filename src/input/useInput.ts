@@ -32,9 +32,18 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
       if (gs) st.getState().setLayers(gs.layers + d)
     }
     const kf = createKeyboardFold({ stage, store: st })
+    // R61: entering replay ends a pointer or keyboard fold; while replaying, folds do not start.
+    const replaying = () => st.getState().replaying
+    const unreplay = st.subscribe((s, prev) => {
+      if (s.replaying && !prev.replaying) {
+        kf.cancel()
+        g.cancel()
+      }
+    })
     const handlers: Handlers = {
       fold: e => {
         if (e.phase === 'start') {
+          if (replaying()) return false
           kf.cancel() // a pointer fold replaces the keyboard one (and a miss must not leave it orphaned)
           if (!g.down({ pointerId: e.pointerId ?? 0, clientX: e.clientX ?? 0, clientY: e.clientY ?? 0 })) return false
           if (snapHeld && useSettings.getState().snap.angle) st.getState().setSnapAngle(true)
@@ -62,7 +71,7 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
         kf.cancel()
         g.cancel()
       },
-      keyboardFold: () => kf.start(),
+      keyboardFold: () => { if (!replaying()) kf.start() },
       shortcuts: () => useUi.getState().toggle('shortcuts'),
       settings: () => useUi.getState().open('settings'),
       topView: () => stage.view('top', animateViews()),
@@ -110,6 +119,7 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
     el.addEventListener('pointermove', hover)
     el.addEventListener('pointerleave', leave)
     return () => {
+      unreplay()
       unlabel()
       dispose()
       kf.dispose()

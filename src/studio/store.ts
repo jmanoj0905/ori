@@ -30,6 +30,13 @@
 // newSheet stay live; if the history changed while a commit was in flight,
 // its result is dropped (it was computed from a frame that is no longer
 // current) and the promise resolves false.
+//
+// Replay mode (R61, studio/replay): while `replaying`, the Player owns the
+// Stage and every editing action (gestures, keyboard folds, tools, kind,
+// presets via commitStep, undo / redo / jumps, the slider, new sheet) is
+// ignored, so the history and the autosave never change. Paper settings stay
+// live (they are the look, not the model). Entering it ends any gesture or
+// settle; it is refused while a commit is in flight.
 import { create } from 'zustand'
 import {
   PAPER_SIZES,
@@ -123,6 +130,11 @@ export type StudioState = {
   pending: boolean
   /** Boot is replaying the autosave in the Worker (pending is true meanwhile; see boot.ts). */
   restoring: boolean
+  /** The replay Player owns the Stage; editing is ignored (see header). */
+  replaying: boolean
+
+  /** Enter / leave replay mode. Entering cancels any gesture; refused (false) while a commit is pending. */
+  setReplaying(on: boolean): boolean
 
   /** Start a fold gesture; `face` is the face hit at grab (Gesture.face). */
   begin(grab: Vec2, face?: number): void
@@ -266,7 +278,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
     const recommit = async (edit: NumericEdit): Promise<boolean> => {
       const { gesture, pending, history } = get()
       const last = lastFold(history)
-      if (gesture || pending || !last) return false
+      if (gesture || pending || !last || get().replaying) return false
       const prev = undoHistory(history)
       const g: Gesture = {
         tool: last.tool, grab: last.grab, target: last.target, layers: last.layers, kind: edit.kind ?? last.kind,
@@ -307,9 +319,19 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       hint: HINT_START,
       pending: false,
       restoring: false,
+      replaying: false,
+
+      setReplaying(on) {
+        if (on === get().replaying) return true
+        if (on && get().pending) return false
+        endSettle()
+        queued = null
+        set(on ? { ...idle, replaying: true } : { replaying: false })
+        return true
+      },
 
       begin(grab, face) {
-        if (get().pending) return
+        if (get().pending || get().replaying) return
         endSettle()
         const { tool, kind } = get()
         const g: Gesture = { tool, grab, target: grab, layers: 1, kind, progress: 0, snapAngle: false }
@@ -331,7 +353,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       },
 
       setKind(kind) {
-        if (get().pending) return
+        if (get().pending || get().replaying) return
         set({ kind })
         const { gesture } = get()
         if (!gesture) return
@@ -365,19 +387,19 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
         set(idle)
       },
 
-      undo: () => navigate(undoHistory(get().history)),
-      redo: () => navigate(redoHistory(get().history)),
-      jumpTo: i => navigate(jumpHistory(get().history, i)),
+      undo: () => { if (!get().replaying) navigate(undoHistory(get().history)) },
+      redo: () => { if (!get().replaying) navigate(redoHistory(get().history)) },
+      jumpTo: i => { if (!get().replaying) navigate(jumpHistory(get().history, i)) },
 
       turnOver() {
-        if (get().pending) return Promise.resolve(false)
+        if (get().pending || get().replaying) return Promise.resolve(false)
         endSettle()
         set(idle)
         return runCommit({ frame: current(get().history), turnOver: true })
       },
 
       commitStep(step) {
-        if (get().pending) return Promise.resolve({ ok: false, refused: false, reason: null })
+        if (get().pending || get().replaying) return Promise.resolve({ ok: false, refused: false, reason: null })
         endSettle()
         set(idle)
         const base = get().history
@@ -391,11 +413,12 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       },
 
       restoreHistory(h) {
-        if (get().pending) return
+        if (get().pending || get().replaying) return
         navigate(h)
       },
 
       setNumeric(edit) {
+        if (get().replaying) return
         const { gesture, pending } = get()
         if (!gesture) {
           void get().setLastFold(edit)
@@ -410,6 +433,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       },
 
       setLastFold(edit) {
+        if (get().replaying) return Promise.resolve(false)
         if (edit.angleDeg !== undefined && !Number.isFinite(edit.angleDeg)) return Promise.resolve(false)
         if (recommitting) {
           queued = { ...queued, ...edit }
@@ -435,6 +459,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       },
 
       setTool(tool) {
+        if (get().replaying) return
         if (get().pending) return set({ tool })
         endSettle()
         set({ ...idle, tool })
@@ -445,6 +470,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       },
 
       newSheet(size) {
+        if (get().replaying) return
         const defaults = size === undefined ? paperDefaultsSource?.() : undefined
         const chosen = size ?? defaults?.size ?? get().paper.size
         const s = sizeOf(chosen)

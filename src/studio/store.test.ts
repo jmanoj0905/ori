@@ -587,3 +587,60 @@ describe('paper defaults (R43)', () => {
     expect(s.getState().paper.front).toBe('#123456')
   })
 })
+
+describe('replay mode (R61)', () => {
+  test('entering replay cancels a live gesture; editing is ignored until it ends; history is untouched', async () => {
+    const s = fresh()
+    await foldCorner(s)
+    const h = s.getState().history
+    s.getState().begin([0, 0])
+    s.getState().drag([0.5, 0.5], 0.5)
+    expect(s.getState().setReplaying(true)).toBe(true)
+    expect(s.getState()).toMatchObject({ replaying: true, gesture: null, preview: null })
+    s.getState().begin([0, 0])
+    expect(s.getState().gesture).toBeNull()
+    s.getState().undo()
+    s.getState().redo()
+    s.getState().jumpTo(0)
+    s.getState().setTool('squash')
+    s.getState().newSheet('a4')
+    s.getState().restoreHistory(createStudioStore().getState().history)
+    s.getState().setNumeric({ angleDeg: 90 })
+    expect(await s.getState().turnOver()).toBe(false)
+    expect(await s.getState().commitStep({ tool: 'turnOver' })).toMatchObject({ ok: false, refused: false })
+    expect(await s.getState().setLastFold({ angleDeg: 45 })).toBe(false)
+    expect(s.getState().history).toBe(h)
+    expect(s.getState().tool).toBe('fold')
+    s.getState().setReplaying(false)
+    s.getState().undo()
+    expect(s.getState().history.cursor).toBe(0)
+  })
+
+  test('replay cannot start while a commit is in flight', async () => {
+    const { committer, calls } = deferredCommitter()
+    const s = createStudioStore({ committer })
+    const done = foldCorner(s)
+    expect(s.getState().setReplaying(true)).toBe(false)
+    expect(s.getState().replaying).toBe(false)
+    calls[0]!.resolve()
+    await done
+    expect(s.getState().setReplaying(true)).toBe(true)
+  })
+
+  test('syncStage leaves the Stage to the Player during replay, and restores the current frame on exit', async () => {
+    const s = fresh()
+    await foldCorner(s)
+    const frames: unknown[] = []
+    const previews: unknown[] = []
+    const stage = { setPaper() {}, setFrame: (f: unknown) => frames.push(f), setPreview: (p: unknown) => previews.push(p) }
+    const { syncStage } = await import('./App')
+    s.subscribe((st, prev) => syncStage(stage as never, st, prev))
+    s.getState().setReplaying(true)
+    const n = frames.length
+    s.setState({ hint: 'x' })
+    expect(frames.length).toBe(n)
+    s.getState().setReplaying(false)
+    expect(frames.at(-1)).toBe(current(s.getState().history))
+    expect(previews.at(-1)).toBeNull()
+  })
+})

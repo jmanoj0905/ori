@@ -59,3 +59,12 @@ test('the shortcut sheet and the preset confirm dialog', async ({ page }) => {
   await expect(page.getByRole('alertdialog')).toBeVisible()
   expect(await scan(page)).toEqual([])
 })
+
+test('the replay bar: no serious or critical violations', async ({ page }) => {
+  await openStudio(page)
+  await drag(page, [0.99, 0.99], [0, 0])
+  await page.getByRole('button', { name: 'Replay', exact: true }).click()
+  const bar = page.getByRole('region', { name: 'Replay' })
+  await expect(bar).toBeVisible()
+  expect(await scan(page, '.replaybar')).toEqual([])
+})

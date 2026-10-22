@@ -23,10 +23,12 @@ export const CONFIRM_PRESET = 'Playing a preset starts a new sheet and replaces 
 export const REDO_CLEARED = 'Redo history cleared'
 export const PRESET_FAILED = "Couldn't load the preset. Check your connection and try again."
 
-export function Steps() {
+/** `onReplay` enters replay mode (App; refused while a commit is pending); absent while the Stage is not ready. */
+export function Steps({ onReplay }: { onReplay?: () => boolean } = {}) {
   const history = useStudio(s => s.history)
   const jumpTo = useStudio(s => s.jumpTo)
   const down = useUi(s => stageDown(s.stage))
+  const pending = useStudio(s => s.pending)
   const [playing, setPlaying] = useState<PresetId | null>(null)
   const [ask, setAsk] = useState<PresetId | null>(null)
   const [toast, setToast] = useState<History | null>(null)
@@ -137,6 +139,27 @@ export function Steps() {
       {playing && (
         <button type="button" className="tbtn text stop" onClick={stop}>Stop</button>
       )}
+      <button
+        type="button"
+        className="tbtn text replay-btn"
+        disabled={!onReplay || down || cursor === 0 || (pending && !playing)}
+        title={cursor === 0 ? 'Fold something to replay it' : 'Replay the folds from the blank sheet'}
+        onClick={() => {
+          // R61: replay stops preset playback and cancels any live fold (the store does that).
+          stop()
+          if (!onReplay?.()) {
+            // A commit was still landing: try again once it has.
+            const un = useStudio.subscribe(s => {
+              if (!s.pending) {
+                un()
+                onReplay?.()
+              }
+            })
+          }
+        }}
+      >
+        Replay
+      </button>
       {toast && (
         <div className="toast" role="status">
           <span>{REDO_CLEARED}</span>

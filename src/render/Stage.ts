@@ -71,8 +71,11 @@ const instantTween: Tween = (_from, to, _ms, onFrame, _instant, signal) => {
  * How to draw a preview: from the gesture that produced it. `land` (with a
  * null preview): the fold was committed, so the lifted flap eases down onto
  * the paper before the committed frame takes over (R55, render/lift.ts).
+ * `solid`: the moving flap is drawn as paper (paper materials, no x-ray, no
+ * live crease, no lift) — the replay's fold in progress (R62), which should
+ * look like the paper folding rather than a translucent ghost.
  */
-export type PreviewStyle = { kind?: FoldKind; tool?: Tool; progress?: number; land?: boolean }
+export type PreviewStyle = { kind?: FoldKind; tool?: Tool; progress?: number; land?: boolean; solid?: boolean }
 
 type CamState = { tx: number; ty: number; tilt: number; azimuth: number; distance: number }
 
@@ -414,6 +417,28 @@ export class Stage {
     }, !animate, ctl.signal)
   }
 
+  /**
+   * Auto-framing (replay, R61): centre on the committed model's footprint and
+   * fit it to the free area, keeping the tilt and azimuth (the model, not the
+   * sheet: a folded crane is far smaller than its square). Eased like view().
+   */
+  fitModel(animate: boolean): void {
+    const box = this.committed?.geometry.boundingBox
+    if (!box || box.isEmpty()) return
+    const c = box.getCenter(new THREE.Vector3())
+    const size = box.getSize(new THREE.Vector3())
+    const min = 0.05 * Math.max(this.sheet.width, this.sheet.height)
+    const to = { tx: c.x, ty: c.y, distance: this.fitDistance({ width: Math.max(min, size.x), height: Math.max(min, size.y) }) }
+    this.stopView()
+    const from = { ...this.cam }
+    const ctl = (this.viewCtl = new AbortController())
+    void this.tween(0, 1, VIEW_ANIM_MS, t => {
+      this.cam = { ...this.cam, tx: lerp(from.tx, to.tx, t), ty: lerp(from.ty, to.ty, t), distance: lerp(from.distance, to.distance, t) }
+      this.applyCamera(this.cam)
+      this.invalidate()
+    }, !animate, ctl.signal)
+  }
+
   private stopView(): void {
     this.viewCtl?.abort()
     this.viewCtl = null
@@ -630,24 +655,28 @@ export class Stage {
     }
     this.disposeGhostPieces()
     const geometry = buildPaperGeometry(p.frame, p.poses, this.gap(), { offsets: lo.offsets, faces: p.moving })
-    const front = new THREE.Mesh(geometry, this.ghostMats.front)
-    const back = new THREE.Mesh(geometry, this.ghostMats.back)
+    const solid = st.solid === true
+    const front = new THREE.Mesh(geometry, solid ? this.materials.front : this.ghostMats.front)
+    const back = new THREE.Mesh(geometry, solid ? this.materials.back : this.ghostMats.back)
     const xray = new THREE.Mesh(geometry, this.ghostMats.xray)
+    xray.visible = !solid
+    if (solid) front.receiveShadow = back.receiveShadow = true
     front.castShadow = true
     front.renderOrder = back.renderOrder = 10
     xray.renderOrder = 11
     const { valley, mountain } = buildCreaseLines(p.frame, p.poses, {
-      offsets: lo.offsets, levels: lo.levels, up: lo.up, lift: CREASE_LIFT * this.gap(), faces: p.moving, opacity: 0.55,
+      offsets: lo.offsets, levels: lo.levels, up: lo.up, lift: CREASE_LIFT * this.gap(), faces: p.moving, ...(solid ? {} : { opacity: 0.55 }),
     })
     this.inkLines(valley, mountain)
     valley.renderOrder = mountain.renderOrder = 12
     const live = buildLiveCrease(p.crease, st.kind ?? 'valley', ACCENT)
     live.setViewport(this.width * this.dpr, this.height * this.dpr, this.dpr)
-    tintGhost(this.ghostMats, sideColors(this.paper), p.blocked, this.ghostFade())
+    live.visible = !solid
+    if (!solid) tintGhost(this.ghostMats, sideColors(this.paper), p.blocked, this.ghostFade())
     const group = new THREE.Group()
     group.add(front, back, xray, valley, mountain, live)
     // R55: the dragged flap hovers a little (render-only z; its angle is the preview's).
-    this.ghostLift = flapLift(st, this.reducedMotion())
+    this.ghostLift = solid ? 0 : flapLift(st, this.reducedMotion())
     group.position.z = this.ghostLift
     this.ghost = { group, geometry, front, back, xray, valley, mountain, live }
     this.scene.add(group)
@@ -742,12 +771,12 @@ export class Stage {
     })
   }
 
-  private fitDistance(): number {
+  private fitDistance(bounds: { width: number; height: number } = this.sheet): number {
     // Fit the free area between the islands, with extra air so the fold bar and hint never sit on the edges.
     const { left, right, top, bottom } = this.insets
     const fw = Math.max(this.width * 0.3, this.width - left - right)
     const fh = Math.max(this.height * 0.3, this.height - top - bottom)
-    return frameBounds(this.sheet, FOV_DEG, fw / fh).distance * (this.height / fh) * ISLAND_AIR
+    return frameBounds(bounds, FOV_DEG, fw / fh).distance * (this.height / fh) * ISLAND_AIR
   }
 
   private applyCamera(c: CamState): void {

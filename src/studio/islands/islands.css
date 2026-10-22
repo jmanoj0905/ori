@@ -111,6 +111,10 @@
 .tbtn:hover:not(:disabled) {
   background: var(--ink-faint);
 }
+.tbtn.primary:hover:not(:disabled) {
+  background: var(--ink);
+  opacity: 0.88;
+}
 .tbtn:disabled,
 .tool:disabled,
 .seg button:disabled,
@@ -836,4 +840,47 @@ input[type='range'] {
 .share-copied {
   min-height: 1.2em;
   margin: 0 0 8px;
+}
+
+/* ---- replay (R61): the replay bar takes the fold bar's place; editing islands step back ---- */
+.studio[data-replaying] .dock,
+.studio[data-replaying] .tools {
+  opacity: 0.4;
+}
+.replaybar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 14px;
+  padding: 8px 10px;
+  max-width: 100%;
+  background: rgba(250, 247, 241, 0.9);
+}
+.replaybar .scrub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.replaybar .scrub input[type='range'] {
+  width: 220px;
+}
+.replaybar .scrub output {
+  min-width: 6ch;
+  text-align: right;
+}
+.replaybar .autoframe {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.replaybar .autoframe input {
+  accent-color: var(--ink);
+}
+@media (max-width: 719px) {
+  .replaybar .scrub input[type='range'] {
+    width: 140px;
+  }
 }

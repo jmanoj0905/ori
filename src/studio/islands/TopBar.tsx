@@ -19,8 +19,8 @@ export type TopBarProps = {
 }
 
 export function TopBar({ paperOpen, onTogglePaper, onExport, onExportFile, onSettings, onShare }: TopBarProps) {
-  const undoable = useStudio(s => canUndo(s.history))
-  const redoable = useStudio(s => canRedo(s.history))
+  const undoable = useStudio(s => !s.replaying && canUndo(s.history))
+  const redoable = useStudio(s => !s.replaying && canRedo(s.history))
   const undo = useStudio(s => s.undo)
   const redo = useStudio(s => s.redo)
   const shareable = useStudio(s => s.history.cursor > 0)

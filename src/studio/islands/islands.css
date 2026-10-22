@@ -932,3 +932,6 @@ input[type='range'] {
     transition: none;
   }
 }
+.dialog p.record-warn {
+  color: var(--ink);
+}

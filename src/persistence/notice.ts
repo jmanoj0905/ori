@@ -9,6 +9,7 @@ export const AUTOSAVE_OFF = 'Autosave is off — your browser storage is full or
 
 export const EXPORT_FAILED = "Couldn't export the file."
 export const RECORD_FAILED = "Couldn't record the replay."
+export const RECORD_HIDDEN = 'Keep this tab visible while recording video.'
 
 export type NoticeState = { message: string | null; dismiss(): void }
 

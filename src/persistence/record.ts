@@ -76,16 +76,17 @@ export interface Surface {
   captureStream(fps: number): MediaStream
 }
 
-/** Main thread → GIF worker. */
+/** Main thread → GIF worker. `sample`: a few frames' RGBA, back to back, for one global palette. */
 export type GifRequest =
-  | { type: 'start'; width: number; height: number }
+  | { type: 'start'; width: number; height: number; sample?: ArrayBuffer }
   | { type: 'frame'; index: number; delay: number; rgba: ArrayBuffer }
   | { type: 'finish' }
 
 /** GIF worker → main thread. */
 export type GifReply =
   | { type: 'encoded'; index: number }
-  | { type: 'done'; gif: ArrayBuffer }
+  /** The encoder's stream buffer itself (transferred, not sliced): the GIF is its first `length` bytes. */
+  | { type: 'done'; gif: ArrayBuffer; length: number }
   | { type: 'error'; message: string }
 
 export type GifWorkerLike = {
@@ -103,6 +104,66 @@ export type RecordDeps = {
   MediaRecorder?: typeof MediaRecorder
   /** Resolve after ms; reject with an AbortError if `signal` aborts. */
   wait?: (ms: number, signal: AbortSignal) => Promise<void>
+  /** Page visibility (WebM): defaults to `document`. */
+  visibility?: Visibility
+}
+
+export type Visibility = { isHidden(): boolean; onChange(cb: () => void): () => void }
+
+const documentVisibility: Visibility = {
+  isHidden: () => typeof document !== 'undefined' && document.visibilityState === 'hidden',
+  onChange: cb => {
+    document.addEventListener('visibilitychange', cb)
+    return () => document.removeEventListener('visibilitychange', cb)
+  },
+}
+
+/**
+ * WebM recording needs the tab visible: hidden tabs throttle timers to ≥ 1 s,
+ * which would stretch the video (MediaRecorder timestamps by wall clock). A
+ * recording that starts hidden, or is hidden midway, stops with this error.
+ */
+export class RecordHiddenError extends Error {
+  constructor() {
+    super('Keep this tab visible while recording video.')
+    this.name = 'RecordHiddenError'
+  }
+}
+
+// ---- GIF budget -------------------------------------------------------------
+// A GIF of a long replay at 1080p / 30 fps runs to hundreds of MB, and the
+// encoder's growing stream plus the transfer and the Blob can hold 2–3× that
+// at the peak — enough to kill a mobile tab, for a file nobody can use. The
+// estimate is deliberately pessimistic (a reviewer's probe of noisy washi
+// frames gave ≈ 0.26 B/px with per-frame palettes); combinations over it are
+// refused (the dialog disables Record and says why; record() throws).
+
+/** Estimated GIF bytes per output pixel per frame. */
+export const GIF_BYTES_PER_PIXEL = 0.3
+/** Largest estimated GIF the recorder will make. */
+export const GIF_MAX_BYTES = 64 * 1024 * 1024
+/** Absolute frame cap for a GIF (20 s at 30 fps), whatever the size. */
+export const GIF_MAX_FRAMES = 600
+
+export type GifEstimate = {
+  frames: number
+  width: number
+  height: number
+  bytes: number
+  ok: boolean
+  reason: 'frames' | 'bytes' | null
+}
+
+export function gifEstimate(
+  src: Pick<RecordSource<unknown>, 'steps' | 'duration'>,
+  { size, fps }: { size: RecordSize; fps: RecordFps },
+  aspect: number,
+): GifEstimate {
+  const frames = frameTimes(src, fps).length
+  const { width, height } = outputSize(size, aspect)
+  const bytes = width * height * frames * GIF_BYTES_PER_PIXEL
+  const reason = frames > GIF_MAX_FRAMES ? 'frames' : bytes > GIF_MAX_BYTES ? 'bytes' : null
+  return { frames, width, height, bytes, ok: reason === null, reason }
 }
 
 type MR = { isTypeSupported(type: string): boolean } | undefined
@@ -157,6 +218,10 @@ export async function record<V>(
   deps: RecordDeps = {},
 ): Promise<Blob> {
   if (signal.aborted) throw abortError()
+  if (opts.format === 'gif') {
+    const e = gifEstimate(player, opts, stage.aspect)
+    if (!e.ok) throw new RangeError(`A ${e.width}×${e.height} GIF of ${e.frames} frames is over the size budget`)
+  }
   const times = frameTimes(player, opts.fps)
   const { width, height } = outputSize(opts.size, stage.aspect)
   let shown = -1
@@ -250,7 +315,7 @@ function recordGif(job: Job, deps: RecordDeps): Promise<Blob> {
         const w = wake
         wake = null
         w?.()
-      } else if (m.type === 'done') end(null, new Blob([m.gif], { type: 'image/gif' }))
+      } else if (m.type === 'done') end(null, new Blob([new Uint8Array(m.gif, 0, m.length)], { type: 'image/gif' }))
       else end(new Error(`GIF encoder: ${m.message}`))
     }
     worker.onerror = e => {
@@ -260,7 +325,17 @@ function recordGif(job: Job, deps: RecordDeps): Promise<Blob> {
     worker.onmessageerror = () => end(new Error('GIF worker: unreadable message'))
 
     const pump = async () => {
-      worker.postMessage({ type: 'start', width, height })
+      // One global palette from the first, middle and last frames: the washi does not shimmer
+      // between frames and no frame carries its own colour table.
+      const picks = [...new Set([0, Math.floor((total - 1) / 2), total - 1])]
+      const px = width * height * 4
+      const sample = new Uint8ClampedArray(picks.length * px)
+      picks.forEach((i, k) => {
+        surface.draw(job.shoot(i))
+        sample.set(new Uint8ClampedArray(surface.pixels(width, height)), k * px)
+      })
+      if (done) return
+      worker.postMessage({ type: 'start', width, height, sample: sample.buffer }, [sample.buffer])
       for (let i = 0; i < total; i++) {
         while (!done && sent - encoded >= MAX_IN_FLIGHT) await new Promise<void>(r => (wake = r))
         if (done) return
@@ -298,6 +373,8 @@ async function recordWebm(job: Job, size: RecordSize, deps: RecordDeps): Promise
   const Recorder = deps.MediaRecorder ?? (globalThis as { MediaRecorder?: typeof MediaRecorder }).MediaRecorder
   const mimeType = webmType(Recorder)
   if (!Recorder || !mimeType) throw new Error('WebM recording is not supported here')
+  const visibility = deps.visibility ?? documentVisibility
+  if (visibility.isHidden()) throw new RecordHiddenError()
   const wait = deps.wait ?? sleep
   const surface = (deps.makeSurface ?? canvasSurface)(width, height)
   surface.draw(job.shoot(0)) // the stream starts on frame 0, not a blank canvas
@@ -312,27 +389,34 @@ async function recordWebm(job: Job, size: RecordSize, deps: RecordDeps): Promise
     track = stream.getVideoTracks()[0] as CanvasCaptureMediaStreamTrack | undefined
   }
 
-  const rec = new Recorder(stream, { mimeType, videoBitsPerSecond: BITRATE[size] })
   const chunks: Blob[] = []
+  let rec: MediaRecorder | null = null
   let failed: Error | null = null
   const failure = new AbortController()
-  rec.ondataavailable = e => {
-    if (e.data && e.data.size > 0) chunks.push(e.data)
-  }
-  const stopped = new Promise<void>(resolve => {
-    rec.onstop = () => resolve()
-  })
-  rec.onerror = () => {
-    failed = new Error('MediaRecorder failed')
+  const fail = (e: Error) => {
+    failed ??= e
     failure.abort()
   }
+  // Hidden tabs throttle timers to >= 1 s: stop rather than record a stretched video.
+  const unwatch = visibility.onChange(() => {
+    if (visibility.isHidden()) fail(new RecordHiddenError())
+  })
   const both = AbortSignal.any ? AbortSignal.any([signal, failure.signal]) : signal
   const check = () => {
     if (signal.aborted) throw abortError()
     if (failed) throw failed
   }
   try {
-    rec.start()
+    // Inside the try: a constructor throw (NotSupportedError) still stops the capture tracks.
+    const r = (rec = new Recorder(stream, { mimeType, videoBitsPerSecond: BITRATE[size] }))
+    r.ondataavailable = e => {
+      if (e.data && e.data.size > 0) chunks.push(e.data)
+    }
+    const stopped = new Promise<void>(resolve => {
+      r.onstop = () => resolve()
+    })
+    r.onerror = () => fail(new Error('MediaRecorder failed'))
+    r.start()
     const t0 = performance.now()
     for (let i = 0; i < times.length; i++) {
       check()
@@ -346,16 +430,17 @@ async function recordWebm(job: Job, size: RecordSize, deps: RecordDeps): Promise
     await wait(HOLD_MS, both)
     check()
     if (manual) track!.requestFrame() // the held last frame gets a timestamp at the end
-    rec.stop()
+    r.stop()
     await stopped
     check()
     return new Blob(chunks, { type: 'video/webm' })
   } catch (err) {
-    if (rec.state !== 'inactive') rec.stop() // the partial recording is dropped with `chunks`
+    if (rec && rec.state !== 'inactive') rec.stop() // the partial recording is dropped with `chunks`
     chunks.length = 0
     if (signal.aborted) throw abortError()
     throw failed ?? err
   } finally {
+    unwatch()
     stream.getTracks().forEach(t => t.stop())
   }
 }

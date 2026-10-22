@@ -55,6 +55,9 @@ test('record a 2-step GIF: downloaded, GIF89a, in the user’s paper; the Stage 
   expect(file.suggestedFilename()).toMatch(/^ori-\d{4}-\d\d-\d\d-2\.gif$/)
   const bytes = readFileSync((await file.path())!)
   expect(bytes.byteLength).toBeGreaterThan(0)
+  // The dialog's budget estimate (record.ts GIF_BYTES_PER_PIXEL = 0.3) is pessimistic.
+  expect(bytes.byteLength).toBeLessThan(768 * 480 * 25 * 0.3)
+  await info.attach('gif-bytes', { body: String(bytes.byteLength), contentType: 'text/plain' })
   expect(bytes.subarray(0, 6).toString('latin1')).toBe('GIF89a')
   // 1280 × 800 viewport → 480p at the canvas aspect.
   expect(bytes.readUInt16LE(6)).toBe(768)

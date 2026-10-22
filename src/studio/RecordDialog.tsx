@@ -11,6 +11,10 @@
 // a recording looks exactly like the replay, in the user's paper and washi.
 //
 // WebM is offered only where MediaRecorder records WebM (Review Focus 4).
+// GIFs have a size budget (record.ts gifEstimate): the estimate is shown, and
+// an over-budget size / frame rate disables Record with a short explanation.
+// A WebM needs the tab visible (hidden tabs throttle timers): hiding it stops
+// the recording with RECORD_HIDDEN.
 // Cancel (or Esc, or closing) aborts: the GIF worker is terminated and nothing
 // is downloaded (Review Focus 5). A failure shows RECORD_FAILED, no download.
 //
@@ -19,11 +23,13 @@
 // aria-valuenow (0–100) and a polite status line.
 import { useEffect, useId, useRef, useState } from 'react'
 import { download, exportName } from '../persistence/png'
-import { RECORD_FAILED, notify } from '../persistence/notice'
+import { RECORD_FAILED, RECORD_HIDDEN, notify } from '../persistence/notice'
 import {
   FPS,
+  GIF_MAX_FRAMES,
+  RecordHiddenError,
   SIZES,
-  outputSize,
+  gifEstimate,
   record,
   webmSupported,
   type RecordFormat,
@@ -31,7 +37,7 @@ import {
   type RecordSize,
   type RecordStage,
 } from '../persistence/record'
-import { Player, type ReplayView } from './replay/Player'
+import { Player, STEP_MS, type ReplayView } from './replay/Player'
 import { drawView, type ReplayStage } from './replay/draw'
 import { useStudio } from './store'
 import { useModal } from './useModal'
@@ -68,6 +74,11 @@ function recordTarget(stage: RecordableStage): RecordStage<ReplayView> {
 }
 
 const isAbort = (e: unknown): boolean => e instanceof DOMException && e.name === 'AbortError'
+
+const mb = (bytes: number): string => {
+  const m = bytes / (1024 * 1024)
+  return m >= 10 ? `${Math.round(m)} MB` : `${m.toFixed(1)} MB`
+}
 
 export function RecordDialog({ stage, onClose, onBusy }: RecordDialogProps) {
   const id = useId()
@@ -110,7 +121,8 @@ export function RecordDialog({ stage, onClose, onBusy }: RecordDialogProps) {
       const blob = await record(player, recordTarget(stage), opts, abort.signal, p => setProgress(p))
       if (!abort.signal.aborted) download(blob, exportName(new Date(), player.steps, format))
     } catch (e) {
-      if (!isAbort(e) && !abort.signal.aborted) notify(RECORD_FAILED)
+      if (e instanceof RecordHiddenError) notify(RECORD_HIDDEN)
+      else if (!isAbort(e) && !abort.signal.aborted) notify(RECORD_FAILED)
     } finally {
       player.dispose()
       ctl.current = null
@@ -127,8 +139,17 @@ export function RecordDialog({ stage, onClose, onBusy }: RecordDialogProps) {
     if (recording) cancelRef.current?.focus()
   }, [recording])
   const pct = Math.round((progress ?? 0) * 100)
-  const px = outputSize(size, stage.aspect)
   const steps = useStudio(s => s.history.cursor)
+  const est = gifEstimate({ steps, duration: steps * STEP_MS }, { size, fps }, stage.aspect)
+  const overBudget = format === 'gif' && !est.ok
+  const alternatives = [
+    est.reason === 'bytes' && size > 480 ? 'a smaller size' : null,
+    fps > 15 ? '15 fps' : null,
+    webm ? 'WebM video' : null,
+  ].filter(Boolean).join(', or ')
+  const budgetNote = est.reason === 'frames'
+    ? `Too long for a GIF (${est.frames} frames; the limit is ${GIF_MAX_FRAMES}).`
+    : `Too large for a GIF (about ${mb(est.bytes)}).`
 
   return (
     <div className="scrim" onKeyDown={onKeyDown}>
@@ -181,11 +202,27 @@ export function RecordDialog({ stage, onClose, onBusy }: RecordDialogProps) {
             <label className="record-opts autoframe">
               <input type="checkbox" checked={autoFrame} onChange={e => setAutoFrame(e.target.checked)} /> Auto-frame camera
             </label>
-            <p className="record-note mono">{px.width} × {px.height}</p>
+            <p className="record-note mono">
+              {est.width} × {est.height}
+              {format === 'gif' && ` · ${est.frames} frames · about ${mb(est.bytes)}`}
+            </p>
+            {overBudget && (
+              <p className="record-warn" role="status">
+                {budgetNote}{alternatives ? ` Choose ${alternatives}.` : ''}
+              </p>
+            )}
             {refused && <p role="alert">{BUSY_MESSAGE}</p>}
             <div className="dialog-actions">
               <button type="button" className="tbtn text" onClick={onClose}>Cancel</button>
-              <button type="button" className="tbtn text primary" data-autofocus onClick={() => void start()}>Record</button>
+              <button
+                type="button"
+                className="tbtn text primary"
+                data-autofocus={overBudget ? undefined : ''}
+                disabled={overBudget}
+                onClick={() => void start()}
+              >
+                Record
+              </button>
             </div>
           </>
         )}

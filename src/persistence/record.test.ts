@@ -4,8 +4,13 @@
 // GPU, no Worker, no codec in jsdom, but the whole protocol runs.
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+  GIF_BYTES_PER_PIXEL,
+  GIF_MAX_BYTES,
+  GIF_MAX_FRAMES,
   HOLD_MS,
+  RecordHiddenError,
   frameTimes,
+  gifEstimate,
   outputSize,
   record,
   webmSupported,
@@ -79,8 +84,10 @@ function fakeWorker({ auto = true, failAt = -1 }: { auto?: boolean; failAt?: num
           else w.reply({ type: 'encoded', index: m.index })
         }
         if (m.type === 'finish') {
-          const gif = new TextEncoder().encode('GIF89a;').buffer as ArrayBuffer
-          w.reply({ type: 'done', gif })
+          // The worker posts its whole stream buffer (no slice) and the used length.
+          const gif = new ArrayBuffer(64)
+          new Uint8Array(gif).set(new TextEncoder().encode('GIF89a;'))
+          w.reply({ type: 'done', gif, length: 7 })
         }
       })
     },
@@ -143,10 +150,14 @@ describe('record GIF', () => {
     const blob = await record(source(2), stage, { format: 'gif', size: 480, fps: 15 }, new AbortController().signal, p => progress.push(p), gifDeps(w))
     expect(blob.type).toBe('image/gif')
     expect(new TextDecoder().decode(await blob.arrayBuffer())).toBe('GIF89a;')
-    expect(drawn).toEqual(frameTimes(source(2), 15))
+    // The palette sample (first, middle, last), then every frame in order.
+    const ts = frameTimes(source(2), 15)
+    expect(drawn).toEqual([ts[0], ts[12], ts[24], ...ts])
     expect(log).toEqual(['begin 768x480', 'end'])
-    // Protocol: start, one frame per time (last one held), finish.
-    expect(sent[0]).toEqual({ type: 'start', width: 768, height: 480 })
+    // Protocol: start (with the transferred palette sample), one frame per time (last one held), finish.
+    const start = sent[0] as Extract<GifRequest, { type: 'start' }>
+    expect(start).toMatchObject({ type: 'start', width: 768, height: 480 })
+    expect(start.sample!.byteLength).toBe(3 * 768 * 480 * 4)
     const frames = sent.filter(m => m.type === 'frame')
     expect(frames).toHaveLength(25)
     expect(frames[0]!.delay).toBeCloseTo(1000 / 15, 6)
@@ -166,6 +177,8 @@ describe('record GIF', () => {
     await record(source(1), fakeStage().stage, { format: 'gif', size: 480, fps: 15 }, new AbortController().signal, () => {}, gifDeps(w))
     const call = post.mock.calls.find(([m]) => m.type === 'frame')!
     expect(call[1]).toEqual([(call[0] as Extract<GifRequest, { type: 'frame' }>).rgba])
+    const start = post.mock.calls.find(([m]) => m.type === 'start')!
+    expect(start[1]).toEqual([(start[0] as Extract<GifRequest, { type: 'start' }>).sample])
   })
 
   test('cancel midway terminates the worker and rejects with AbortError (Review Focus 5)', async () => {
@@ -191,7 +204,7 @@ describe('record GIF', () => {
     expect(sent.some(m => m.type === 'finish')).toBe(false)
     const n = progress.length
     w.terminated = false
-    w.reply({ type: 'done', gif: new ArrayBuffer(8) })
+    w.reply({ type: 'done', gif: new ArrayBuffer(8), length: 8 })
     expect(progress.length).toBe(n)
   })
 
@@ -290,7 +303,7 @@ describe('record WebM', () => {
     expect(blob.type).toBe('video/webm')
     expect(blob.size).toBeGreaterThan(0)
     const ts = frameTimes(source(1), 30)
-    expect(m.drawn).toEqual(ts)
+    expect(m.drawn).toEqual(ts) // no palette sample for video
     expect(m.streamFps).toEqual([0]) // manual frames: captureStream(0) + requestFrame
     expect(m.FakeRecorder.last.opts.mimeType).toBe('video/webm;codecs=vp9')
     // start, each frame once in order (the last repeated at the end of the hold), stop.
@@ -322,6 +335,140 @@ describe('record WebM', () => {
     const err = await record(source(2), m.stage, { format: 'webm', size: 480, fps: 15 }, ctl.signal, () => {}, m.deps).then(() => null, (e: unknown) => e)
     expect((err as DOMException).name).toBe('AbortError')
     expect(m.events).toContain('stop')
+    expect(m.track.stop).toHaveBeenCalled()
+  })
+})
+
+describe('GIF budget (fix round 1)', () => {
+  const crane = { steps: 22, duration: 22 * 800 } // 17.6 s
+
+  test('estimates frames and bytes from the output size and the replay length', () => {
+    const e = gifEstimate(source(2), { size: 480, fps: 15 }, 1.6)
+    expect(e.frames).toBe(25)
+    expect(e.bytes).toBeCloseTo(768 * 480 * 25 * GIF_BYTES_PER_PIXEL, 0)
+    expect(e.ok).toBe(true)
+  })
+
+  test('a long replay at 1080p is over budget at either frame rate; 480p / 15 fps fits', () => {
+    expect(gifEstimate(crane, { size: 1080, fps: 30 }, 1.6)).toMatchObject({ ok: false, reason: 'bytes' })
+    expect(gifEstimate(crane, { size: 1080, fps: 15 }, 1.6)).toMatchObject({ ok: false, reason: 'bytes' })
+    expect(gifEstimate(crane, { size: 480, fps: 15 }, 1.6).ok).toBe(true)
+    expect(gifEstimate(crane, { size: 480, fps: 15 }, 1.6).bytes).toBeLessThanOrEqual(GIF_MAX_BYTES)
+  })
+
+  test('an absolute frame cap applies whatever the size', () => {
+    const long = { steps: 40, duration: 40 * 800 } // 32 s → 961 frames at 30 fps
+    expect(gifEstimate(long, { size: 480, fps: 30 }, 0.5)).toMatchObject({ ok: false, reason: 'frames' })
+    expect(gifEstimate(long, { size: 480, fps: 30 }, 0.5).frames).toBeGreaterThan(GIF_MAX_FRAMES)
+  })
+
+  test('record refuses an over-budget GIF before starting a worker or touching the Stage', async () => {
+    const makeWorker = vi.fn()
+    const { stage, log } = fakeStage()
+    const src = { ...crane, viewAt: (t: number) => ({ t }) }
+    const err = await record(src, stage, { format: 'gif', size: 1080, fps: 30 }, new AbortController().signal, () => {}, { makeWorker, makeSurface: fakeSurface })
+      .then(() => null, (e: unknown) => e)
+    expect(err).toBeInstanceOf(RangeError)
+    expect(makeWorker).not.toHaveBeenCalled()
+    expect(log).toEqual([])
+  })
+})
+
+describe('WebM in a hidden tab (fix round 1)', () => {
+  function fakeVisibility(hidden = false) {
+    const subs = new Set<() => void>()
+    const v = {
+      hidden,
+      isHidden: () => v.hidden,
+      onChange: (cb: () => void) => {
+        subs.add(cb)
+        return () => subs.delete(cb)
+      },
+      set(h: boolean) {
+        v.hidden = h
+        for (const cb of [...subs]) cb()
+      },
+      get listeners() {
+        return subs.size
+      },
+    }
+    return v
+  }
+
+  function media() {
+    const track = { requestFrame: vi.fn(), stop: vi.fn() }
+    const stream = { getVideoTracks: () => [track], getTracks: () => [track] } as unknown as MediaStream
+    const events: string[] = []
+    class R {
+      static isTypeSupported = () => true
+      state = 'inactive'
+      ondataavailable: ((e: { data: Blob }) => void) | null = null
+      onstop: (() => void) | null = null
+      onerror: ((e: Event) => void) | null = null
+      start() {
+        this.state = 'recording'
+      }
+      stop() {
+        if (this.state === 'inactive') return
+        this.state = 'inactive'
+        events.push('stop')
+        queueMicrotask(() => this.onstop?.())
+      }
+    }
+    const surface: Surface = { draw: () => {}, pixels: () => new ArrayBuffer(0), captureStream: () => stream }
+    return { track, events, R, surface }
+  }
+
+  test('hiding the tab mid-recording stops it with RecordHiddenError (no stretched video)', async () => {
+    const m = media()
+    const vis = fakeVisibility()
+    let n = 0
+    const deps: RecordDeps = {
+      makeSurface: () => m.surface,
+      MediaRecorder: m.R as unknown as typeof MediaRecorder,
+      visibility: vis,
+      wait: (_ms, signal) => {
+        if (++n === 3) vis.set(true) // the user switches tabs
+        return signal.aborted ? Promise.reject(new DOMException('x', 'AbortError')) : Promise.resolve()
+      },
+    }
+    const { stage, log } = fakeStage()
+    const err = await record(source(2), stage, { format: 'webm', size: 480, fps: 15 }, new AbortController().signal, () => {}, deps)
+      .then(() => null, (e: unknown) => e)
+    expect(err).toBeInstanceOf(RecordHiddenError)
+    expect((err as Error).name).toBe('RecordHiddenError')
+    expect(m.events).toContain('stop')
+    expect(m.track.stop).toHaveBeenCalled()
+    expect(vis.listeners).toBe(0)
+    expect(log.at(-1)).toBe('end')
+  })
+
+  test('starting in a hidden tab is refused at once', async () => {
+    const m = media()
+    const err = await record(source(2), fakeStage().stage, { format: 'webm', size: 480, fps: 15 }, new AbortController().signal, () => {}, {
+      makeSurface: () => m.surface,
+      MediaRecorder: m.R as unknown as typeof MediaRecorder,
+      visibility: fakeVisibility(true),
+      wait: () => Promise.resolve(),
+    }).then(() => null, (e: unknown) => e)
+    expect(err).toBeInstanceOf(RecordHiddenError)
+  })
+
+  test('a MediaRecorder constructor throw still stops the capture tracks', async () => {
+    const m = media()
+    class Throws {
+      static isTypeSupported = () => true
+      constructor() {
+        throw new DOMException('no', 'NotSupportedError')
+      }
+    }
+    const err = await record(source(1), fakeStage().stage, { format: 'webm', size: 480, fps: 15 }, new AbortController().signal, () => {}, {
+      makeSurface: () => m.surface,
+      MediaRecorder: Throws as unknown as typeof MediaRecorder,
+      visibility: fakeVisibility(),
+      wait: () => Promise.resolve(),
+    }).then(() => null, (e: unknown) => e)
+    expect((err as DOMException).name).toBe('NotSupportedError')
     expect(m.track.stop).toHaveBeenCalled()
   })
 })

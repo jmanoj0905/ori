@@ -9,7 +9,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { PAPER_SIZES, commit, createPaper, current, push, startHistory } from '@engine'
 import type { Gesture } from '@engine'
 import { useStudio } from './store'
-import { notices, resetNotices, RECORD_FAILED } from '../persistence/notice'
+import { notices, resetNotices, RECORD_FAILED, RECORD_HIDDEN } from '../persistence/notice'
+import { RecordHiddenError } from '../persistence/record'
 
 const rec = vi.hoisted(() => ({
   calls: [] as { opts: unknown; signal: AbortSignal; onProgress: (p: number) => void; resolve: (b: Blob) => void; reject: (e: unknown) => void }[],
@@ -193,3 +194,48 @@ describe('TopBar: Record replay…', () => {
     expect(screen.getByRole('button', { name: 'Record replay…' })).toBeDisabled()
   })
 })
+
+describe('RecordDialog: GIF budget and hidden tabs (fix round 1)', () => {
+  /** A crane-length history (22 steps): only the cursor matters until Record is pressed. */
+  const craneLength = () => useStudio.setState({ history: { ...twoFolds(), cursor: 22 } })
+
+  test('a GIF shows its estimated size', () => {
+    supportWebm(false)
+    render(<RecordDialog stage={stage} onClose={() => {}} />)
+    // 2 steps at 480p / 15 fps: 768 × 480 × 25 frames.
+    expect(screen.getByText(/768 × 480 · 25 frames · about 2\.6 MB/)).toBeInTheDocument()
+  })
+
+  test('over budget: Record is off with an explanation; a smaller combination turns it back on', () => {
+    supportWebm(true)
+    craneLength()
+    render(<RecordDialog stage={stage} onClose={() => {}} />)
+    expect(screen.getByRole('button', { name: 'Record' })).toBeEnabled() // 480p / 15 fps fits
+    fireEvent.click(screen.getByRole('radio', { name: '1080p' }))
+    expect(screen.getByRole('button', { name: 'Record' })).toBeDisabled()
+    expect(screen.getByText(/Too large for a GIF/)).toHaveTextContent(/smaller size.*WebM/)
+    fireEvent.click(screen.getByRole('radio', { name: /WebM/ }))
+    expect(screen.getByRole('button', { name: 'Record' })).toBeEnabled() // video has no such budget
+    expect(screen.queryByText(/Too large for a GIF/)).toBeNull()
+  })
+
+  test('without WebM the explanation does not offer it', () => {
+    supportWebm(false)
+    craneLength()
+    render(<RecordDialog stage={stage} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('radio', { name: '1080p' }))
+    expect(screen.getByText(/Too large for a GIF/)).not.toHaveTextContent(/WebM/)
+  })
+
+  test('a WebM stopped because the tab was hidden says so (no download)', async () => {
+    supportWebm(true)
+    render(<RecordDialog stage={stage} onClose={() => {}} />)
+    fireEvent.click(screen.getByRole('radio', { name: /WebM/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Record' }))
+    await waitFor(() => expect(rec.calls).toHaveLength(1))
+    await act(async () => rec.calls[0]!.reject(new RecordHiddenError()))
+    expect(notices.getState().message).toBe(RECORD_HIDDEN)
+    expect(dl.download).not.toHaveBeenCalled()
+  })
+})
+

@@ -99,3 +99,32 @@ test('pasting the link into an already-open tab asks, then opens it', async ({ p
   expect(new URL(open.url()).hash).toBe('')
   await ctx.close()
 })
+
+test('Export menu: .fold and crease-pattern SVG download with dated names and content', async ({ page }) => {
+  await openStudio(page)
+  await foldTwice(page)
+  const stamp = /^ori-\d{4}-\d{2}-\d{2}-2\.(fold|svg)$/
+  const menu = async () => {
+    await page.getByRole('button', { name: 'Export', exact: true }).click()
+    return page.getByRole('group', { name: 'Export' })
+  }
+  const fold = page.waitForEvent('download')
+  await (await menu()).getByRole('button', { name: '.fold file' }).click()
+  const f = await fold
+  expect(f.suggestedFilename()).toMatch(stamp)
+  const { readFile } = await import('node:fs/promises')
+  const foldJson = JSON.parse(await readFile((await f.path())!, 'utf8'))
+  expect(foldJson.file_spec).toBe(1.2)
+  expect(foldJson.file_frames).toHaveLength(3)
+
+  const group = await menu()
+  await group.getByRole('checkbox', { name: 'Grid' }).check()
+  const svg = page.waitForEvent('download')
+  await group.getByRole('button', { name: 'Crease pattern (SVG)' }).click()
+  const s = await svg
+  expect(s.suggestedFilename()).toMatch(stamp)
+  const text = await readFile((await s.path())!, 'utf8')
+  expect(text).toContain('<svg')
+  expect(text).toContain('stroke-dasharray="6 4"')
+  expect(text).toContain('cp-grid')
+})

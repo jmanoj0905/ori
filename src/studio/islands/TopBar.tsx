@@ -10,13 +10,15 @@ export type TopBarProps = {
   onTogglePaper(): void
   /** PNG export of the current view; the button is disabled when absent. */
   onExport?: (transparent: boolean) => void
+  /** .fold or crease-pattern SVG export; the file items are disabled when absent. */
+  onExportFile?: (kind: 'fold' | 'svg', opts: { grid: boolean; style: 'diagram' | 'mv-color' }) => void
   /** Opens the settings sheet (the gear). */
   onSettings?: () => void
   /** Opens the Share dialog; the button is disabled when there is nothing to share. */
   onShare?: () => void
 }
 
-export function TopBar({ paperOpen, onTogglePaper, onExport, onSettings, onShare }: TopBarProps) {
+export function TopBar({ paperOpen, onTogglePaper, onExport, onExportFile, onSettings, onShare }: TopBarProps) {
   const undoable = useStudio(s => canUndo(s.history))
   const redoable = useStudio(s => canRedo(s.history))
   const undo = useStudio(s => s.undo)
@@ -24,6 +26,12 @@ export function TopBar({ paperOpen, onTogglePaper, onExport, onSettings, onShare
   const shareable = useStudio(s => s.history.cursor > 0)
   const keys = useSettings(s => s.bindings)
   const [exportOpen, setExportOpen] = useState(false)
+  const [grid, setGrid] = useState(false)
+  const [mvColor, setMvColor] = useState(false)
+  const chooseFile = (kind: 'fold' | 'svg') => {
+    setExportOpen(false)
+    onExportFile?.(kind, { grid, style: mvColor ? 'mv-color' : 'diagram' })
+  }
   const choose = (transparent: boolean) => {
     setExportOpen(false)
     onExport?.(transparent)
@@ -61,9 +69,17 @@ export function TopBar({ paperOpen, onTogglePaper, onExport, onSettings, onShare
             Export
           </button>
           {exportOpen && (
-            <div className="export-menu" role="group" aria-label="Export PNG">
+            <div className="export-menu" role="group" aria-label="Export">
               <button type="button" className="tbtn text" onClick={() => choose(false)}>PNG · washi background</button>
               <button type="button" className="tbtn text" onClick={() => choose(true)}>PNG · transparent</button>
+              <button type="button" className="tbtn text" onClick={() => chooseFile('fold')} disabled={!onExportFile}>.fold file</button>
+              <button type="button" className="tbtn text" onClick={() => chooseFile('svg')} disabled={!onExportFile}>Crease pattern (SVG)</button>
+              <label className="export-opt">
+                <input type="checkbox" checked={grid} onChange={e => setGrid(e.target.checked)} /> Grid
+              </label>
+              <label className="export-opt">
+                <input type="checkbox" checked={mvColor} onChange={e => setMvColor(e.target.checked)} /> Colour mountain / valley
+              </label>
             </div>
           )}
         </span>

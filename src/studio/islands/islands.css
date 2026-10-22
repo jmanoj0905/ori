@@ -799,6 +799,13 @@ input[type='range'] {
   border: 1px solid var(--frost-border);
   z-index: 5;
 }
+.export-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
 .notice {
   position: absolute;
   left: 50%;

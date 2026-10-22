@@ -165,6 +165,12 @@ export function App() {
           } else setPaperOpen(o => !o)
         }}
         onExport={stageReady ? t => void exportPng(stageReady, useStudio.getState().history.cursor, t) : undefined}
+        onExportFile={(kind, o) => {
+          const { history } = useStudio.getState()
+          void import('../persistence/fileExport').then(m =>
+            kind === 'fold' ? m.exportFold(history) : m.exportSvg(history, { style: o.style, grid: o.grid ? 8 : undefined }),
+          )
+        }}
         onShare={() => setShareOpen(true)}
         onSettings={() => useUi.getState().open('settings')} />
       <main className="studio-main">

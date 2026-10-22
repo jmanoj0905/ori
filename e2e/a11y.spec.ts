@@ -33,7 +33,7 @@ test('the studio with a fold, the paper panel and the export menu open', async (
   await drag(page, [0.99, 0.99], [0, 0])
   await page.getByRole('button', { name: 'Paper', exact: true }).click()
   await page.getByRole('button', { name: 'Export', exact: true }).click()
-  await expect(page.getByRole('group', { name: 'Export PNG' })).toBeVisible()
+  await expect(page.getByRole('group', { name: 'Export' })).toBeVisible()
   expect(await scan(page)).toEqual([])
 })
 

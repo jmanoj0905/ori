@@ -445,6 +445,19 @@ describe('top bar', () => {
     expect(screen.getByRole('button', { name: 'Export' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Settings' })).toBeDisabled()
   })
+
+  test('the export menu offers .fold and SVG with the grid and colour options', () => {
+    const onExportFile = vi.fn()
+    render(<TopBar paperOpen={false} onTogglePaper={() => {}} onExport={() => {}} onExportFile={onExportFile} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    fireEvent.click(screen.getByRole('button', { name: '.fold file' }))
+    expect(onExportFile).toHaveBeenLastCalledWith('fold', { grid: false, style: 'diagram' })
+    fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Grid' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Colour/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Crease pattern (SVG)' }))
+    expect(onExportFile).toHaveBeenLastCalledWith('svg', { grid: true, style: 'mv-color' })
+  })
 })
 
 describe('shell', () => {

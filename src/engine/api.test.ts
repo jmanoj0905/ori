@@ -36,6 +36,7 @@ describe('the @engine public API', () => {
         'current',
         'canUndo',
         'canRedo',
+        'frameFromFold',
       ].sort(),
     )
   })

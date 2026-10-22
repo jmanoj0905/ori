@@ -32,8 +32,12 @@
  *    normalisation — and `checkStep` accepts if any candidate matches. On a
  *    rectangle those readings coincide with the rotational symmetries, so
  *    such frames are only checked up to them.
- * 2. Creases: every edge whose assignment is not B (boundary) or F (flat),
- *    in the reference placement. Collinear touching segments with the same
+ * 2. Creases: every edge whose assignment is not B (boundary), in the
+ *    reference placement. F (flat) edges count as their own class (R75): an
+ *    unfolded crease — a hinge fold back to 0° leaves the edge as 'F' at
+ *    angle 0 — is a real pre-crease ("fold and unfold" steps), so it must
+ *    not match a blank sheet. F has no sign, so a mirrored reading leaves it
+ *    as is (only V ↔ M swap). Collinear touching segments with the same
  *    assignment are merged into maximal segments (two equivalent frames may
  *    split one crease line at different vertices), endpoints ordered,
  *    quantised to `tol` and sorted. `flat` records a fully folded crease
@@ -278,7 +282,7 @@ function reading(f: Frame, place: Placement, tol: number): Reading {
   const raw: Seg[] = []
   f.edges_vertices.forEach(([u, v], e) => {
     const asg = (f.edges_assignment[e] ?? '').toUpperCase()
-    if (asg === 'B' || asg === 'F') return
+    if (asg === 'B') return
     if (len(sub(P[u], P[v])) <= tol) return
     raw.push({
       a: P[u],

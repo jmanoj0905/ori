@@ -142,6 +142,21 @@ describe('checkStep', () => {
     expect(checkStep(renumbered, apply(square(), fold([0.5, 0.95], [0.5, 0.55])), strict).match).toBe(false)
   })
 
+  test('an unfolded pre-crease counts (R75): fold and unfold is not a blank sheet', () => {
+    // a hinge fold back along x = 0.5 unfolds the flap; the engine keeps the edge as 'F' at 0°
+    const hinge = (grab: Vec2, target: Vec2): Gesture => ({ ...fold(grab, target), crease: { origin: [0.5, 0], vector: [0, 1] } })
+    const unfoldedFromRight = apply(square(), fold([0.9, 0.5], [0.1, 0.5]), hinge([0.1, 0.5], [0.9, 0.5]))
+    const unfoldedFromLeft = apply(square(), fold([0.1, 0.5], [0.9, 0.5]), hinge([0.9, 0.5], [0.1, 0.5]))
+    expect(unfoldedFromRight.edges_assignment).toContain('F')
+    expect(canonical(unfoldedFromRight).creases).toEqual([{ a: [0.5, 0], b: [0.5, 1], assignment: 'F', flat: false }])
+    expect(checkStep(unfoldedFromRight, square(), strict)).toEqual({ match: false, reason: 'creases' })
+    expect(checkStep(square(), unfoldedFromRight, strict)).toEqual({ match: false, reason: 'creases' })
+    expect(checkStep(unfoldedFromLeft, unfoldedFromRight, strict)).toEqual({ match: true })
+    // F has no sign: the turned-over pre-crease is the same pre-crease, and not a folded crease
+    expect(checkStep(flip(unfoldedFromRight), unfoldedFromRight, strict)).toEqual({ match: true })
+    expect(checkStep(unfoldedFromRight, halfRight(), strict)).toEqual({ match: false, reason: 'creases' })
+  })
+
   test('tiny numeric drift still matches', () => {
     expect(checkStep(drift(halfLeft(), 1e-6), halfRight(), strict)).toEqual({ match: true })
     // a crease moved by more than the tolerance does not

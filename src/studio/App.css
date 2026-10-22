@@ -32,3 +32,45 @@
 .stage-host canvas {
   touch-action: none;
 }
+
+/* The 3D view is unavailable (no WebGL, chunk failed, context lost): one calm note where the paper would be. */
+.stage-error {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: min(360px, calc(100vw - 2 * var(--space)));
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+  color: var(--ink);
+  font-family: var(--font-ui);
+}
+.stage-error p {
+  margin: 0;
+}
+
+/* AppBoundary: the whole app failed to render. */
+.app-failed {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--ivory);
+  color: var(--ink);
+  font-family: var(--font-ui);
+}
+.app-failed button {
+  font: inherit;
+  padding: 6px 14px;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}

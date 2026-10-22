@@ -55,6 +55,10 @@ export type StageOptions = {
   tween?: Tween
   /** Read on each transition: true makes it instant. Default: false. */
   reducedMotion?: () => boolean
+  /** The GPU context was lost (the Stage stops drawing until it is restored). */
+  onContextLost?: () => void
+  /** The browser restored the context; the Stage has redrawn. */
+  onContextRestored?: () => void
 }
 
 const instantTween: Tween = (_from, to, _ms, onFrame, _instant, signal) => {
@@ -145,6 +149,24 @@ export class Stage {
 
   private readonly tween: Tween
   private readonly reducedMotion: () => boolean
+  private readonly onContextLost?: () => void
+  private readonly onContextRestored?: () => void
+  private contextLost = false
+
+  private readonly onLost = (e: Event): void => {
+    e.preventDefault()
+    this.contextLost = true
+    cancelAnimationFrame(this.raf)
+    this.raf = 0
+    this.onContextLost?.()
+  }
+
+  private readonly onRestored = (): void => {
+    this.contextLost = false
+    this.resize()
+    this.invalidate()
+    this.onContextRestored?.()
+  }
 
   constructor(host: HTMLElement, opts: StageOptions = {}) {
     this.host = host
@@ -178,6 +200,15 @@ export class Stage {
     this.fitShadow(new THREE.Box3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 1, 0)))
 
     this.materials = makeMaterials(this.paper)
+
+    // A lost context (GPU reset, too many contexts) is restorable only if the
+    // loss event's default is prevented; three.js re-initialises its GL state
+    // on restore, and the Stage just draws again.
+    const canvas = this.renderer.domElement
+    canvas.addEventListener('webglcontextlost', this.onLost, false)
+    canvas.addEventListener('webglcontextrestored', this.onRestored, false)
+    this.onContextLost = opts.onContextLost
+    this.onContextRestored = opts.onContextRestored
 
     this.ro = new ResizeObserver(() => this.resize())
     this.ro.observe(host)
@@ -438,6 +469,8 @@ export class Stage {
     this.stopView()
     this.ro.disconnect()
     window.removeEventListener('resize', this.resize)
+    this.renderer.domElement.removeEventListener('webglcontextlost', this.onLost)
+    this.renderer.domElement.removeEventListener('webglcontextrestored', this.onRestored)
     this.disposeBuilt(this.committed)
     this.committed = null
     this.disposeStationary()
@@ -670,7 +703,7 @@ export class Stage {
 
   private invalidate(): void {
     this.dirty = true
-    if (!this.raf && !this.disposed) this.raf = requestAnimationFrame(this.tick)
+    if (!this.raf && !this.disposed && !this.contextLost) this.raf = requestAnimationFrame(this.tick)
   }
 
   private readonly tick = (): void => {

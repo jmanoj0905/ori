@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import type { Tool } from '@engine'
 import { useStudio } from '../store'
 import { useSettings } from '../../settings/store'
+import { stageDown, useUi } from '../ui'
 import type { SnapSettings } from '../../settings/schema'
 
 const TOOLS: { tool: Tool; label: string; title: string }[] = [
@@ -44,6 +45,7 @@ export function Tools() {
   const setTool = useStudio(s => s.setTool)
   const turnOver = useStudio(s => s.turnOver)
   const pending = useStudio(s => s.pending)
+  const down = useUi(s => stageDown(s.stage))
   const snap = useSettings(s => s.snap)
   const update = useSettings(s => s.update)
   return (
@@ -55,6 +57,7 @@ export function Tools() {
             type="button"
             className="tool"
             aria-pressed={tool === t.tool}
+            disabled={down}
             title={t.title}
             onClick={() => setTool(t.tool)}
           >
@@ -62,7 +65,7 @@ export function Tools() {
           </button>
         ))}
       </div>
-      <button type="button" className="tool action" disabled={pending} onClick={() => void turnOver()} title="Turn the model over (T)">
+      <button type="button" className="tool action" disabled={pending || down} onClick={() => void turnOver()} title="Turn the model over (T)">
         Turn over
       </button>
       <div role="group" aria-label="Snap" className="stack snaps">

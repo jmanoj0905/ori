@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react'
 import type { Tool } from '@engine'
 import { useStudio } from '../store'
-import { useUi } from '../ui'
+import { stageDown, useUi } from '../ui'
 import { announce } from '../announce'
 
 /** A commit or restore pending this long shows FOLDING / RESTORING (R52): quick ones never flash. */
@@ -52,11 +52,14 @@ export function HintLine() {
     if (busy) announce(useStudio.getState().restoring ? RESTORING : FOLDING)
   }, [busy])
   const kf = useUi(s => s.kf)
+  const stage = useUi(s => s.stage)
   const refusal = useStudio(s => s.refusal)
   const blocked = useStudio(s => s.preview?.blocked === true)
   const tool = useStudio(s => s.tool)
   const start = useStudio(s => s.history.steps.length === 0)
   const startHint = useStudio(s => s.hint)
+  // The 3D view is unavailable: the stage message (App) says why; no folding hint.
+  if (stageDown(stage)) return null
   const text = busy ? (restoring ? RESTORING : FOLDING) :
     refusal ?? (blocked ? BLOCKED_HINT : kf !== 'idle' ? KEYBOARD_HINTS[kf] : tool === 'fold' && start ? startHint : TOOL_HINTS[tool])
   return (

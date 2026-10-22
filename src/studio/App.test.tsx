@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, expect, test } from 'vitest'
+import { afterEach, expect, test, vi } from 'vitest'
 import { App } from './App'
 import { useSettings, defaultSettings } from '../settings/store'
 import { useStudio } from './store'
@@ -71,4 +71,37 @@ test('Export stays disabled while there is no Stage to snapshot', async () => {
   render(<App />)
   const btn = screen.getByRole('button', { name: 'Export' })
   await waitFor(() => expect(btn).toBeDisabled()) // no WebGL in jsdom: stage never becomes ready
+})
+
+test('without WebGL the studio says so calmly and the fold and preset controls are disabled', async () => {
+  render(<App />) // jsdom has no WebGL: the Stage cannot be built
+  expect(await screen.findByRole('alert')).toHaveTextContent('Ori needs WebGL to show the paper.')
+  expect(screen.queryByText('Grab a corner and drag it across.')).toBeNull()
+  for (const name of ['Paper plane', 'Cup', 'Crane', 'Turn over', 'Reverse']) {
+    expect(screen.getByRole('button', { name })).toBeDisabled()
+  }
+  const { useUi } = await import('./ui')
+  useUi.setState({ stage: 'loading' })
+})
+
+test('a 3D view chunk that fails to load asks for a reload', async () => {
+  vi.resetModules()
+  vi.doMock('../render/Stage', () => Promise.reject(new Error('Failed to fetch dynamically imported module')))
+  const { App: Fresh } = await import('./App')
+  render(<Fresh />)
+  expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load the 3D view — reload to try again.")
+  expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument()
+  vi.doUnmock('../render/Stage')
+  vi.resetModules()
+})
+
+test('an error anywhere in the app shows a calm full-page message instead of a blank page', async () => {
+  const { AppBoundary } = await import('./AppBoundary')
+  const Boom = () => {
+    throw new Error('boom')
+  }
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  render(<AppBoundary><Boom /></AppBoundary>)
+  expect(screen.getByRole('alert')).toHaveTextContent('Something went wrong. Reload to try again.')
+  vi.restoreAllMocks()
 })

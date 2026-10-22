@@ -9,6 +9,7 @@ import { useStudio } from '../store'
 import { useSettings } from '../../settings/store'
 import { ConfirmDialog } from './ConfirmDialog'
 import { MiniCP } from './MiniCP'
+import { stageDown, useUi } from '../ui'
 
 export const PRESET_MENU = [
   { id: 'plane', name: 'Paper plane' },
@@ -23,6 +24,7 @@ export const REDO_CLEARED = 'Redo history cleared'
 export function Steps() {
   const history = useStudio(s => s.history)
   const jumpTo = useStudio(s => s.jumpTo)
+  const down = useUi(s => stageDown(s.stage))
   const [playing, setPlaying] = useState<PresetId | null>(null)
   const [ask, setAsk] = useState<PresetId | null>(null)
   const [toast, setToast] = useState<History | null>(null)
@@ -121,7 +123,7 @@ export function Steps() {
       </ol>
       <div role="group" aria-label="Presets" className="presets">
         {PRESET_MENU.map(p => (
-          <button key={p.id} type="button" className="preset-btn" aria-pressed={playing === p.id} onClick={() => choose(p.id)}>
+          <button key={p.id} type="button" className="preset-btn" aria-pressed={playing === p.id} disabled={down} onClick={() => choose(p.id)}>
             {p.name}
           </button>
         ))}

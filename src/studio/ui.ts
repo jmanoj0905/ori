@@ -4,21 +4,40 @@ import { create } from 'zustand'
 
 export type Sheet = 'settings' | 'shortcuts'
 export type KeyboardPhase = 'idle' | 'grab' | 'target'
+/**
+ * The 3D view: loading (the Stage chunk), ready, or why it is unavailable —
+ * no WebGL, the chunk failed to load, or the GPU context was lost (until the
+ * browser restores it). While unavailable the fold and preset controls are off.
+ */
+export type StageStatus = 'loading' | 'ready' | 'webgl' | 'chunk' | 'lost'
+
+export const STAGE_MESSAGES: Partial<Record<StageStatus, string>> = {
+  webgl: 'Ori needs WebGL to show the paper.',
+  chunk: "Couldn't load the 3D view — reload to try again.",
+  lost: 'The 3D view was interrupted. Restoring it…',
+}
+
+/** True when the paper cannot be shown (and so cannot be folded). */
+export const stageDown = (s: StageStatus): boolean => s === 'webgl' || s === 'chunk' || s === 'lost'
 
 export type UiState = {
   sheet: Sheet | null
   kf: KeyboardPhase
+  stage: StageStatus
   open(s: Sheet): void
   close(): void
   toggle(s: Sheet): void
   setKf(p: KeyboardPhase): void
+  setStage(s: StageStatus): void
 }
 
 export const useUi = create<UiState>()((set, get) => ({
   sheet: null,
   kf: 'idle',
+  stage: 'loading',
   open: sheet => set({ sheet }),
   close: () => set({ sheet: null }),
   toggle: sheet => set({ sheet: get().sheet === sheet ? null : sheet }),
   setKf: kf => set({ kf }),
+  setStage: stage => set({ stage }),
 }))

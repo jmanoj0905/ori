@@ -22,7 +22,7 @@ import { exportPng } from '../persistence/png'
 import { measureInsets, NARROW_PX } from './insets'
 import { LiveLog } from './LiveLog'
 import { SheetHost } from './SheetHost'
-import { useUi } from './ui'
+import { STAGE_MESSAGES, useUi } from './ui'
 import './islands/islands.css'
 
 // The store and the Stage read reduced motion lazily, from the live setting.
@@ -71,11 +71,27 @@ export function App() {
     let stage: Stage | undefined
     let unsubscribe: (() => void) | undefined
     let cancelled = false
+    const ui = useUi.getState()
+    ui.setStage('loading')
     void import('../render/Stage')
       .then(m => {
         if (cancelled) return
-        const st = new m.Stage(host, { tween, reducedMotion: isReducedMotion })
+        let st: Stage
+        try {
+          st = new m.Stage(host, {
+            tween,
+            reducedMotion: isReducedMotion,
+            onContextLost: () => useUi.getState().setStage('lost'),
+            onContextRestored: () => useUi.getState().setStage('ready'),
+          })
+        } catch (err) {
+          // No WebGL (blocked, unsupported, or the GPU process is gone).
+          console.warn('Stage unavailable:', err)
+          ui.setStage('webgl')
+          return
+        }
         stage = st
+        ui.setStage('ready')
         setStageReady(st)
         syncStage(st, useStudio.getState())
         unsubscribe = useStudio.subscribe((s, prev) => syncStage(st, s, prev))
@@ -86,7 +102,11 @@ export function App() {
           Object.assign(window, { __ori: { store: useStudio, stage: st, ui: useUi, settings: useSettings } })
         }
       })
-      .catch(err => console.warn('Stage unavailable:', err))
+      .catch(err => {
+        // The 3D chunk failed to load (offline, or a deploy replaced the file).
+        console.warn('Stage unavailable:', err)
+        if (!cancelled) ui.setStage('chunk')
+      })
     return () => {
       cancelled = true
       unsubscribe?.()
@@ -96,6 +116,8 @@ export function App() {
   // Keep the camera framing centred on the area the islands leave free.
   const dockRef = useRef<HTMLDivElement>(null)
   const kfActive = useUi(s => s.kf) !== 'idle'
+  const stageStatus = useUi(s => s.stage)
+  const stageMessage = STAGE_MESSAGES[stageStatus]
   const busy = folding || kfActive
   const layout = useCallback(() => {
     if (!stageReady || busy) return // never rescale the paper under a live fold; it reframes when the gesture ends
@@ -134,6 +156,14 @@ export function App() {
         onSettings={() => useUi.getState().open('settings')} />
       <main className="studio-main">
         <div className="stage-host" data-stage-host ref={hostRef} />
+        {stageMessage && (
+          <div className="stage-error island" role="alert">
+            <p>{stageMessage}</p>
+            {stageStatus === 'chunk' && (
+              <button type="button" className="tbtn text primary" onClick={() => location.reload()}>Reload</button>
+            )}
+          </div>
+        )}
         <div className="lower">
           <div className="bottom">
             <FoldBar />

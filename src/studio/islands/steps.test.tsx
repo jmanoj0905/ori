@@ -261,4 +261,33 @@ describe('Replay button (R61)', () => {
       useStudio.getState().setReplaying(false)
     })
   })
+
+  test('a refused entry retries once when the commit lands; repeated clicks and unmount leave no stray retry', () => {
+    // The App refuses entry while a commit is in flight (preset playback); stand in for that with `refuse`.
+    useStudio.setState({ history: threeFolds() })
+    let refuse = true
+    const onReplay = vi.fn(() => !refuse && useStudio.getState().setReplaying(true))
+    const { unmount } = render(<Steps onReplay={onReplay} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Replay' }))
+    expect(onReplay).toHaveBeenCalledTimes(1)
+    unmount()
+    refuse = false
+    act(() => useStudio.setState({ hint: 'landed' }))
+    expect(onReplay).toHaveBeenCalledTimes(1) // the retry went with the island
+    expect(useStudio.getState().replaying).toBe(false)
+
+    refuse = true
+    render(<Steps onReplay={onReplay} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Replay' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Replay' }))
+    expect(onReplay).toHaveBeenCalledTimes(3)
+    refuse = false
+    act(() => useStudio.setState({ hint: 'landed again' }))
+    expect(onReplay).toHaveBeenCalledTimes(4) // exactly one retry, not one per click
+    expect(useStudio.getState().replaying).toBe(true)
+    act(() => {
+      useStudio.getState().setReplaying(false)
+    })
+    expect(onReplay).toHaveBeenCalledTimes(4)
+  })
 })

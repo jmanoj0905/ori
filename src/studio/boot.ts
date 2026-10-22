@@ -78,6 +78,8 @@ function startShareListener(store: Store, opts: BootOptions): void {
     opening = true
     const worker = opts.restorer ? { restore: opts.restorer, dispose() {} } : defaultRestorer()
     try {
+      // Replay mode ignores restoreHistory, so leave it first: the replace then proceeds normally.
+      store.getState().setReplaying(false)
       store.getState().cancel() // a live gesture or keyboard fold ends; preset playback stops when the history moves
       const s = store.getState()
       const r = await openFromHash(hash, {

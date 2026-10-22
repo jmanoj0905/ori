@@ -171,6 +171,23 @@ describe('a link pasted into an open tab (hashchange)', () => {
     expect(JSON.parse(localStorage.getItem(AUTOSAVE_KEY)!).steps).toHaveLength(2)
   })
 
+  test('a link opened during replay exits replay first; Replace loads the shared model and autosaves it', async () => {
+    const a = await twoFolds()
+    a.getState().setPaper({ front: '#2F4A8A' })
+    const b = fresh()
+    await bootStudio(b, { confirm: () => Promise.resolve(true) })
+    await fold(b, [1, 1], [0, 0])
+    expect(b.getState().setReplaying(true)).toBe(true)
+    await paste(link(a))
+    await vi.waitFor(() => expect(b.getState().history.steps).toHaveLength(2))
+    expect(b.getState().replaying).toBe(false)
+    expect(b.getState().paper.front).toBe('#2F4A8A')
+    flushSave()
+    const saved = JSON.parse(localStorage.getItem(AUTOSAVE_KEY)!)
+    expect(saved.steps).toHaveLength(2)
+    expect(saved.paper.front).toBe('#2F4A8A')
+  })
+
   test('a non-share hash change is ignored', async () => {
     const b = fresh()
     await bootStudio(b)

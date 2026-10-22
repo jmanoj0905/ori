@@ -12,7 +12,8 @@
 // Preview.frame is only ever drawn, never fed back into the engine, and the
 // history is never modified.
 //
-// Determinism (Task 5's recorder): `viewAt(t)` is a pure function of t, so a
+// Determinism (Task 5's recorder): `viewAt(t)` is THE deterministic API: a
+// pure function of t, always fractional (reduced motion never floors it), so a
 // recorder can render exact times (t = i × fps step) without the wall clock;
 // play() is only a wall-clock driver around seek(), and its clock is
 // injectable (tests use a manual one). Reduced motion: play advances whole
@@ -142,7 +143,7 @@ export class Player {
   /** Show time t (clamped to [0, steps]; whole steps under reduced motion). Playback continues from there. */
   seek(t: number): void {
     if (!Number.isFinite(t)) return
-    this.time = this.clamp(t)
+    this.time = this.snap(t)
     if (this.playing) this.anchorAt(this.time)
     this.emit()
   }
@@ -160,7 +161,11 @@ export class Player {
     this.listeners.clear()
   }
 
-  /** The view at time t: pure (no emit, no state change), for drawing exact times. */
+  /**
+   * The view at time t: pure (no emit, no state change) and exact — t is only
+   * clamped to [0, steps], never floored, whatever the motion setting. The
+   * recorder's deterministic API.
+   */
   viewAt(t: number): ReplayView {
     const time = this.clamp(Number.isFinite(t) ? t : 0)
     const n = Math.floor(time)
@@ -190,7 +195,7 @@ export class Player {
     this.raf = null
     const beats = ((now - this.anchor.now) * this.rate) / STEP_MS
     const reduced = this.reduced()
-    const t = this.clamp(this.anchor.t + (reduced ? Math.floor(beats) : beats))
+    const t = this.snap(this.anchor.t + (reduced ? Math.floor(beats) : beats))
     const end = t >= this.steps
     if (!end) this.raf = this.clock.request(this.tick)
     // Reduced motion: emit only when a whole step changes (no in-between frames).
@@ -204,7 +209,12 @@ export class Player {
   }
 
   private clamp(t: number): number {
-    const c = Math.min(this.steps, Math.max(0, t))
+    return Math.min(this.steps, Math.max(0, t))
+  }
+
+  /** Scrub and playback time: clamped, and whole steps under reduced motion (UI only; viewAt never snaps). */
+  private snap(t: number): number {
+    const c = this.clamp(t)
     return this.reduced() ? Math.floor(c) : c
   }
 

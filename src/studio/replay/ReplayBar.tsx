@@ -28,6 +28,12 @@ export function ReplayBar({ stage, onExit }: ReplayBarProps) {
   const playRef = useRef<HTMLButtonElement>(null)
   const exitRef = useRef(onExit)
   exitRef.current = onExit
+  const playerRef = useRef<Player | null>(null)
+  /** Stop drawing first, so no stale replay frame can land after syncStage restores the model. */
+  const exit = useRef(() => {
+    playerRef.current?.dispose()
+    exitRef.current()
+  }).current
 
   useEffect(() => {
     const p = new Player(useStudio.getState().history, { reduced })
@@ -36,10 +42,14 @@ export function ReplayBar({ stage, onExit }: ReplayBarProps) {
       draw(v)
       setView(v)
     })
+    playerRef.current = p
     setPlayer(p)
     p.seek(0)
     p.play()
-    return () => p.dispose()
+    return () => {
+      p.dispose()
+      if (playerRef.current === p) playerRef.current = null
+    }
   }, [stage])
 
   useEffect(() => {
@@ -52,11 +62,11 @@ export function ReplayBar({ stage, onExit }: ReplayBarProps) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       if (isTypingTarget(e.target) || inModal(e.target) || useUi.getState().sheet) return
-      exitRef.current()
+      exit()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  }, [exit])
 
   if (!player || !view) return null
   const { steps, playing } = view
@@ -119,7 +129,7 @@ export function ReplayBar({ stage, onExit }: ReplayBarProps) {
         <input type="checkbox" checked={view.autoFrame} onChange={e => (player.autoFrame = e.target.checked)} />
         Auto-frame camera
       </label>
-      <button type="button" className="tbtn text" onClick={() => exitRef.current()} title="Exit replay (Esc)">
+      <button type="button" className="tbtn text" onClick={exit} title="Exit replay (Esc)">
         Exit replay
       </button>
     </section>

@@ -190,4 +190,15 @@ describe('Player', () => {
     p.autoFrame = true
     expect(seen.at(-1)!.autoFrame).toBe(true)
   })
+
+  test('viewAt stays fractional under reduced motion (the recorder draws exact times); only scrub and play floor', () => {
+    const h = cupHistory()
+    const p = new Player(h, { reduced: () => true })
+    const v = p.viewAt(2.5)
+    expect(v.t).toBe(2.5)
+    expect(v.step).toBe(3)
+    expect(v.swing!.angleDeg).toBeCloseTo(0.5 * angleOf(h, 2), 6)
+    p.seek(2.5)
+    expect(p.t).toBe(2)
+  })
 })

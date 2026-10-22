@@ -98,6 +98,21 @@ describe('ReplayBar', () => {
   })
 })
 
+test('Exit stops the Player before leaving: no replay frame draws after the restore', () => {
+  let frameCb: FrameRequestCallback | null = null
+  vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => {
+    frameCb = cb
+    return 1
+  })
+  const stage = fakeStage()
+  let drawsAtExit = -1
+  render(<ReplayBar stage={stage} onExit={() => { drawsAtExit = stage.setFrame.mock.calls.length }} />)
+  fireEvent.click(screen.getByRole('button', { name: 'Exit replay' }))
+  expect(drawsAtExit).toBeGreaterThan(0)
+  ;(frameCb as FrameRequestCallback | null)?.(performance.now() + 5000)
+  expect(stage.setFrame.mock.calls.length).toBe(drawsAtExit)
+})
+
 describe('drawView', () => {
   test('a whole step clears the swing once; auto-frame re-frames when the frame changes', () => {
     const h = cup()

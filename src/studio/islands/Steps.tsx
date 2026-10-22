@@ -33,9 +33,15 @@ export function Steps({ onReplay }: { onReplay?: () => boolean } = {}) {
   const [ask, setAsk] = useState<PresetId | null>(null)
   const [toast, setToast] = useState<History | null>(null)
   const ctl = useRef<AbortController | null>(null)
+  /** A Replay click waiting for an in-flight commit to land (one at most; dropped on unmount). */
+  const replayRetry = useRef<(() => void) | null>(null)
   const currentRef = useRef<HTMLButtonElement>(null)
 
-  useEffect(() => () => ctl.current?.abort(), [])
+  useEffect(() => () => {
+    ctl.current?.abort()
+    replayRetry.current?.()
+    replayRetry.current = null
+  }, [])
   useEffect(() => {
     currentRef.current?.scrollIntoView?.({ block: 'nearest' })
   }, [history.cursor])
@@ -147,14 +153,17 @@ export function Steps({ onReplay }: { onReplay?: () => boolean } = {}) {
         onClick={() => {
           // R61: replay stops preset playback and cancels any live fold (the store does that).
           stop()
+          replayRetry.current?.()
+          replayRetry.current = null
           if (!onReplay?.()) {
-            // A commit was still landing: try again once it has.
+            // A commit was still landing (preset playback): try once more as soon as it has.
             const un = useStudio.subscribe(s => {
-              if (!s.pending) {
-                un()
-                onReplay?.()
-              }
+              if (s.pending) return
+              un()
+              replayRetry.current = null
+              onReplay?.()
             })
+            replayRetry.current = un
           }
         }}
       >

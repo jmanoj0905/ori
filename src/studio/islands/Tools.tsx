@@ -1,4 +1,4 @@
-// Left island: the tool modes, Turn over, and the snap toggles.
+// Left island: the tool modes, Turn over, the camera views (R54) and the snap toggles.
 import { useEffect } from 'react'
 import type { Tool } from '@engine'
 import { useStudio } from '../store'
@@ -39,7 +39,17 @@ export function useToolReturnsToFold(): void {
   )
 }
 
-export function Tools() {
+export type ToolsProps = {
+  /** Camera views (R54); the buttons are disabled when absent (no Stage). */
+  onView?: (view: 'top' | 'reset') => void
+}
+
+const VIEWS = [
+  { view: 'top', label: 'Top view', title: 'Top view: look straight down' },
+  { view: 'reset', label: 'Reset view', title: 'Reset view: back to the studio angle' },
+] as const
+
+export function Tools({ onView }: ToolsProps = {}) {
   useToolReturnsToFold()
   const tool = useStudio(s => s.tool)
   const setTool = useStudio(s => s.setTool)
@@ -68,6 +78,14 @@ export function Tools() {
       <button type="button" className="tool action" disabled={pending || down} onClick={() => void turnOver()} title="Turn the model over (T)">
         Turn over
       </button>
+      <div role="group" aria-label="View" className="stack views">
+        <span className="group-label" aria-hidden="true">View</span>
+        {VIEWS.map(v => (
+          <button key={v.view} type="button" className="tool view" title={v.title} disabled={!onView} onClick={() => onView?.(v.view)}>
+            {v.label}
+          </button>
+        ))}
+      </div>
       <div role="group" aria-label="Snap" className="stack snaps">
         <span className="group-label" aria-hidden="true">Snap</span>
         {SNAPS.map(s => (

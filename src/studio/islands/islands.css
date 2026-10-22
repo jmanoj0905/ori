@@ -154,9 +154,14 @@
 .tool.action {
   border: 1px solid var(--frost-border);
 }
-.snaps {
+.snaps,
+.views {
   border-top: 1px solid var(--frost-border);
   padding-top: 8px;
+}
+.tool.view {
+  height: 28px;
+  font-size: 12.5px;
 }
 .group-label {
   padding: 0 10px 2px;
@@ -595,7 +600,8 @@ input[type='range'] {
     align-items: center;
     gap: 2px;
   }
-  .dock .tools .snaps {
+  .dock .tools .snaps,
+  .dock .tools .views {
     border-top: 0;
     border-left: 1px solid var(--frost-border);
     padding: 0 0 0 8px;
@@ -604,7 +610,8 @@ input[type='range'] {
     height: 40px;
     white-space: nowrap;
   }
-  .dock .tool.snap {
+  .dock .tool.snap,
+  .dock .tool.view {
     height: 40px;
   }
   .dock .group-label {

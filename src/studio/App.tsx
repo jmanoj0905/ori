@@ -175,7 +175,7 @@ export function App() {
               <span className="grabber" aria-hidden="true" />
               Steps, presets and paper
             </button>
-            <Tools />
+            <Tools onView={stageReady ? v => stageReady.view(v, !prefersReducedMotion(useSettings.getState().reducedMotion)) : undefined} />
             <div className="dock-body" id="dock-body">
               <Steps />
               {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}

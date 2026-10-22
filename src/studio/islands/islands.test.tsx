@@ -219,6 +219,19 @@ describe('fold bar', () => {
 })
 
 describe('tools island', () => {
+  test('R54: Top view and Reset view buttons drive the camera, with tooltips; disabled without a Stage', () => {
+    const onView = vi.fn()
+    const { rerender } = render(<Tools onView={onView} />)
+    const view = screen.getByRole('group', { name: 'View' })
+    fireEvent.click(within(view).getByRole('button', { name: 'Top view' }))
+    fireEvent.click(within(view).getByRole('button', { name: 'Reset view' }))
+    expect(onView.mock.calls).toEqual([['top'], ['reset']])
+    expect(within(view).getByRole('button', { name: 'Top view' })).toHaveAttribute('title', 'Top view: look straight down')
+    expect(within(view).getByRole('button', { name: 'Reset view' })).toHaveAttribute('title', 'Reset view: back to the studio angle')
+    rerender(<Tools />)
+    expect(within(view).getByRole('button', { name: 'Top view' })).toBeDisabled()
+  })
+
   test('choosing a tool sets the tool', async () => {
     render(<Tools />)
     fireEvent.click(screen.getByRole('button', { name: 'Squash' }))

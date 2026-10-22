@@ -18,8 +18,13 @@ declare global {
   }
 }
 
-/** Open the studio on a fresh blank sheet, with fonts loaded and a frame rendered. */
-export async function openStudio(page: Page): Promise<void> {
+/**
+ * Open the studio on a fresh blank sheet, with fonts loaded and a frame rendered.
+ * The first-visit coach mark is dismissed beforehand (as for a returning user) so
+ * it stays out of every flow and screenshot; pass `{ coach: true }` to see it.
+ */
+export async function openStudio(page: Page, opts: { coach?: boolean } = {}): Promise<void> {
+  if (!opts.coach) await page.addInitScript(() => localStorage.setItem('ori.coach.v1', '1'))
   await page.goto('/')
   await page.waitForFunction(() => !!window.__ori && !!document.querySelector('[data-stage-host] canvas'))
   await page.evaluate(() => document.fonts.ready.then(() => undefined))

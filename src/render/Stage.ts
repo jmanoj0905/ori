@@ -37,6 +37,7 @@ import {
 } from './materials'
 import { buildPaperGeometry, LAYER_GAP, layerOffsets, poseTable, type LayerOffsets } from './paperMesh'
 import { IVORY, createWashi, detectShadowMapSize, type WashiUniforms } from './washi'
+import { LAND_MS, flapLift } from './lift'
 
 export type Pick = { face: number; paper: Vec2; folded: Vec2 }
 
@@ -66,8 +67,12 @@ const instantTween: Tween = (_from, to, _ms, onFrame, _instant, signal) => {
   return Promise.resolve()
 }
 
-/** How to draw a preview: from the gesture that produced it. */
-export type PreviewStyle = { kind?: FoldKind; tool?: Tool; progress?: number }
+/**
+ * How to draw a preview: from the gesture that produced it. `land` (with a
+ * null preview): the fold was committed, so the lifted flap eases down onto
+ * the paper before the committed frame takes over (R55, render/lift.ts).
+ */
+export type PreviewStyle = { kind?: FoldKind; tool?: Tool; progress?: number; land?: boolean }
 
 type CamState = { tx: number; ty: number; tilt: number; azimuth: number; distance: number }
 
@@ -85,6 +90,9 @@ type Built = {
 type Ghost = {
   group: THREE.Group
   geometry: THREE.BufferGeometry
+  front: THREE.Mesh
+  back: THREE.Mesh
+  xray: THREE.Mesh
   valley: CreaseLines
   mountain: CreaseLines
   live: CreaseLines
@@ -152,6 +160,9 @@ export class Stage {
   private readonly onContextLost?: () => void
   private readonly onContextRestored?: () => void
   private contextLost = false
+  /** The dragged flap's lift (R55) and the landing tween after a commit. */
+  private ghostLift = 0
+  private landing: AbortController | null = null
 
   private readonly onLost = (e: Event): void => {
     e.preventDefault()
@@ -222,6 +233,9 @@ export class Stage {
 
   setFrame(frame: Frame, poses: FacePose[]): void {
     if (frame === this.frame && poses === this.poses) return
+    // A commit arrives just before its preview is cleared (syncStage): keep a
+    // landing in progress only if it is that same commit's (no preview now).
+    if (this.preview) this.endLanding()
     this.frame = frame
     this.poses = poses
     const b = bboxOf(frame)
@@ -240,6 +254,12 @@ export class Stage {
   }
 
   setPreview(p: Preview | null, style: PreviewStyle = {}): void {
+    this.endLanding()
+    if (!p && style.land && this.ghost && this.ghostLift > 0 && !this.reducedMotion()) {
+      this.preview = null
+      this.land()
+      return
+    }
     const t0 = performance.now()
     this.preview = p
     this.previewStyle = style
@@ -276,6 +296,7 @@ export class Stage {
   }
 
   setPaper(s: PaperSettings): void {
+    this.endLanding()
     const gapChanged = gapFor(s) !== gapFor(this.paper)
     this.paper = s
     disposeMaterials(this.materials)
@@ -464,6 +485,7 @@ export class Stage {
 
   dispose(): void {
     if (this.disposed) return
+    this.endLanding()
     this.disposed = true
     cancelAnimationFrame(this.raf)
     this.stopView()
@@ -492,6 +514,49 @@ export class Stage {
     this.renderer.dispose()
     this.renderer.forceContextLoss()
     this.renderer.domElement.remove()
+  }
+
+  // ---- release landing (R55) --------------------------------------------
+
+  /** The moving flap's current lift above its pose, paper units (render-only; e2e reads it). */
+  get flapLift(): number {
+    return this.ghostLift
+  }
+
+  /**
+   * The fold was committed: draw the released flap as paper (not ghost) and
+   * ease its lift to 0 over LAND_MS, then show the committed frame. The pose
+   * is the released one, which the commit took (R41), so only z moves.
+   */
+  private land(): void {
+    const g = this.ghost
+    if (!g) return
+    g.front.material = this.materials.front
+    g.back.material = this.materials.back
+    g.xray.visible = false
+    g.live.visible = false
+    if (this.committed) this.committed.group.visible = false
+    const ctl = (this.landing = new AbortController())
+    const from = this.ghostLift
+    void this.tween(from, 0, LAND_MS, z => {
+      g.group.position.z = z
+      this.ghostLift = z
+      this.invalidate()
+    }, false, ctl.signal).then(() => {
+      if (!ctl.signal.aborted) this.endLanding()
+    })
+  }
+
+  /** Finish a landing now (a new preview, frame, paper or dispose): committed paper on show. */
+  private endLanding(): void {
+    if (!this.landing) return
+    this.landing.abort()
+    this.landing = null
+    this.ghostLift = 0
+    this.disposeStationary()
+    this.disposeGhostPieces()
+    if (this.committed && !this.preview) this.committed.group.visible = true
+    this.invalidate()
   }
 
   // ---- paper -------------------------------------------------------------
@@ -581,7 +646,10 @@ export class Stage {
     tintGhost(this.ghostMats, sideColors(this.paper), p.blocked, this.ghostFade())
     const group = new THREE.Group()
     group.add(front, back, xray, valley, mountain, live)
-    this.ghost = { group, geometry, valley, mountain, live }
+    // R55: the dragged flap hovers a little (render-only z; its angle is the preview's).
+    this.ghostLift = flapLift(st, this.reducedMotion())
+    group.position.z = this.ghostLift
+    this.ghost = { group, geometry, front, back, xray, valley, mountain, live }
     this.scene.add(group)
   }
 

@@ -22,6 +22,12 @@ test('the studio at rest: no serious or critical violations', async ({ page }) =
   expect(await scan(page)).toEqual([])
 })
 
+test('first visit, coach mark showing: no serious or critical violations', async ({ page }) => {
+  await openStudio(page, { coach: true })
+  await expect(page.getByRole('note', { name: 'Tip' })).toBeVisible()
+  expect(await scan(page)).toEqual([])
+})
+
 test('the studio with a fold, the paper panel and the export menu open', async ({ page }) => {
   await openStudio(page)
   await drag(page, [0.99, 0.99], [0, 0])

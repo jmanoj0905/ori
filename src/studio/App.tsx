@@ -22,7 +22,8 @@ import { exportPng } from '../persistence/png'
 import { measureInsets, NARROW_PX } from './insets'
 import { LiveLog } from './LiveLog'
 import { SheetHost } from './SheetHost'
-import { STAGE_MESSAGES, useUi } from './ui'
+import { CoachMark } from './CoachMark'
+import { STAGE_MESSAGES, stageDown, useUi } from './ui'
 import './islands/islands.css'
 
 // The store and the Stage read reduced motion lazily, from the live setting.
@@ -40,7 +41,14 @@ export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): voi
   const was = prev && (prev.preview ?? prev.settling)
   if (!prev || shown !== was) {
     const g = s.gesture ?? (s.settling ? s.settleStyle : null)
-    stage.setPreview(shown, g ? { kind: g.kind, tool: g.tool, progress: g.progress } : {})
+    if (!shown && was && prev) {
+      // R55: the preview goes away because the fold landed (the commit pushed a
+      // step, or the settle tween ended): the Stage lets the flap ease down.
+      // A refusal or a cancel leaves the history alone: no landing.
+      const landed = s.history !== prev.history || (prev.settling !== null && prev.preview === null)
+      const st = prev.gesture ?? prev.settleStyle
+      stage.setPreview(null, landed && st ? { kind: st.kind, tool: st.tool, progress: st.progress, land: true } : {})
+    } else stage.setPreview(shown, g ? { kind: g.kind, tool: g.tool, progress: g.progress } : {})
   }
 }
 
@@ -118,6 +126,7 @@ export function App() {
   const kfActive = useUi(s => s.kf) !== 'idle'
   const stageStatus = useUi(s => s.stage)
   const stageMessage = STAGE_MESSAGES[stageStatus]
+  const reducedMotion = useSettings(s => prefersReducedMotion(s.reducedMotion))
   const busy = folding || kfActive
   const layout = useCallback(() => {
     if (!stageReady || busy) return // never rescale the paper under a live fold; it reframes when the gesture ends
@@ -182,6 +191,7 @@ export function App() {
             </div>
           </div>
         </div>
+        <CoachMark stage={stageReady && !stageDown(stageStatus) ? stageReady : null} reduced={reducedMotion} />
         <Notice />
         <LiveLog />
         <SheetHost />

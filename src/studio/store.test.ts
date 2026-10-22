@@ -517,6 +517,43 @@ describe('settle animation', () => {
   })
 })
 
+describe('release landing (R55)', () => {
+  const stageSpy = () => {
+    const calls: { p: unknown; style: Record<string, unknown> }[] = []
+    return {
+      calls,
+      stage: { setPaper() {}, setFrame() {}, setPreview: (p: unknown, style: Record<string, unknown> = {}) => calls.push({ p, style }) },
+    }
+  }
+
+  test('when a commit lands, the preview is cleared with land: true (the flap eases down)', async () => {
+    const s = createStudioStore({ committer: inProcessCommitter, reduced: () => true })
+    const { calls, stage } = stageSpy()
+    const { syncStage } = await import('./App')
+    s.subscribe((st, prev) => syncStage(stage as never, st, prev))
+    s.getState().begin([1, 1])
+    s.getState().drag([0, 0], 1)
+    expect(await s.getState().release()).toBe(true)
+    expect(calls.at(-1)).toMatchObject({ p: null, style: { land: true, kind: 'valley', tool: 'fold' } })
+  })
+
+  test('a refused release or a cancel clears it without landing', async () => {
+    const s = createStudioStore({ committer: () => Promise.resolve({ ok: false, reason: 'No.' }), reduced: () => true })
+    const { calls, stage } = stageSpy()
+    const { syncStage } = await import('./App')
+    s.subscribe((st, prev) => syncStage(stage as never, st, prev))
+    s.getState().begin([1, 1])
+    s.getState().drag([0, 0], 1)
+    await s.getState().release()
+    expect(calls.at(-1)!.p).toBeNull()
+    expect(calls.at(-1)!.style.land).toBeUndefined()
+    s.getState().begin([1, 1])
+    s.getState().drag([0, 0], 1)
+    s.getState().cancel()
+    expect(calls.at(-1)!.style.land).toBeUndefined()
+  })
+})
+
 describe('paper defaults (R43)', () => {
   const defaults = { ...DEFAULT_PAPER, mode: 'plain' as const, front: '#2F4A8A', size: 'a4' as const, thickness: 0.9 }
   afterEach(() => setPaperDefaultsSource(null))

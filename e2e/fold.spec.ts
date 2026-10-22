@@ -43,7 +43,7 @@ test('dragging the top-right corner to the bottom-left folds the sheet: one step
   // Snapped to the corners: (1,1) landed on (0,0), the crease is the diagonal.
   const crease = await studio(page, s => s.history.steps[0].params.crease)
   expect(Math.abs(crease.vector[0] + crease.vector[1])).toBeLessThan(1e-6)
-  await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled()
 })
 
 test('Esc mid-drag cancels the fold: no preview is left and the release commits nothing', async ({ page }) => {
@@ -115,17 +115,17 @@ test('undo, redo and jumping to a step', async ({ page }) => {
   await page.keyboard.press('ControlOrMeta+z')
   await expect(s1).toHaveAttribute('aria-current', 'step')
   await expect(s2).toHaveAttribute('aria-disabled', 'true')
-  await expect(page.getByRole('button', { name: 'Redo' })).toBeEnabled()
+  await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled()
 
   await page.keyboard.press('ControlOrMeta+Shift+z')
   await expect(s2).toHaveAttribute('aria-current', 'step')
   await expect(s2).not.toHaveAttribute('aria-disabled', 'true')
 
-  await page.getByRole('button', { name: 'Undo' }).click()
-  await page.getByRole('button', { name: 'Undo' }).click()
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
   await expect(stepList(page).getByRole('button', { name: /^0 · Blank sheet/ })).toHaveAttribute('aria-current', 'step')
-  await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled()
-  await page.getByRole('button', { name: 'Redo' }).click()
+  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Redo', exact: true }).click()
   await expect(s1).toHaveAttribute('aria-current', 'step')
 
   // Jump: a greyed future step is still clickable (jump forward = redo), and back again.

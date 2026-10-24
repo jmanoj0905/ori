@@ -122,3 +122,30 @@ describe('the CPU XPBD solver', () => {
     expect(dried).toBeLessThan(undried / 4)
   })
 })
+
+describe('the desk', () => {
+  test('a sheet dropped onto the desk rests on it', () => {
+    const m = meshOf(sheet())
+    const lifted = { ...m, positions: Float32Array.from(m.positions, (v, i) => (i % 3 === 2 ? v + 0.2 : v)) }
+    const s = new SoftSolver(lifted, params({ gravity: [0, 0, -9.81], floor: 0 }))
+    for (let k = 0; k < 120; k++) s.step(1 / 60)
+    expect(Math.min(...z(s))).toBeGreaterThanOrEqual(0)
+    expect(Math.max(...z(s))).toBeLessThan(1e-3)
+  })
+})
+
+describe('the desk holds the paper', () => {
+  test('pulling one corner sideways lifts and curls the sheet more than it slides it', () => {
+    const m = meshOf(sheet())
+    const s = new SoftSolver(m, params({ gravity: [0, 0, -2], floor: 0 }))
+    const corner = where(m, (x, y) => x > 0.999 && y > 0.999)[0]!
+    const far = where(m, (x, y) => x < 1e-3 && y < 1e-3)[0]!
+    for (let k = 1; k <= 60; k++) {
+      s.pin(corner, [1 - 0.4 * (k / 60), 1, 0.4 * (k / 60)])
+      s.step(1 / 60)
+    }
+    const p = s.positions()
+    expect(Math.hypot(p[3 * far]!, p[3 * far + 1]!)).toBeLessThan(0.1) // the far corner barely moves
+    expect(Math.max(...z(s))).toBeGreaterThan(0.3)
+  })
+})

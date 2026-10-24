@@ -187,6 +187,8 @@ export class Stage {
   })
   private readonly ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(ACCENT), transparent: true, opacity: 0.8, depthTest: false, depthWrite: false })
   private pulseRaf = 0
+  /** Soft paper (spec 08): the soft mesh shown in place of the committed paper while soft mode runs. */
+  private soft: { group: THREE.Group; geometry: THREE.BufferGeometry; mesh: THREE.Mesh } | null = null
 
   private readonly tween: Tween
   private readonly reducedMotion: () => boolean
@@ -455,6 +457,89 @@ export class Stage {
     for (const r of rings) r.scale.setScalar(ppu > 0 ? 11 / ppu : 0.03)
   }
 
+  // ---- soft paper (spec 08, src/soft) -------------------------------------
+
+  /**
+   * Show a soft mesh in place of the committed paper (same materials; the
+   * crease ink is left out: the sheet itself shows the folds). `uv` are paper
+   * coordinates; positions are updated each frame with updateSoft.
+   */
+  showSoft(tris: Uint32Array, uv: Float32Array, positions: Float32Array): void {
+    this.hideSoft()
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(Float32Array.from(positions), 3))
+    const t = new Float32Array(uv.length)
+    for (let i = 0; i < uv.length; i += 2) {
+      t[i] = uv[i]! / this.sheet.width
+      t[i + 1] = uv[i + 1]! / this.sheet.height
+    }
+    g.setAttribute('uv', new THREE.BufferAttribute(t, 2))
+    g.setIndex(new THREE.BufferAttribute(tris, 1))
+    g.computeVertexNormals()
+    const front = new THREE.Mesh(g, this.materials.front)
+    const back = new THREE.Mesh(g, this.materials.back)
+    front.castShadow = true
+    front.receiveShadow = back.receiveShadow = true
+    const group = new THREE.Group()
+    group.add(front, back)
+    this.soft = { group, geometry: g, mesh: front }
+    this.scene.add(group)
+    if (this.committed) this.committed.group.visible = false
+    this.invalidate()
+  }
+
+  updateSoft(positions: ArrayLike<number>): void {
+    const s = this.soft
+    if (!s) return
+    const a = s.geometry.getAttribute('position') as THREE.BufferAttribute
+    ;(a.array as Float32Array).set(positions as Float32Array)
+    a.needsUpdate = true
+    s.geometry.computeVertexNormals()
+    s.geometry.computeBoundingSphere()
+    this.invalidate()
+  }
+
+  hideSoft(): void {
+    const s = this.soft
+    if (!s) return
+    s.group.removeFromParent()
+    s.geometry.dispose()
+    this.soft = null
+    if (this.committed) this.committed.group.visible = !this.preview
+    this.invalidate()
+  }
+
+  get softShown(): boolean {
+    return this.soft !== null
+  }
+
+  /** The soft particle nearest the pointer's hit on the soft mesh, and the hit point; null when it misses. */
+  pickSoft(clientX: number, clientY: number): { index: number; point: [number, number, number] } | null {
+    const s = this.soft
+    if (!s) return null
+    this.setRay(clientX, clientY)
+    const hit = this.raycaster.intersectObject(s.mesh, false)[0]
+    if (!hit?.face) return null
+    const pos = s.geometry.getAttribute('position') as THREE.BufferAttribute
+    let best = hit.face.a
+    let bd = Infinity
+    for (const i of [hit.face.a, hit.face.b, hit.face.c]) {
+      const d = hit.point.distanceTo(new THREE.Vector3(pos.getX(i), pos.getY(i), pos.getZ(i)))
+      if (d < bd) [bd, best] = [d, i]
+    }
+    return { index: best, point: [hit.point.x, hit.point.y, hit.point.z] }
+  }
+
+  /** Where the pointer's ray meets the plane through `through` facing the camera (dragging a soft grab). */
+  rayAt(clientX: number, clientY: number, through: readonly [number, number, number]): [number, number, number] {
+    this.setRay(clientX, clientY)
+    const n = new THREE.Vector3()
+    this.camera.getWorldDirection(n)
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(...through))
+    const out = new THREE.Vector3()
+    return this.raycaster.ray.intersectPlane(plane, out) ? [out.x, out.y, out.z] : [through[0], through[1], through[2]]
+  }
+
   // ---- queries -----------------------------------------------------------
 
   /**
@@ -676,6 +761,7 @@ export class Stage {
     this.disposeStationary()
     this.disposeGhostPieces()
     this.disposeTarget()
+    this.hideSoft()
     this.targetMat.dispose()
     this.ringMat.dispose()
     disposeMaterials(this.materials)
@@ -736,7 +822,7 @@ export class Stage {
     this.ghostLift = 0
     this.disposeStationary()
     this.disposeGhostPieces()
-    if (this.committed && !this.preview) this.committed.group.visible = true
+    if (this.committed && !this.preview) this.committed.group.visible = !this.soft
     this.invalidate()
   }
 
@@ -756,7 +842,7 @@ export class Stage {
     this.committedLayers = lo
     this.committedTable = poseTable(frame, this.poses)
     this.committed = this.build(frame, this.poses, lo)
-    this.committed.group.visible = !this.preview
+    this.committed.group.visible = !this.preview && !this.soft
     this.scene.add(this.committed.group)
     const box = this.committed.geometry.boundingBox
     if (box) this.fitShadow(box)
@@ -792,7 +878,7 @@ export class Stage {
 
   private buildPreview(): void {
     const p = this.preview
-    if (this.committed) this.committed.group.visible = !p
+    if (this.committed) this.committed.group.visible = !p && !this.soft
     if (this.target) this.target.group.visible = !p
     if (!p) {
       this.disposeStationary()

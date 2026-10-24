@@ -32,6 +32,9 @@ import { ShareDialog } from './ShareDialog'
 import { OpenPrompt } from './islands/OpenPrompt'
 import { STAGE_MESSAGES, stageDown, useUi } from './ui'
 import { expectedStep, lessonTarget } from '../lessons/lessonSlice'
+import { useSoftUi } from './softUi'
+import type { SoftSession } from '../soft/session'
+import type { PatternParams } from '@engine'
 import './islands/islands.css'
 
 // The store and the Stage read reduced motion lazily, from the live setting.
@@ -97,6 +100,14 @@ export function syncLesson(stage: Stage, s: StudioState, prev?: StudioState, ani
   if (step?.camera && moved) stage.view(step.camera, animate)
 }
 
+/** The designer's own assignments when the current step is a crease pattern (its frame marks open creases 'F'). */
+function patternCp(s: StudioState) {
+  const step = s.history.cursor > 0 ? s.history.steps[s.history.cursor - 1] : undefined
+  if (step?.kind !== 'pattern') return undefined
+  const { cp } = step.params as PatternParams
+  return { ...cp, edges_foldAngle: [], faces_vertices: [], faceOrders: [] }
+}
+
 const ReplayBar = lazy(() => import('./replay/ReplayBar'))
 const LessonOutline = lazy(() => import('../lessons/LessonOutline'))
 const RecordDialog = lazy(() => import('./RecordDialog'))
@@ -120,6 +131,45 @@ export function App() {
   const replaying = useStudio(s => s.replaying)
   const inLesson = useStudio(s => s.lesson !== null)
   const designing = useUi(s => s.mode === 'designer')
+  // Soft paper (spec 08): the session (src/soft, loaded on demand) while it runs.
+  const softRef = useRef<SoftSession | null>(null)
+  const stopSoft = useCallback(() => {
+    const session = softRef.current
+    if (!session) return
+    softRef.current = null
+    session.stop()
+    useSoftUi.getState().set({ active: false, busy: false, wet: false, curves: 0, curveDeg: 0, solver: null })
+  }, [])
+  const startSoft = useCallback(async (stage: Stage) => {
+    const ui = useSoftUi.getState()
+    if (softRef.current || ui.busy) return
+    ui.set({ busy: true, message: null })
+    try {
+      const m = await import('../soft/session')
+      const s = useStudio.getState()
+      const session = await m.SoftSession.start(stage, current(s.history), {
+        cp: patternCp(s),
+        onState: st => useSoftUi.getState().set({ solver: st.solver, curves: st.curves }),
+      })
+      softRef.current = session
+      useSoftUi.getState().set({ active: true, busy: false, wet: false, curveDeg: 0 })
+    } catch (err) {
+      console.warn('Soft paper unavailable:', err)
+      useSoftUi.getState().set({ busy: false, message: "Soft paper couldn't start." })
+    }
+  }, [])
+  // Anything that changes the model, a lesson, replay or the designer ends soft paper.
+  useEffect(
+    () =>
+      useStudio.subscribe((s, prev) => {
+        if (softRef.current && (s.history !== prev.history || s.replaying || s.lesson)) stopSoft()
+      }),
+    [stopSoft],
+  )
+  useEffect(() => {
+    if (designing) stopSoft()
+  }, [designing, stopSoft])
+  useEffect(() => stopSoft, [stopSoft])
   // Leaving replay: focus goes back to the Replay button (once the dock is no longer inert).
   const wasReplaying = useRef(false)
   useEffect(() => {
@@ -282,7 +332,21 @@ export function App() {
               <span className="grabber" aria-hidden="true" />
               Steps, presets and paper
             </button>
-            {!designing && <Tools onView={stageReady ? v => stageReady.view(v, !prefersReducedMotion(useSettings.getState().reducedMotion)) : undefined} />}
+            {!designing && (
+              <Tools
+                onView={stageReady ? v => stageReady.view(v, !prefersReducedMotion(useSettings.getState().reducedMotion)) : undefined}
+                soft={{
+                  onToggle: stageReady ? on => (on ? void startSoft(stageReady) : stopSoft()) : undefined,
+                  onWet: on => {
+                    softRef.current?.setWet(on)
+                    useSoftUi.getState().set({ wet: on })
+                  },
+                  onCurve: deg => {
+                    if (softRef.current?.setCurve(deg)) useSoftUi.getState().set({ curveDeg: deg })
+                  },
+                }}
+              />
+            )}
             <div className="dock-body" id="dock-body">
               {inLesson ? (
                 <Suspense fallback={null}>

@@ -27,6 +27,8 @@ import { collide, type CollisionOptions, type CollisionResult } from './collisio
 export const MAX_DT = 1 / 30
 /** Wet paper: bending and crease compliance are multiplied by this (softer). */
 export const WET_SOFTER = 25
+/** Share of a substep's slide along the desk that friction takes back. */
+export const DESK_FRICTION = 0.9
 const DEG = Math.PI / 180
 
 export type Vec3 = [number, number, number]
@@ -42,6 +44,8 @@ export type SoftParams = {
   damping?: number
   /** Self-collision (visual; collision.ts), after every substep's constraint pass. */
   collide?: boolean | CollisionOptions
+  /** The desk: no particle goes below this z (null: no desk). */
+  floor?: number | null
 }
 
 /** The packed constraints, shared with the GPU solver. */
@@ -136,7 +140,7 @@ export class SoftSolver {
   constructor(mesh: SoftMesh, params: SoftParams, constraints = buildConstraints(mesh)) {
     this.mesh = mesh
     this.constraints = constraints
-    this.params = { gravity: [0, 0, -9.81], damping: 0.5, collide: false, ...params }
+    this.params = { gravity: [0, 0, -9.81], damping: 0.5, collide: false, floor: null, ...params }
     this.x = Float64Array.from(mesh.positions)
     this.prev = this.x.slice()
     this.v = new Float64Array(this.x.length)
@@ -233,15 +237,25 @@ export class SoftSolver {
     }
     for (const [p, t] of this.pinned) x.set(t, 3 * p)
     const w = (p: number) => (this.pinned.has(p) ? 0 : invMass[p]!)
-    this.solveDistances(h, w)
+    // hinges first, lengths last: the shape a substep ends on is inextensible
     this.solveHinges(h, w)
+    this.solveDistances(h, w)
     this.afterSolve(prev, w)
     const keep = Math.exp(-this.params.damping * h)
     for (let i = 0; i < x.length; i++) v[i] = ((x[i]! - prev[i]!) / h) * keep
   }
 
-  /** After each substep's constraint pass: self-collision, when on. */
+  /** After each substep's constraint pass: the desk, then self-collision, when on. */
   protected afterSolve(prev: Float64Array, w: (p: number) => number): void {
+    const floor = this.params.floor
+    if (floor !== null && floor !== undefined)
+      for (let i = 0; i < this.x.length; i += 3) {
+        if (this.x[i + 2]! >= floor) continue
+        // on the desk: held there, and most of this substep's slide taken back (friction)
+        this.x[i + 2] = floor
+        this.x[i] = prev[i]! + (this.x[i]! - prev[i]!) * (1 - DESK_FRICTION)
+        this.x[i + 1] = prev[i + 1]! + (this.x[i + 1]! - prev[i + 1]!) * (1 - DESK_FRICTION)
+      }
     const c = this.params.collide
     if (c) this.lastCollision = collide(this.x, prev, this.mesh, w, c === true ? {} : c)
   }

@@ -23,6 +23,7 @@ import { DEFAULT_BINDINGS, cloneBindings, findConflicts, sameBinding } from '../
 import { bindingFromKeyEvent } from '../settings/keys'
 import { ACTION_LABELS, describeBindings } from '../settings/describe'
 import { ACTIONS, type Action, type Binding, type Bindings, type ModKey, type Mods, type SnapSettings } from '../settings/schema'
+import { NO_WEBGPU, hasWebGPU } from './softUi'
 import { useSettings } from '../settings/store'
 import './sheet.css'
 
@@ -79,6 +80,20 @@ function Check({ label, checked, onChange }: { label: string; checked: boolean; 
       <span>{label}</span>
     </label>
   )
+}
+
+/** Settings → Behaviour: soft paper (spec 08). Without WebGPU the switch is hidden and a note says why. */
+export function SoftPaperSetting({ gpu = hasWebGPU() }: { gpu?: boolean }) {
+  const softPaper = useSettings(s => s.softPaper)
+  const update = useSettings(s => s.update)
+  if (!gpu) {
+    return (
+      <p className="sheet-note" role="note" title={NO_WEBGPU}>
+        Soft paper (curved and wet folding) is unavailable in this browser.
+      </p>
+    )
+  }
+  return <Check label="Soft paper: curved and wet folding (experimental)" checked={softPaper} onChange={v => update({ softPaper: v })} />
 }
 
 function ControlRow({
@@ -359,6 +374,7 @@ export function SettingsSheet({ onClose }: { onClose(): void }) {
             <div className="checks">
               <Check label="Tool returns to Fold after one use" checked={toolReturnsToFold} onChange={v => update({ toolReturnsToFold: v })} />
               <Check label="Confirm before replacing my work with a preset" checked={confirmPresetReplace} onChange={v => update({ confirmPresetReplace: v })} />
+              <SoftPaperSetting />
             </div>
           </section>
 

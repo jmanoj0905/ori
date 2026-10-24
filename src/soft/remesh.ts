@@ -47,7 +47,20 @@ const CREASE_STIFFNESS: Record<string, number> = { V: 1, M: 1, F: 0.2, U: 0.2 }
 
 type P = [number, number]
 
-export function remesh(frame: Frame, poses: readonly FacePose[], targetEdge: number): SoftMesh {
+type Vec2Like = readonly [number, number]
+
+export type RemeshOptions = {
+  /**
+   * Lines (paper segments) to be mesh edges inside faces: a panel that bends
+   * along known rulings (a curved crease's fold, curvedCrease.ts) must have
+   * edges there, or its triangles would have to stretch (a plain lattice only
+   * bends along its own three directions). Points are placed along each line,
+   * and the lattice keeps clear of them.
+   */
+  rulings?: readonly (readonly [Vec2Like, Vec2Like])[]
+}
+
+export function remesh(frame: Frame, poses: readonly FacePose[], targetEdge: number, opts: RemeshOptions = {}): SoftMesh {
   const h = Math.max(targetEdge, 1e-4)
   const uv: number[] = []
   const pos: number[] = []
@@ -77,10 +90,18 @@ export function remesh(frame: Frame, poses: readonly FacePose[], targetEdge: num
     edgeOf.set(key(u, v), e)
     const p = frame.vertices_coords[u]!
     const q = frame.vertices_coords[v]!
-    const n = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / h - 1e-9))
+    const len = Math.hypot(q[0] - p[0], q[1] - p[1])
+    const n = Math.max(1, Math.ceil(len / h - 1e-9))
     const face = facesOfSide.get(key(u, v))?.[0] ?? vertexFace[u] ?? 0
+    // where rulings cross this edge, it is sampled exactly there (and not within 0.3 h of it)
+    const cuts = (opts.rulings ?? [])
+      .map(([a, b]) => crossAt(p, q, a, b))
+      .filter((t): t is number => t !== null && t * len > h * 0.05 && (1 - t) * len > h * 0.05)
+    const ts = [...cuts]
+    for (let i = 1; i < n; i++) if (cuts.every(c => Math.abs(c - i / n) * len > h * 0.3)) ts.push(i / n)
+    ts.sort((x, y) => x - y)
     const chain = [vertexParticle[u]!]
-    for (let i = 1; i < n; i++) chain.push(add([p[0] + ((q[0] - p[0]) * i) / n, p[1] + ((q[1] - p[1]) * i) / n], face))
+    for (const t of ts) chain.push(add([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t], face))
     chain.push(vertexParticle[v]!)
     return chain
   })
@@ -111,11 +132,24 @@ export function remesh(frame: Frame, poses: readonly FacePose[], targetEdge: num
       y0 = Math.min(y0, y); y1 = Math.max(y1, y)
     }
     const inner: number[] = []
+    const ruled: P[] = []
+    for (const [a, b] of opts.rulings ?? []) {
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1])
+      const k = Math.ceil(len / (h * 0.5))
+      for (let i = 0; i <= k; i++) {
+        const p: P = [a[0] + ((b[0] - a[0]) * i) / k, a[1] + ((b[1] - a[1]) * i) / k]
+        if (inside(polyCcw, p) && distToPoly(polyCcw, p) > h * 0.3) {
+          ruled.push(p)
+          inner.push(add(p, f))
+        }
+      }
+    }
+    const clear = (p: P) => ruled.every(q => Math.hypot(q[0] - p[0], q[1] - p[1]) > h * 0.6)
     const dy = (h * Math.sqrt(3)) / 2
     for (let r = 0, y = y0 + dy / 2; y < y1; r++, y += dy)
       for (let x = x0 + (r % 2 ? h / 2 : h / 4); x < x1; x += h) {
         const p: P = [x, y]
-        if (inside(polyCcw, p) && distToPoly(polyCcw, p) > h * 0.5) inner.push(add(p, f))
+        if (inside(polyCcw, p) && distToPoly(polyCcw, p) > h * 0.5 && clear(p)) inner.push(add(p, f))
       }
 
     const local = [...loop, ...inner]
@@ -197,6 +231,17 @@ export function remesh(frame: Frame, poses: readonly FacePose[], targetEdge: num
 }
 
 // ---- 2D helpers ----
+
+/** Where segment p–q crosses segment a–b, as a parameter along p–q, or null. */
+function crossAt(p: Vec2Like, q: Vec2Like, a: Vec2Like, b: Vec2Like): number | null {
+  const rx = q[0] - p[0], ry = q[1] - p[1]
+  const sx = b[0] - a[0], sy = b[1] - a[1]
+  const den = rx * sy - ry * sx
+  if (Math.abs(den) < 1e-15) return null
+  const t = ((a[0] - p[0]) * sy - (a[1] - p[1]) * sx) / den
+  const u = ((a[0] - p[0]) * ry - (a[1] - p[1]) * rx) / den
+  return t > 0 && t < 1 && u >= 0 && u <= 1 ? t : null
+}
 
 const orient = (a: P, b: P, c: P) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 

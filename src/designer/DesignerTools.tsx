@@ -26,6 +26,7 @@ export function promptFor(s: Pick<DesignerState, 'tool' | 'points' | 'lines' | '
   if (s.message) return s.message
   const { tool } = s
   if (tool.kind === 'line') return s.points.length === 0 ? 'Click the crease’s start point.' : 'Click the crease’s end point.'
+  if (tool.kind === 'curve') return ['Click the curve’s start point.', 'Click its control point (the curve bends toward it).', 'Click the curve’s end point.'][s.points.length]!
   if (tool.kind === 'select') return s.selected === null ? 'Click a crease to select it.' : 'Crease selected: assign, flip or delete it.'
   const need = AXIOM_INPUTS[tool.n]
   const parts = [need.lines ? count(need.lines, 'crease') : '', need.points ? count(need.points, 'point') : ''].filter(Boolean)
@@ -41,6 +42,7 @@ export function DesignerTools({ store }: { store: DesignerStore }) {
     <section className="island designer-tools" aria-label="Designer tools">
       <div role="group" aria-label="Draw" className="row">
         <button type="button" className="tool" aria-pressed={tool.kind === 'line'} onClick={() => s.setTool({ kind: 'line' })}>Line</button>
+        <button type="button" className="tool" aria-pressed={tool.kind === 'curve'} title="Curved crease: start, control point, end (folds in soft paper)" onClick={() => s.setTool({ kind: 'curve' })}>Curve</button>
         <button type="button" className="tool" aria-pressed={tool.kind === 'select'} onClick={() => s.setTool({ kind: 'select' })}>Select</button>
       </div>
       <div role="group" aria-label="Axioms" className="row axioms">

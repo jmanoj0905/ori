@@ -6,6 +6,9 @@
 // Tools:
 //   line     click two points: a crease between them (the angle grid snaps
 //            the second point's direction from the first)
+//   curve    click the start, a control point and the end: a curved crease,
+//            stored as CURVE_SEGMENTS straight creases (soft/curvedCrease.ts;
+//            it folds in soft mode)
 //   axiom n  pick the axiom's creases, then its points; one solution is added
 //            at once, several are offered as candidates (chooseCandidate)
 //   select   pick a crease; assign / flip / delete it
@@ -15,6 +18,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla'
 import { useStore } from 'zustand'
 import { frameFromFold, type History, type Line, type PaperSize, type Vec2 } from '@engine'
 import { AXIOM_INPUTS, AXIOM_TEXT, axiom, clipLine, type AxiomNumber } from './axioms'
+import { bezier } from '../soft/curvedCrease'
 import {
   GRID_PRESETS, addCrease, emptyCP, flip, removeCrease, setAssignment, sizeOf, snapToGrid,
   type Assignment, type CP, type GridPreset,
@@ -25,7 +29,7 @@ export const SAVE_MS = 400
 export const MAX_UNDO = 200
 
 export type GridName = keyof typeof GRID_PRESETS | 'custom'
-export type DesignerTool = { kind: 'line' } | { kind: 'axiom'; n: AxiomNumber } | { kind: 'select' }
+export type DesignerTool = { kind: 'line' } | { kind: 'curve' } | { kind: 'axiom'; n: AxiomNumber } | { kind: 'select' }
 
 export type DesignerState = {
   cp: CP
@@ -173,6 +177,17 @@ export function createDesignerStore({ storage = defaultStorage(), size = { width
           const b = g.kind === 'angle' ? snapToGrid(p, g, { anchor: a }) : p
           set({ points: [] })
           return addLine(a, b)
+        }
+        if (tool.kind === 'curve') {
+          if (points.length < 2) return set({ points: [...points, p], message: null })
+          const [a, c] = points as [Vec2, Vec2]
+          set({ points: [] })
+          const pts = bezier(a, c, p)
+          return get().edit(cp => {
+            let next = cp
+            for (let i = 0; i + 1 < pts.length; i++) next = addCrease(next, pts[i]!, pts[i + 1]!, get().assignment)
+            return next
+          })
         }
         if (tool.kind !== 'axiom') return
         const need = AXIOM_INPUTS[tool.n]

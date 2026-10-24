@@ -1051,3 +1051,22 @@ input[type='range'] {
   margin: 0;
   color: var(--ink-soft);
 }
+
+/* Soft paper (spec 08): shown in the Tools island only when it is on in Settings */
+.soft-unavailable,
+.soft-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.soft-curve {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.soft-curve input {
+  width: 100%;
+  accent-color: var(--ink);
+}

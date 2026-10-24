@@ -6,11 +6,11 @@
 // force (0 when pinned).
 
 struct Sim {
-  gravity: vec4<f32>, // xyz
+  gravity: vec4<f32>, // xyz; w: the desk's z
   h: f32,             // substep
   keep: f32,          // velocity damping factor per substep
   n: u32,             // particles
-  pad: u32,
+  floorOn: u32,       // 1: no particle goes below the desk
 }
 
 struct Range {
@@ -114,5 +114,12 @@ fn hinges(@builtin(global_invocation_id) id: vec3<u32>) {
 fn velocities(@builtin(global_invocation_id) id: vec3<u32>) {
   let i = id.x;
   if (i >= sim.n) { return; }
-  vel[i] = vec4<f32>((pos[i].xyz - prev[i].xyz) / sim.h * sim.keep, 0.0);
+  var p = pos[i];
+  if (sim.floorOn == 1u && p.z < sim.gravity.w) {
+    // on the desk: held there, and most of the slide taken back (friction, as xpbd.ts DESK_FRICTION)
+    let q = prev[i];
+    p = vec4<f32>(q.x + (p.x - q.x) * 0.1, q.y + (p.y - q.y) * 0.1, sim.gravity.w, p.w);
+    pos[i] = p;
+  }
+  vel[i] = vec4<f32>((p.xyz - prev[i].xyz) / sim.h * sim.keep, 0.0);
 }

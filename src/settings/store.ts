@@ -21,6 +21,7 @@ export function defaultSettings(): Settings {
     toolReturnsToFold: true,
     confirmPresetReplace: true,
     paperDefaults: { ...DEFAULT_PAPER },
+    softPaper: false,
   }
 }
 
@@ -110,6 +111,7 @@ export function migrate(raw: unknown): Settings {
     toolReturnsToFold: bool(src.toolReturnsToFold, d.toolReturnsToFold),
     confirmPresetReplace: bool(src.confirmPresetReplace, d.confirmPresetReplace),
     paperDefaults: cleanPaper(src.paperDefaults),
+    softPaper: bool(src.softPaper, d.softPaper),
   }
 }
 
@@ -147,7 +149,7 @@ export type SettingsState = Settings & {
 const persisted = (s: SettingsState): Settings => ({
   version: s.version, bindings: s.bindings, reducedMotion: s.reducedMotion, snap: s.snap,
   snapRadiusPx: s.snapRadiusPx, toolReturnsToFold: s.toolReturnsToFold,
-  confirmPresetReplace: s.confirmPresetReplace, paperDefaults: s.paperDefaults,
+  confirmPresetReplace: s.confirmPresetReplace, paperDefaults: s.paperDefaults, softPaper: s.softPaper,
 })
 
 export const useSettings = create<SettingsState>()((set, get) => {

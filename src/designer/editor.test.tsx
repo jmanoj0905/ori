@@ -134,6 +134,27 @@ describe('the crease pattern editor', () => {
     expect(creaseEdges(store.getState().cp)).toHaveLength(0)
   })
 
+  test('the Curve tool takes a start, a control point and an end, and adds a curved crease as short creases', () => {
+    const { store, svg } = setup()
+    fireEvent.click(screen.getByRole('button', { name: 'Curve' }))
+    const prompt = () => screen.getByRole('status', { name: 'Tool prompt' }).textContent ?? ''
+    expect(prompt()).toMatch(/start point/)
+    fireEvent.pointerDown(svg, at(0, 0.25))
+    expect(prompt()).toMatch(/control point/)
+    fireEvent.pointerDown(svg, at(0.5, 0.75))
+    expect(prompt()).toMatch(/end point/)
+    expect(creaseEdges(store.getState().cp)).toHaveLength(0)
+    fireEvent.pointerDown(svg, at(1, 0.25))
+    const { cp } = store.getState()
+    expect(creaseEdges(cp)).toHaveLength(16)
+    expect(creaseEdges(cp).every(e => cp.edges_assignment[e] === 'V')).toBe(true)
+    // its apex is halfway to the control point
+    expect(Math.max(...cp.vertices_coords.filter(([x]) => x > 0 && x < 1).map(([, y]) => y))).toBeCloseTo(0.5, 9)
+    // one designer undo removes the whole curve
+    act(() => store.getState().undo())
+    expect(creaseEdges(store.getState().cp)).toHaveLength(0)
+  })
+
   test('the numeric input sets exact coordinates', () => {
     const { store } = setup()
     const form = screen.getByRole('group', { name: 'Exact crease' })

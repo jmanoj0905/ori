@@ -9,6 +9,7 @@ import { stageDown, useUi } from '../ui'
 import type { SnapSettings } from '../../settings/schema'
 import { withShortcut } from '../../settings/describe'
 import { expectedStep } from '../../lessons/lessonSlice'
+import { SoftModeToggle, type SoftModeToggleProps } from '../SoftModeToggle'
 
 // Tooltips name the live bindings (describe.withShortcut), never a hard-coded key.
 const TOOLS: { tool: Tool; label: string; title: string; action?: 'reverse' | 'squash' | 'petal' }[] = [
@@ -47,6 +48,8 @@ export function useToolReturnsToFold(): void {
 export type ToolsProps = {
   /** Camera views (R54); the buttons are disabled when absent (no Stage). */
   onView?: (view: 'top' | 'reset') => void
+  /** Soft paper (spec 08): shown only when it is on in Settings. */
+  soft?: SoftModeToggleProps
 }
 
 const VIEWS = [
@@ -54,7 +57,7 @@ const VIEWS = [
   { view: 'reset', label: 'Reset view', title: 'Reset view: back to the studio angle' },
 ] as const
 
-export function Tools({ onView }: ToolsProps = {}) {
+export function Tools({ onView, soft }: ToolsProps = {}) {
   useToolReturnsToFold()
   const tool = useStudio(s => s.tool)
   const setTool = useStudio(s => s.setTool)
@@ -109,6 +112,7 @@ export function Tools({ onView }: ToolsProps = {}) {
           </button>
         ))}
       </div>
+      <SoftModeToggle {...soft} />
     </section>
   )
 }

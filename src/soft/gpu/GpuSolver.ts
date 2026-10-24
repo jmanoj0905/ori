@@ -59,7 +59,7 @@ export class GpuSolver {
     this.device = device
     this.mesh = mesh
     this.constraints = constraints
-    this.params = { gravity: [0, 0, -9.81], damping: 0.5, collide: false, ...params }
+    this.params = { gravity: [0, 0, -9.81], damping: 0.5, collide: false, floor: null, ...params }
     this.n = mesh.uv.length / 2
     this.lost = Promise.race([device.lost, new Promise<{ reason: 'simulated'; message: string }>(r => (this.simulate = r))])
     const c = constraints
@@ -205,9 +205,10 @@ export class GpuSolver {
       q.writeBuffer(this.buf.pos, 0, this.packPositions(this.mirror))
       this.dirty = false
     }
+    const floor = this.params.floor
     const simData = new ArrayBuffer(32)
-    new Float32Array(simData, 0, 6).set([gx, gy, gz, 0, h, Math.exp(-this.params.damping * h)])
-    new Uint32Array(simData, 24, 2).set([this.n, 0])
+    new Float32Array(simData, 0, 6).set([gx, gy, gz, floor ?? 0, h, Math.exp(-this.params.damping * h)])
+    new Uint32Array(simData, 24, 2).set([this.n, floor === null || floor === undefined ? 0 : 1])
     q.writeBuffer(this.buf.sim, 0, simData)
     const enc = this.device.createCommandEncoder()
     const groupsN = Math.ceil(this.n / WG)
@@ -222,8 +223,9 @@ export class GpuSolver {
         pass.end()
       }
       run(this.pipelines.predict, this.ranges.empty, this.n)
-      this.ranges.dist.forEach((g, k) => run(this.pipelines.distances, g, this.rangeCounts.dist[k]!))
+      // the CPU solver's order: hinges, then lengths
       this.ranges.hinge.forEach((g, k) => run(this.pipelines.hinges, g, this.rangeCounts.hinge[k]!))
+      this.ranges.dist.forEach((g, k) => run(this.pipelines.distances, g, this.rangeCounts.dist[k]!))
       run(this.pipelines.velocities, this.ranges.empty, this.n)
     }
     void groupsN

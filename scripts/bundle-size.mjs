@@ -86,6 +86,7 @@ for (const f of ['LICENSE.txt', 'THIRD_PARTY_NOTICES.txt']) {
 const SPLIT = {
   lessons: ['Waterbomb base', 'Lesson summary', 'canonical: the sheet outline is not a rectangle'],
   designer: ['Crease pattern editor', 'Fold two points onto two creases at once'],
+  'soft paper solver': ['simulated device loss', 'fn velocities'],
 }
 for (const [feature, markers] of Object.entries(SPLIT)) {
   const leaked = [...eager].filter(f => markers.some(m => readFileSync(join(dist, f), 'utf8').includes(m)))

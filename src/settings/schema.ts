@@ -61,6 +61,8 @@ export type Settings = {
   toolReturnsToFold: boolean
   confirmPresetReplace: boolean
   paperDefaults: PaperSettings
+  /** Soft paper (spec 08): offer the soft / wet folding mode where WebGPU is available. Off by default. */
+  softPaper: boolean
 }
 
 export const SETTINGS_VERSION = 1 as const

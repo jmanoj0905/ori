@@ -291,3 +291,25 @@ describe('Replay button (R61)', () => {
     expect(onReplay).toHaveBeenCalledTimes(4)
   })
 })
+
+describe('lesson authoring export (dev builds only)', () => {
+  test('"Export lesson" downloads the history as a lesson skeleton that validates once captioned', async () => {
+    // (an earlier test resets the module registry, so stub the browser download, not the module)
+    const saved: Blob[] = []
+    vi.stubGlobal('URL', Object.assign(class extends URL {}, { createObjectURL: (b: Blob) => (saved.push(b), 'blob:lesson'), revokeObjectURL: () => {} }))
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    expect(import.meta.env.DEV).toBe(true)
+    useStudio.setState({ history: startHistory(createPaper(PAPER_SIZES.square)) })
+    render(<Steps />)
+    expect(screen.getByRole('button', { name: 'Export lesson' })).toBeDisabled() // nothing to export yet
+    act(() => useStudio.setState({ history: threeFolds() }))
+    fireEvent.click(screen.getByRole('button', { name: 'Export lesson' }))
+    await waitFor(() => expect(saved).toHaveLength(1), { timeout: 5000 })
+    const json = JSON.parse(await saved[0]!.text())
+    expect(json.steps).toHaveLength(3)
+    expect(json.paper).toBe('square')
+    const { parseLesson } = await import('../../lessons/schema')
+    const filled = { ...json, steps: json.steps.map((s: object) => ({ ...s, caption: 'c', hint: 'h' })) }
+    expect(parseLesson(filled).ok).toBe(true)
+  })
+})

@@ -10,6 +10,7 @@ import { useSettings } from '../../settings/store'
 import { ConfirmDialog } from './ConfirmDialog'
 import { MiniCP } from './MiniCP'
 import { notify } from '../../persistence/notice'
+import { download } from '../../persistence/png'
 import { stageDown, useUi } from '../ui'
 
 export const PRESET_MENU = [
@@ -22,6 +23,17 @@ type PresetId = (typeof PRESET_MENU)[number]['id']
 export const CONFIRM_PRESET = 'Playing a preset starts a new sheet and replaces your folds.'
 export const REDO_CLEARED = 'Redo history cleared'
 export const PRESET_FAILED = "Couldn't load the preset. Check your connection and try again."
+
+/**
+ * Lesson authoring (spec 06, dev builds only): download the history up to the
+ * cursor as a lesson skeleton (lessons/devExport) to caption by hand.
+ */
+async function exportLesson(): Promise<void> {
+  const { history, paper } = useStudio.getState()
+  const { lessonSkeleton } = await import('../../lessons/devExport')
+  const sk = lessonSkeleton(history, { id: 'new-lesson', title: 'New lesson', difficulty: 1, paper: paper.size })
+  download(new Blob([JSON.stringify(sk, null, 2)], { type: 'application/json' }), 'new-lesson.json')
+}
 
 /** `onReplay` enters replay mode (App; refused while a commit is pending); absent while the Stage is not ready. */
 export function Steps({ onReplay }: { onReplay?: () => boolean } = {}) {
@@ -169,6 +181,11 @@ export function Steps({ onReplay }: { onReplay?: () => boolean } = {}) {
       >
         Replay
       </button>
+      {import.meta.env.DEV && (
+        <button type="button" className="tbtn text" disabled={cursor === 0} onClick={() => void exportLesson().catch(() => notify('Lesson export failed.'))}>
+          Export lesson
+        </button>
+      )}
       {toast && (
         <div className="toast" role="status">
           <span>{REDO_CLEARED}</span>

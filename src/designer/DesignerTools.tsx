@@ -44,6 +44,7 @@ export function DesignerTools({ store }: { store: DesignerStore }) {
         <button type="button" className="tool" aria-pressed={tool.kind === 'select'} onClick={() => s.setTool({ kind: 'select' })}>Select</button>
       </div>
       <div role="group" aria-label="Axioms" className="row axioms">
+        <span className="group-label" aria-hidden="true">Axiom</span>
         {AXIOMS.map(n => (
           <button
             key={n}
@@ -54,7 +55,7 @@ export function DesignerTools({ store }: { store: DesignerStore }) {
             aria-pressed={tool.kind === 'axiom' && tool.n === n}
             onClick={() => s.setTool({ kind: 'axiom', n })}
           >
-            A{n}
+            {n}
           </button>
         ))}
       </div>

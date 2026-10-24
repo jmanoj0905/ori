@@ -7,10 +7,11 @@
 // from its recorded {tool, grab, target, layers, kind, crease, angleDeg, face}
 // with snapAngle off and progress 1; crease + angleDeg make the replay exact
 // for plain folds (compound tools record neither and replay from grab /
-// target / layers / kind). Any refusal, throw or malformed field means the save
-// is corrupt (null).
-import { PAPER_SIZES, commit, createPaper, jumpTo, push, startHistory, turnOver } from '@engine'
-import type { Gesture, History, Line, Tool, Vec2 } from '@engine'
+// target / layers / kind). A designer pattern step (Plan 5) records its crease
+// pattern and whether it was folded flat; it replays through commitPattern.
+// Any refusal, throw or malformed field means the save is corrupt (null).
+import { PAPER_SIZES, commit, commitPattern, createPaper, frameFromFold, jumpTo, push, startHistory, turnOver } from '@engine'
+import type { Gesture, History, Line, PatternParams, Tool, Vec2 } from '@engine'
 import { cleanPaper, type PaperSettings, type SheetSize } from '../paper'
 
 /**
@@ -20,7 +21,7 @@ import { cleanPaper, type PaperSettings, type SheetSize } from '../paper'
  */
 export const MAX_RESTORE_STEPS = 1000
 
-export type ReplayStep = { turnOver: true } | { gesture: Gesture }
+export type ReplayStep = { turnOver: true } | { gesture: Gesture } | { pattern: PatternParams }
 
 /** A validated save, ready to replay. */
 export type SavedModel = { paper: PaperSettings; steps: ReplayStep[]; cursor: number }
@@ -58,6 +59,15 @@ function gestureOf(params: unknown): Gesture | null {
   }
 }
 
+/** A designer pattern step's params ({ folded, cp }), validated as FOLD geometry, or null. */
+export function patternOf(params: unknown): PatternParams | null {
+  if (!isObj(params) || typeof params.folded !== 'boolean' || !isObj(params.cp)) return null
+  const f = frameFromFold({ ...params.cp, faces_vertices: [] })
+  if (!f.ok) return null
+  const { vertices_coords, edges_vertices, edges_assignment } = f.frame
+  return { folded: params.folded, cp: { vertices_coords, edges_vertices, edges_assignment } }
+}
+
 /**
  * One recorded step ({kind, params, ...}) -> its ReplayStep, or null when it is
  * malformed. Shared by the autosave parser and the share codec (DRY).
@@ -65,6 +75,10 @@ function gestureOf(params: unknown): Gesture | null {
 export function replayStepOf(s: unknown): ReplayStep | null {
   if (!isObj(s)) return null
   if (s.kind === 'turnOver') return { turnOver: true }
+  if (s.kind === 'pattern') {
+    const p = patternOf(s.params)
+    return p && { pattern: p }
+  }
   const g = gestureOf(s.params)
   return g && s.kind === g.tool ? { gesture: g } : null
 }
@@ -95,7 +109,7 @@ export function replaySave(saved: SavedModel): Restored | null {
   let h = startHistory(createPaper(sizeOf(saved.paper.size)))
   for (const s of saved.steps) {
     const frame = h.frames[h.cursor]
-    const res = 'turnOver' in s ? turnOver(frame) : commit(frame, s.gesture)
+    const res = 'turnOver' in s ? turnOver(frame) : 'pattern' in s ? commitPattern(s.pattern) : commit(frame, s.gesture)
     if (!res.ok) return null
     h = push(h, res.step, res.frame)
   }

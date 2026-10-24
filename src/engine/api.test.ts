@@ -40,6 +40,9 @@ describe('the @engine public API', () => {
         'axiomLines',
         'patternFrame',
         'foldPattern',
+        'commitPattern',
+        'branch',
+        'patternStep',
       ].sort(),
     )
   })

@@ -2,7 +2,7 @@
 // TZ is pinned before anything reads a Date (the file's pngName test is unconditional).
 process.env.TZ = 'UTC'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { current } from '@engine'
+import { branch, commitPattern, current } from '@engine'
 import { PRESETS, runPreset } from '../presets'
 import { inProcessCommitter } from '../studio/committer'
 import { DEFAULT_PAPER, createStudioStore } from '../studio/store'
@@ -66,6 +66,36 @@ describe('autosave', () => {
     const r = loadHistory()!
     expect(r.history.steps.map(x => x.kind)).toEqual(['fold', 'turnOver'])
     expect(current(r.history)).toEqual(current(s.getState().history))
+  })
+
+  test('a designer pattern step (Plan 5) is replayed, unfolded or folded flat, and a 3D fold on top of it too', async () => {
+    const cpData = {
+      vertices_coords: [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5], [0.5, 0.5]] as [number, number][],
+      edges_vertices: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 0], [0, 8], [1, 8], [2, 8], [3, 8], [4, 8], [5, 8], [6, 8], [7, 8]] as [number, number][],
+      edges_assignment: ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'V', 'F', 'V', 'M', 'V', 'F', 'V', 'M'],
+    }
+    for (const folded of [false, true]) {
+      const s = fresh()
+      await fold(s, [0, 0])
+      const r = commitPattern({ folded, cp: cpData })
+      if (!r.ok) throw new Error(r.reason)
+      const cp = { ...cpData, edges_foldAngle: cpData.edges_assignment.map(() => 0), faces_vertices: [], faceOrders: [] }
+      s.getState().restoreHistory(branch(s.getState().history, cp, r.frame))
+      if (!folded) await fold(s, [0, 0])
+      saveHistory(s.getState().history, s.getState().paper)
+      flushSave()
+      const back = loadHistory()!
+      expect(back.history.steps.map(x => x.kind)).toEqual(folded ? ['fold', 'pattern'] : ['fold', 'pattern', 'fold'])
+      expect(current(back.history)).toEqual(current(s.getState().history))
+      expect((back.history.steps[1]!.params as { cp: { edges_assignment: string[] } }).cp.edges_assignment).toEqual(cpData.edges_assignment)
+      expect(notices.getState().message).toBeNull()
+    }
+  })
+
+  test('a damaged pattern step makes the save corrupt', () => {
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ version: 1, paper: DEFAULT_PAPER, cursor: 1, steps: [{ kind: 'pattern', params: { folded: true, cp: { vertices_coords: [[0, 0]], edges_vertices: [[0, 7]], edges_assignment: ['V'] } } }] }))
+    expect(loadHistory()).toBeNull()
+    expect(notices.getState().message).toBe(RESTORE_FAILED)
   })
 
   test('saving is debounced by 500 ms', () => {

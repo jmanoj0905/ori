@@ -11,6 +11,11 @@
 //   step  = [0, gx, gy, tx, ty, layers, kind, cx, cy, vx, vy, angle, face?]  fold
 //         | [1|2|3, gx, gy, tx, ty, layers, kind, face?]   reverse | squash | petal
 //         | [4]                                             turn over
+//         | [5, folded, nv, x0, y0, …, ne, u0, v0, …, a0, …]  designer pattern (Plan 5)
+//     a pattern step lists its nv vertices (1e-10 units), its ne edges (vertex
+//     index pairs) and their assignments (0 B, 1 M, 2 V, 3 F, 4 U); folded is
+//     0 or 1. It is all integers, like the other steps, so version 1 carries
+//     it: v1 links without one decode exactly as before.
 //     coordinates are integers in 1e-10 units, kind 0 valley / 1 mountain, the
 //     fold angle is an integer in 1e-6 degrees (crease origin + vector make a
 //     plain fold replay exactly; compound tools replay from grab / target).
@@ -28,11 +33,12 @@
 import { Inflate, deflateSync, strToU8 } from 'fflate'
 import type { Result, Step } from '@engine'
 import { cleanPaper, type PaperSettings } from '../paper'
-import { MAX_RESTORE_STEPS, replayStepOf } from './replay'
+import { MAX_RESTORE_STEPS, patternOf, replayStepOf } from './replay'
 
 export const CODEC_VERSION = 1
 export const NEWER = 'This link was made with a newer Ori.'
 export const DAMAGED = 'This link is damaged.'
+export const TOO_LARGE = 'This model is too large to share as a link. Export a .fold file instead.'
 
 const Q = 1e10 // coordinate quantum 1e-10 (1e-5 breaks replay: see below)
 const QA = 1e6 // angle quantum 1e-6 degrees
@@ -96,8 +102,38 @@ export function inflateBounded(data: Uint8Array): Uint8Array {
 
 // ---- encode ----
 
+const ASSIGN = ['B', 'M', 'V', 'F', 'U'] as const
+
+function packPattern(params: unknown): number[] {
+  const p = patternOf(params)
+  if (!p) throw new Error('Step cannot be shared')
+  const { vertices_coords: v, edges_vertices: e, edges_assignment: a } = p.cp
+  return [
+    5, p.folded ? 1 : 0,
+    v.length, ...v.flatMap(([x, y]) => [q(x, Q), q(y, Q)]),
+    e.length, ...e.flat(),
+    ...a.map(x => Math.max(0, ASSIGN.indexOf(x as (typeof ASSIGN)[number]))),
+  ]
+}
+
+function unpackPattern(n: number[]): Step {
+  const nv = n[2]!
+  if (!(nv >= 0) || 3 + 2 * nv >= n.length) return bad()
+  const ne = n[3 + 2 * nv]!
+  const e0 = 4 + 2 * nv
+  if (!(ne >= 0) || n.length !== e0 + 3 * ne || (n[1] !== 0 && n[1] !== 1)) return bad()
+  const vertices_coords: [number, number][] = []
+  for (let i = 0; i < nv; i++) vertices_coords.push([n[3 + 2 * i]! / Q, n[4 + 2 * i]! / Q])
+  const edges_vertices: [number, number][] = []
+  for (let i = 0; i < ne; i++) edges_vertices.push([n[e0 + 2 * i]!, n[e0 + 2 * i + 1]!])
+  const edges_assignment = n.slice(e0 + 2 * ne).map(k => ASSIGN[k] ?? bad())
+  const step: Step = { kind: 'pattern', params: { folded: n[1] === 1, cp: { vertices_coords, edges_vertices, edges_assignment } }, label: 'pattern', at: 0 }
+  return replayStepOf(step) ? step : bad()
+}
+
 function packStep(step: Step): number[] {
   if (step.kind === 'turnOver') return [4]
+  if (step.kind === 'pattern') return packPattern(step.params)
   const rs = replayStepOf(step)
   if (!rs || !('gesture' in rs)) throw new Error('Step cannot be shared')
   const g = rs.gesture
@@ -120,7 +156,10 @@ function packPaper(p: PaperSettings): unknown[] {
 export function encodeShare(paper: PaperSettings, steps: Step[]): string {
   // Sanitise first: a link must never be one its own decoder refuses (out-of-range thickness, bad colour, ...).
   const json = JSON.stringify([packPaper(cleanPaper(paper)), steps.map(packStep)])
-  return `v${CODEC_VERSION}:${toB64(deflateSync(strToU8(json), { level: 9 }))}`
+  const link = `v${CODEC_VERSION}:${toB64(deflateSync(strToU8(json), { level: 9 }))}`
+  // a link longer than the decoder accepts would never open: refuse it here instead
+  if (link.length > MAX_HASH_CHARS) throw new Error(TOO_LARGE)
+  return link
 }
 
 // ---- decode ----
@@ -151,6 +190,7 @@ function unpackPaper(v: unknown): PaperSettings {
 function unpackStep(v: unknown): Step {
   if (!isArr(v) || v.length < 1 || !v.every(isInt)) return bad()
   const n = v as number[]
+  if (n[0] === 5) return unpackPattern(n)
   if (n[0] === 4) return n.length === 1 ? { kind: 'turnOver', params: { axisX: 0 } /* placeholder: replay recomputes the axis from the frame */, label: 'Turn over', at: 0 } : bad()
   const tool = TOOLS[n[0]!]
   if (!tool) return bad()

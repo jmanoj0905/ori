@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest'
-import { PAPER_SIZES, commit, createPaper, push, startHistory, turnOver } from '@engine'
+import { PAPER_SIZES, branch, commit, commitPattern, createPaper, push, startHistory, turnOver } from '@engine'
 import type { Frame, History, Step } from '@engine'
 import { DEFAULT_PAPER, type PaperSettings } from '../paper'
 import { PRESETS, runPreset } from '../presets'
 import { GOLDEN_V1 } from './shareGolden.fixtures'
 import { cleanPaper } from '../paper'
-import { CODEC_VERSION, NEWER, DAMAGED, decoders, decodeShare, encodeShare, inflateBounded } from './shareCodec'
+import { CODEC_VERSION, NEWER, DAMAGED, TOO_LARGE, decoders, decodeShare, encodeShare, inflateBounded } from './shareCodec'
 import { MAX_RESTORE_STEPS, replayStepOf, replaySave, type ReplayStep } from './replay'
 import { deflateSync, strToU8 } from 'fflate'
 
@@ -197,5 +197,56 @@ describe('golden v1 links (frozen: old links must keep decoding)', () => {
     const d = decodeShare(encodeShare(wild, []))
     expect(d.ok).toBe(true)
     if (d.ok) expect(d.paper).toEqual(cleanPaper(wild))
+  })
+})
+
+describe('designer pattern steps (Plan 5)', () => {
+  const cp = {
+    vertices_coords: [[0, 0], [0.5, 0], [1, 0], [1, 0.5], [1, 1], [0.5, 1], [0, 1], [0, 0.5], [0.5, 0.5]] as [number, number][],
+    edges_vertices: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 0], [0, 8], [1, 8], [2, 8], [3, 8], [4, 8], [5, 8], [6, 8], [7, 8]] as [number, number][],
+    edges_assignment: ['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'V', 'U', 'V', 'M', 'V', 'F', 'V', 'M'],
+  }
+  const cpFrame: Frame = { ...cp, edges_foldAngle: cp.edges_assignment.map(() => 0), faces_vertices: [], faceOrders: [] }
+
+  test('a history with a pattern step (unfolded, then folded) shares and replays exactly', () => {
+    for (const folded of [false, true]) {
+      let h = startHistory(createPaper(PAPER_SIZES.square))
+      const r = commitPattern({ folded, cp })
+      if (!r.ok) throw new Error(r.reason)
+      h = push(h, r.step, r.frame)
+      const d = decodeShare(encodeShare(DEFAULT_PAPER, h.steps))
+      expect(d.ok).toBe(true)
+      if (!d.ok) return
+      expect(d.steps[0]).toMatchObject({ kind: 'pattern', params: { folded, cp } })
+      const back = replaySave({ paper: d.paper, steps: d.steps.map(s => replayStepOf(s)!), cursor: 1 })!
+      expectFramesMatch(back.history.frames[1]!, r.frame)
+    }
+    expect(branch(startHistory(createPaper(PAPER_SIZES.square)), cpFrame).steps[0]!.kind).toBe('pattern')
+  })
+
+  test('v1 links without a pattern step are unchanged (the golden links still decode)', () => {
+    for (const g of Object.values(GOLDEN_V1)) expect(decodeShare(g.link).ok).toBe(true)
+    expect(CODEC_VERSION).toBe(1)
+  })
+
+  test('a damaged pattern step is refused', () => {
+    const paper = [0, 'D9472B', 'FFFFFF', 0, 80, 100, 0]
+    expect(decodeShare(forged([paper, [[5, 0, 1, 0, 0, 1, 0, 0, 7]]]))).toEqual({ ok: false, reason: DAMAGED }) // edge to a missing vertex
+    expect(decodeShare(forged([paper, [[5, 2, 0, 0]]]))).toEqual({ ok: false, reason: DAMAGED }) // folded is not 0 / 1
+    expect(decodeShare(forged([paper, [[5, 0, 2, 0, 0, 1e10, 0, 1, 0, 1, 9]]]))).toEqual({ ok: false, reason: DAMAGED }) // unknown assignment
+  })
+
+  test('a pattern too large for a link is refused when encoding, never as a link that cannot open', () => {
+    const n = 4000
+    const big = {
+      folded: false,
+      cp: {
+        vertices_coords: Array.from({ length: 2 * n }, (_, i) => [((i * 7919) % 104729) / 104729, i / (2 * n)] as [number, number]),
+        edges_vertices: Array.from({ length: n }, (_, i) => [2 * i, 2 * i + 1] as [number, number]),
+        edges_assignment: Array.from({ length: n }, () => 'V'),
+      },
+    }
+    const step: Step = { kind: 'pattern', params: big, label: 'pattern', at: 0 }
+    expect(() => encodeShare(DEFAULT_PAPER, [step])).toThrow(TOO_LARGE)
   })
 })

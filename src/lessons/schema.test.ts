@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { PAPER_SIZES, commit, createPaper, turnOver, type Frame } from '@engine'
+import { PAPER_SIZES, branch, commit, createPaper, startHistory, turnOver, type Frame } from '@engine'
 import { PRESETS, runPreset } from '../presets'
 import { checkStep } from './check'
 import { LAUNCH_LESSONS, loadLessons, parseLesson, sheetOf, type Lesson } from './schema'
@@ -149,6 +149,12 @@ describe('devExport', () => {
     const p = parseLesson(JSON.parse(JSON.stringify(filled)))
     if (!p.ok) throw new Error(p.reason)
     p.lesson.steps.forEach((s, i) => expect(checkStep(s.target, r.history.frames[i + 1], { allowMirror: false })).toEqual({ match: true }))
+  })
+
+  test('a designer crease pattern step cannot become a lesson step', () => {
+    const sheet = createPaper(PAPER_SIZES.square)
+    const h = branch(startHistory(sheet), sheet)
+    expect(() => lessonSkeleton(h, { id: 'x', title: 'X', difficulty: 1, paper: 'square' })).toThrow(/crease pattern/)
   })
 
   test('gestureOf rebuilds the committed gesture from the step params (tool, grab, target, layers, kind, snap, face)', () => {

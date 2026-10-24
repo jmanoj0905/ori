@@ -67,6 +67,8 @@ export function gestureOf(step: Step): Gesture | null {
 /** The history up to its cursor as a lesson skeleton: one step per history step, captions and hints empty. */
 export function lessonSkeleton(h: History, meta: LessonMeta): LessonJSON {
   const steps = h.steps.slice(0, h.cursor).map((s, i) => {
+    // a lesson step is a gesture the learner repeats; a designer pattern is not one
+    if (s.kind === 'pattern') throw new Error('A lesson cannot include a crease pattern step.')
     const demo = gestureOf(s)
     const tool: Tool | 'turnOver' = s.kind === 'turnOver' ? 'turnOver' : (demo?.tool ?? s.kind)
     return { caption: '', hint: '', tool, ...(demo ? { demo } : {}), target: stripFrame(h.frames[i + 1]!) }

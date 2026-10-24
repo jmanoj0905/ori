@@ -123,21 +123,85 @@ function clipToSheet(a: Vec2, b: Vec2, size: PaperSize): [P, P] | null {
 
 // ---- a mutable working copy ----
 
+type Box = [number, number, number, number]
+const boxOf = (p: readonly number[], q: readonly number[], pad: number): Box => [
+  Math.min(p[0]!, q[0]!) - pad, Math.min(p[1]!, q[1]!) - pad, Math.max(p[0]!, q[0]!) + pad, Math.max(p[1]!, q[1]!) + pad,
+]
+
+/** A uniform grid over the sheet: which vertices and edges may lie in a box (a superset). */
+class Index {
+  private vs = new Map<number, number[]>()
+  private es = new Map<number, number[]>()
+  constructor(private cell: number) {}
+  private keys([x0, y0, x1, y1]: Box): number[] {
+    const out: number[] = []
+    const c = this.cell
+    for (let i = Math.floor(x0 / c); i <= Math.floor(x1 / c); i++)
+      for (let j = Math.floor(y0 / c); j <= Math.floor(y1 / c); j++) out.push(i * 1_000_003 + j)
+    return out
+  }
+  private add(m: Map<number, number[]>, b: Box, id: number) {
+    for (const k of this.keys(b)) {
+      const l = m.get(k)
+      if (l) l.push(id)
+      else m.set(k, [id])
+    }
+  }
+  private near(m: Map<number, number[]>, b: Box): number[] {
+    const out = new Set<number>()
+    for (const k of this.keys(b)) for (const id of m.get(k) ?? []) out.add(id)
+    return [...out]
+  }
+  addVertex(p: readonly number[], id: number) {
+    this.add(this.vs, boxOf(p, p, 0), id)
+  }
+  addEdge(p: readonly number[], q: readonly number[], id: number) {
+    this.add(this.es, boxOf(p, q, 0), id)
+  }
+  vertices = (b: Box) => this.near(this.vs, b)
+  edges = (b: Box) => this.near(this.es, b)
+}
+
 class Graph {
   v: P[]
   e: [number, number][]
   a: string[]
+  private index: Index | null = null
   constructor(cp: CP) {
     this.v = cp.vertices_coords.map(p => [p[0], p[1]])
     this.e = cp.edges_vertices.map(([u, w]) => [u, w])
     this.a = [...cp.edges_assignment]
   }
 
+  /** Index vertices and edges spatially (bulk building: many inserts into one graph). */
+  indexed(): this {
+    const { width, height } = sizeOf(this.toCP())
+    this.index = new Index(Math.max(width, height, EPS) / 64)
+    this.v.forEach((p, i) => this.index!.addVertex(p, i))
+    this.e.forEach(([u, w], i) => this.index!.addEdge(this.v[u]!, this.v[w]!, i))
+    return this
+  }
+  verticesIn(b: Box): number[] {
+    return this.index ? this.index.vertices(b) : this.v.map((_, i) => i)
+  }
+  edgesIn(b: Box): number[] {
+    return this.index ? this.index.edges(b) : this.e.map((_, i) => i)
+  }
+  pushEdge(u: number, w: number, a: string) {
+    this.e.push([u, w])
+    this.a.push(a)
+    this.index?.addEdge(this.v[u]!, this.v[w]!, this.e.length - 1)
+  }
+  /** Shorten edge k to u–w (its old cells stay indexed: a superset is fine). */
+  setEdge(k: number, u: number, w: number) {
+    this.e[k] = [u, w]
+  }
+
   /** The vertex within EPS of p, or -1. */
   find(p: readonly number[]): number {
     let best = -1
     let bd = EPS
-    for (let i = 0; i < this.v.length; i++) {
+    for (const i of this.verticesIn(boxOf(p, p, EPS))) {
       const d = dist(this.v[i]!, p)
       if (d < bd) {
         bd = d
@@ -151,18 +215,24 @@ class Graph {
     const i = this.find(p)
     if (i >= 0) return i
     this.v.push([p[0]!, p[1]!])
+    this.index?.addVertex(p, this.v.length - 1)
     return this.v.length - 1
   }
 
   edgeIndex(u: number, w: number): number {
-    return this.e.findIndex(([x, y]) => (x === u && y === w) || (x === w && y === u))
+    for (const k of this.edgesIn(boxOf(this.v[u]!, this.v[w]!, EPS))) {
+      const [x, y] = this.e[k]!
+      if ((x === u && y === w) || (x === w && y === u)) return k
+    }
+    return -1
   }
 
   /** Snap p to a vertex within EPS, else onto an edge within EPS, else keep it. */
   snap(p: P): P {
     const i = this.find(p)
     if (i >= 0) return this.v[i]!
-    for (const [u, w] of this.e) {
+    for (const k of this.edgesIn(boxOf(p, p, EPS))) {
+      const [u, w] = this.e[k]!
       const c = closest(p, this.v[u]!, this.v[w]!)
       if (dist(c, p) < EPS) return c
     }
@@ -188,49 +258,55 @@ class Graph {
  * (the boundary keeps 'B'). Returns `cp` itself when nothing is added.
  */
 export function addCrease(cp: CP, a: Vec2, b: Vec2, assignment: Assignment): CP {
-  const clipped = clipToSheet(a, b, sizeOf(cp))
-  if (!clipped) return cp
   const g = new Graph(cp)
+  return insert(g, sizeOf(cp), a, b, assignment) ? g.toCP() : cp
+}
+
+/** Insert one crease into g (see addCrease); false when nothing changes. */
+function insert(g: Graph, size: PaperSize, a: Vec2, b: Vec2, assignment: Assignment): boolean {
+  const clipped = clipToSheet(a, b, size)
+  if (!clipped) return false
   const s = g.snap(clipped[0])
   const t = g.snap(clipped[1])
-  if (dist(s, t) < EPS) return cp
+  if (dist(s, t) < EPS) return false
+  const box = boxOf(s, t, EPS)
 
   // points along s → t: its ends, existing vertices on it, and crossings
   const along: { t: number; p: P; vertex?: number }[] = [{ t: 0, p: s }, { t: 1, p: t }]
   const splits = new Map<number, P[]>()
   const splitAt = (e: number, p: P) => splits.set(e, [...(splits.get(e) ?? []), p])
-  g.v.forEach((p, i) => {
+  for (const i of g.verticesIn(box)) {
+    const p = g.v[i]!
     if (dist(closest(p, s, t), p) < EPS) along.push({ t: param(p, s, t), p, vertex: i })
-  })
-  g.e.forEach(([u, w], e) => {
+  }
+  for (const e of g.edgesIn(box)) {
+    const [u, w] = g.e[e]!
     const p = g.v[u]!
     const q = g.v[w]!
     // an end of the new crease touching this edge's interior splits it there
     for (const end of [s, t]) if (dist(closest(end, p, q), end) < EPS && dist(end, p) >= EPS && dist(end, q) >= EPS) splitAt(e, end)
     const onLine = (x: P) => dist(closest(x, s, t), x) < EPS
-    if (onLine(p) || onLine(q)) return // collinear overlap or a shared end: covered by the vertices on the crease
+    if (onLine(p) || onLine(q)) continue // collinear overlap or a shared end: covered by the vertices on the crease
     const x = crossing(s, t, p, q)
-    if (!x) return
+    if (!x) continue
     along.push({ t: param(x, s, t), p: x })
     if (dist(x, p) >= EPS && dist(x, q) >= EPS) splitAt(e, x)
-  })
+  }
 
   // cluster the points (closer than EPS: one vertex, an existing one first)
   along.sort((x, y) => x.t - y.t)
-  const ids: number[] = []
   const clusters: (typeof along)[] = []
   for (const pt of along) {
     const last = clusters.at(-1)
     if (last && dist(last[0]!.p, pt.p) < EPS) last.push(pt)
     else clusters.push([pt])
   }
-  for (const c of clusters) {
+  const ids = clusters.map(c => {
     const existing = c.find(x => x.vertex !== undefined)
-    ids.push(existing ? existing.vertex! : g.vertex(c[0]!.p))
-  }
+    return existing ? existing.vertex! : g.vertex(c[0]!.p)
+  })
 
   // split the crossed / touched edges (their new pieces keep their assignment)
-  const extra: [number, number, string][] = []
   for (const [e, pts] of splits) {
     const [u, w] = g.e[e]!
     const p = g.v[u]!
@@ -238,26 +314,57 @@ export function addCrease(cp: CP, a: Vec2, b: Vec2, assignment: Assignment): CP 
     const chain = [u, ...pts.sort((x, y) => param(x, p, q) - param(y, p, q)).map(x => g.vertex(x)), w]
       .filter((v, i, all) => i === 0 || v !== all[i - 1])
     if (chain.length < 2) continue
-    g.e[e] = [chain[0]!, chain[1]!]
-    for (let i = 1; i + 1 < chain.length; i++) extra.push([chain[i]!, chain[i + 1]!, g.a[e]!])
-  }
-  for (const [u, w, x] of extra) {
-    g.e.push([u, w])
-    g.a.push(x)
+    g.setEdge(e, chain[0]!, chain[1]!)
+    for (let i = 1; i + 1 < chain.length; i++) g.pushEdge(chain[i]!, chain[i + 1]!, g.a[e]!)
   }
 
   // the new crease's pieces: re-assign a coinciding crease, else add
+  let changed = false
   for (let i = 0; i + 1 < ids.length; i++) {
     const u = ids[i]!
     const w = ids[i + 1]!
     if (u === w) continue
     const k = g.edgeIndex(u, w)
     if (k >= 0) {
-      if (g.a[k] !== 'B') g.a[k] = assignment
+      if (g.a[k] !== 'B' && g.a[k] !== assignment) {
+        g.a[k] = assignment
+        changed = true
+      }
     } else {
-      g.e.push([u, w])
-      g.a.push(assignment)
+      g.pushEdge(u, w, assignment)
+      changed = true
     }
+  }
+  return changed || splits.size > 0
+}
+
+export type Segment = { a: Vec2; b: Vec2; assignment: string }
+
+/**
+ * Build a crease pattern from imported segments (.cp, .fold): the bounds are
+ * moved to the origin and scaled to width 1; the outline becomes the sheet's
+ * boundary (rectangular paper); 'M' and 'V' are kept, anything else but the
+ * boundary is unassigned. Uses a spatial index, so thousands of creases build
+ * in well under a second (in the designer worker).
+ */
+export function buildCp(segments: readonly Segment[]): CP | null {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+  for (const { a, b } of segments)
+    for (const p of [a, b]) {
+      x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0])
+      y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1])
+    }
+  const w = x1 - x0
+  const h = y1 - y0
+  if (!(w > EPS && h > EPS) || !Number.isFinite(w + h)) return null
+  const k = 1 / w
+  const size = { width: 1, height: h * k }
+  const g = new Graph(emptyCP(size)).indexed()
+  const at = (p: Vec2): Vec2 => [(p[0] - x0) * k, (p[1] - y0) * k]
+  for (const s of segments) {
+    if (s.assignment === 'B') continue // the outline is the sheet's own boundary
+    const asg: Assignment = s.assignment === 'M' || s.assignment === 'V' ? s.assignment : 'U'
+    insert(g, size, at(s.a), at(s.b), asg)
   }
   return g.toCP()
 }

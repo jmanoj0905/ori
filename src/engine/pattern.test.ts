@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest'
-import { foldPattern, patternFrame, PATTERN_DANGLING, PATTERN_NO_ORDER } from './pattern'
+import { commitPattern, foldPattern, patternFrame, PATTERN_DANGLING, PATTERN_NO_ORDER } from './pattern'
 import { aboveGraph, facesAt, foldedPolygons } from './layers'
 import { baseFrame } from './rabbit'
 import { area } from './testkit'
+import { commit } from './ops'
 import type { Frame } from './types'
 
 /** A crease pattern: the geometry and assignments only (no faces, no orders). */
@@ -48,7 +49,15 @@ describe('crease patterns in the engine', () => {
     expect(f.faces_vertices.length).toBe(baseFrame('waterbomb').faces_vertices.length)
     expect(area(f)).toBeCloseTo(1, 12)
     expect(f.edges_foldAngle.every(a => a === 0)).toBe(true)
+    // open creases read as flat ('F') to the engine; the boundary stays 'B'
+    expect(new Set(f.edges_assignment)).toEqual(new Set(['B', 'F']))
     expect(f.faceOrders).toEqual([])
+  })
+
+  test('a pre-creased pattern frame folds like any sheet', () => {
+    const f = ok(patternFrame(cpOf(baseFrame('waterbomb')))).frame
+    const g = { tool: 'fold' as const, grab: [0.95, 0.5] as const, target: [0.05, 0.5] as const, layers: 1, kind: 'valley' as const, progress: 1, snapAngle: false }
+    expect(commit(f, { ...g, grab: [0.95, 0.5], target: [0.05, 0.5] }).ok).toBe(true)
   })
 
   test.each(['waterbomb', 'bird'] as const)('foldPattern collapses the %s base with a valid layer order', name => {
@@ -58,7 +67,7 @@ describe('crease patterns in the engine', () => {
     expect(stacksOrdered(f)).toBe(true)
   })
 
-  test('unassigned creases stay unfolded and keep their assignment', () => {
+  test('unassigned creases stay unfolded (flat to the engine)', () => {
     const cp: Frame = {
       vertices_coords: [[0, 0], [0.5, 0], [1, 0], [1, 1], [0.5, 1], [0, 1]],
       edges_vertices: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0], [1, 4]],
@@ -69,7 +78,7 @@ describe('crease patterns in the engine', () => {
     }
     const f = ok(foldPattern(cp)).frame
     expect(f.faces_vertices).toHaveLength(2)
-    expect(f.edges_assignment.filter(a => a === 'U')).toHaveLength(1)
+    expect(f.edges_assignment.filter(a => a === 'F')).toHaveLength(1)
     expect(f.edges_foldAngle.every(a => a === 0)).toBe(true)
   })
 
@@ -97,5 +106,20 @@ describe('crease patterns in the engine', () => {
       faceOrders: [],
     }
     expect(foldPattern(cp)).toEqual({ ok: false, reason: PATTERN_DANGLING })
+  })
+})
+
+describe('pattern steps replay', () => {
+  test('commitPattern rebuilds the unfolded and the folded frame from the record', () => {
+    const cp = cpOf(baseFrame('waterbomb'))
+    const flat = ok(patternFrame(cp)).frame
+    const folded = ok(foldPattern(cp)).frame
+    const params = (f: boolean) => ({ folded: f, cp: { vertices_coords: cp.vertices_coords, edges_vertices: cp.edges_vertices, edges_assignment: cp.edges_assignment } })
+    const a = ok(commitPattern(params(false)))
+    expect(a.frame).toEqual(flat)
+    expect(a.step).toMatchObject({ kind: 'pattern', label: 'Crease pattern', params: params(false) })
+    const b = ok(commitPattern(params(true)))
+    expect(b.frame).toEqual(folded)
+    expect(b.step).toMatchObject({ kind: 'pattern', label: 'Fold all', params: params(true) })
   })
 })

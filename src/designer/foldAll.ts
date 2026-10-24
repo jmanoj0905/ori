@@ -13,7 +13,8 @@
 // after a macrotask so the caller's frame is not extended.
 import { foldPattern, type Frame } from '@engine'
 import { vertexIssues, type VertexIssue } from './checks'
-import type { CP } from './cp'
+import { buildCp, type CP } from './cp'
+import { parseCp, parseFold } from '../persistence/cpFormats'
 
 export const FOLD_ALL_TIMEOUT_MS = 5000
 /** How many failing vertices a refusal names. */
@@ -25,7 +26,21 @@ export const CHECKS_TIMEOUT_MS = 10_000
 
 export type FoldAllResult = { ok: true; frame: Frame } | { ok: false; reason: string; vertices: number[] }
 
-export type DesignerRequest = { kind: 'checks'; cp: CP } | { kind: 'foldAll'; cp: CP }
+export type DesignerRequest =
+  | { kind: 'checks'; cp: CP }
+  | { kind: 'foldAll'; cp: CP }
+  | { kind: 'import'; format: 'cp' | 'fold'; text: string }
+
+export type ImportResult = { ok: true; cp: CP } | { ok: false; reason: string }
+export const IMPORT_EMPTY = 'That file has no crease pattern on a sheet of paper.'
+
+/** Parse a .cp / .fold file and build its crease pattern (in the worker: big files take a while). */
+export function importNow(format: 'cp' | 'fold', text: string): ImportResult {
+  const r = format === 'cp' ? parseCp(text) : parseFold(text)
+  if (!r.ok) return r
+  const cp = buildCp(r.segments)
+  return cp ? { ok: true, cp } : { ok: false, reason: IMPORT_EMPTY }
+}
 
 /** The pattern collapsed flat, or a refusal (failing vertices first). Synchronous: the worker's body. */
 export function foldAllNow(cp: CP): FoldAllResult {
@@ -38,7 +53,8 @@ export function foldAllNow(cp: CP): FoldAllResult {
   return r.ok ? { ok: true, frame: r.frame } : { ok: false, reason: r.reason, vertices: [] }
 }
 
-export function handleDesignerRequest(req: DesignerRequest): FoldAllResult | VertexIssue[] {
+export function handleDesignerRequest(req: DesignerRequest): FoldAllResult | VertexIssue[] | ImportResult {
+  if (req.kind === 'import') return importNow(req.format, req.text)
   return req.kind === 'checks' ? vertexIssues(req.cp) : foldAllNow(req.cp)
 }
 
@@ -163,4 +179,15 @@ export async function foldAll(
 /** Every vertex issue of the pattern, computed in the worker. */
 export function checkPattern(cp: CP, { worker = defaultWorker(), signal }: { worker?: DesignerWorker; signal?: AbortSignal } = {}): Promise<VertexIssue[]> {
   return worker.run<VertexIssue[]>({ kind: 'checks', cp }, { signal })
+}
+
+export const IMPORT_TIMEOUT_MS = 20_000
+
+/** Import a crease pattern file off the main thread. Never rejects. */
+export async function importPattern(format: 'cp' | 'fold', text: string, { worker = defaultWorker() }: { worker?: DesignerWorker } = {}): Promise<ImportResult> {
+  try {
+    return await worker.run<ImportResult>({ kind: 'import', format, text }, { timeoutMs: IMPORT_TIMEOUT_MS })
+  } catch (e) {
+    return { ok: false, reason: e instanceof Stopped ? 'The import took too long and was stopped.' : 'That file could not be imported.' }
+  }
 }

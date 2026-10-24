@@ -175,3 +175,28 @@
   margin: 6px 0 0;
   padding-left: 1.2em;
 }
+.cp-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+}
+.cp-files .files-label {
+  color: var(--ink-soft);
+  margin-left: 6px;
+}
+.cp-files-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ink-soft);
+}
+.cp-files-status[role='alert'] {
+  color: var(--refusal);
+}
+.designer-banner {
+  padding: 6px 10px;
+}
+.designer-banner p {
+  margin: 0;
+}

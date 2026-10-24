@@ -297,7 +297,7 @@ export function App() {
         </div>
         {designing && (
           <Suspense fallback={null}>
-            <DesignerMode />
+            <DesignerMode onLayout={layout} />
           </Suspense>
         )}
         <CoachMark stage={stageReady && !stageDown(stageStatus) ? stageReady : null} reduced={reducedMotion} />

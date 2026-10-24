@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Frame } from './types'
-import { canRedo, canUndo, current, jumpTo, push, redo, startHistory, undo, type Step } from './history'
+import { branch, canRedo, canUndo, current, jumpTo, push, redo, startHistory, undo, type Step } from './history'
 
 const frame = (n: number): Frame => ({
   vertices_coords: [[n, 0]],
@@ -82,5 +82,40 @@ describe('jumpTo with a non-finite index (final review 1)', () => {
     const { h } = build()
     const u = undo(h)
     for (const i of [NaN, Infinity, -Infinity]) expect(jumpTo(u, i)).toBe(u)
+  })
+})
+
+describe('branch (Plan 5: editing the crease pattern after folding)', () => {
+  const cp = (n: number): Frame => ({ ...frame(n), edges_assignment: ['V'], edges_vertices: [[0, 0]], edges_foldAngle: [0] })
+
+  it('continues from the cursor with a pattern step and keeps the original history whole', () => {
+    const { h, fs } = build()
+    const back = undo(h) // cursor 2, one redo step
+    const b = branch(back, cp(9))
+    expect(b.cursor).toBe(3)
+    expect(b.frames.slice(0, 3)).toEqual(fs.slice(0, 3)) // earlier steps are never rewritten
+    expect(b.frames[0]).toBe(fs[0])
+    expect(b.steps.at(-1)).toMatchObject({ kind: 'pattern', label: 'Crease pattern', params: { folded: false } })
+    expect(b.branchOf).toBe(back)
+    expect(back.frames).toHaveLength(4) // the redo step of the original is still there
+    expect(current(b)).toEqual(cp(9))
+  })
+
+  it('a folded pattern is labelled as Fold all', () => {
+    const folded = { ...cp(9), edges_foldAngle: [180] }
+    expect(branch(startHistory(frame(0)), folded).steps[0]).toMatchObject({ kind: 'pattern', label: 'Fold all', params: { folded: true } })
+  })
+
+  it('the pattern step records the crease pattern, so it can be replayed', () => {
+    const b = branch(startHistory(frame(0)), cp(9))
+    expect(b.steps[0]!.params).toEqual({ folded: false, cp: { vertices_coords: [[9, 0]], edges_vertices: [[0, 0]], edges_assignment: ['V'] } })
+  })
+
+  it('moving or pushing on a branch keeps the link to the original', () => {
+    const { h } = build()
+    const b = branch(h, cp(9))
+    expect(undo(b).branchOf).toBe(h)
+    expect(push(b, step('d'), frame(5)).branchOf).toBe(h)
+    expect(startHistory(frame(0)).branchOf).toBeUndefined()
   })
 })

@@ -13,7 +13,7 @@
 // (MAX_UNDO deep) and clears `future`.
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { useStore } from 'zustand'
-import { frameFromFold, type Line, type PaperSize, type Vec2 } from '@engine'
+import { frameFromFold, type History, type Line, type PaperSize, type Vec2 } from '@engine'
 import { AXIOM_INPUTS, AXIOM_TEXT, axiom, clipLine, type AxiomNumber } from './axioms'
 import {
   GRID_PRESETS, addCrease, emptyCP, flip, removeCrease, setAssignment, sizeOf, snapToGrid,
@@ -43,6 +43,10 @@ export type DesignerState = {
   selected: number | null
   /** The last tool message (no solution, …), for the prompt line. */
   message: string | null
+  /** The pattern is too large to mirror in 3D on every edit (sync.ts): the 3D view takes it on Fold all. */
+  detached: boolean
+  /** The studio history the last branch left (sync.ts), for "Back to folded steps"; null when none. */
+  branchedFrom: History | null
 
   /** The grid in force. */
   gridPreset(): GridPreset
@@ -78,7 +82,7 @@ const defaultStorage = (): Pick<Storage, 'getItem' | 'setItem'> | null => {
   }
 }
 
-type Saved = { version: 1; cp: unknown; grid: GridName; customDivisions: number; assignment: Assignment }
+type Saved = { version: 1; cp: unknown; grid: GridName; customDivisions: number; assignment: Assignment; detached?: boolean }
 const GRIDS: readonly string[] = ['8x8', '16x16', '22.5', 'custom']
 
 function readSaved(storage: Pick<Storage, 'getItem'> | null): Partial<DesignerState> | null {
@@ -100,6 +104,7 @@ function readSaved(storage: Pick<Storage, 'getItem'> | null): Partial<DesignerSt
     grid: GRIDS.includes(s.grid as string) ? (s.grid as GridName) : '16x16',
     customDivisions: Number.isInteger(s.customDivisions) && s.customDivisions! > 0 && s.customDivisions! <= 256 ? s.customDivisions! : 12,
     assignment: s.assignment === 'M' || s.assignment === 'U' ? s.assignment : 'V',
+    detached: s.detached === true,
   }
 }
 
@@ -143,6 +148,8 @@ export function createDesignerStore({ storage = defaultStorage(), size = { width
       customDivisions: 12,
       ...inputs,
       selected: null,
+      detached: false,
+      branchedFrom: null,
 
       gridPreset() {
         const { grid, customDivisions } = get()
@@ -250,7 +257,7 @@ export function createDesignerStore({ storage = defaultStorage(), size = { width
   const write = () => {
     timer = undefined
     const s = store.getState()
-    const payload: Saved = { version: 1, cp: cpGeometry(s.cp), grid: s.grid, customDivisions: s.customDivisions, assignment: s.assignment }
+    const payload: Saved = { version: 1, cp: cpGeometry(s.cp), grid: s.grid, customDivisions: s.customDivisions, assignment: s.assignment, detached: s.detached }
     try {
       storage?.setItem(DESIGNER_KEY, JSON.stringify(payload))
     } catch {
@@ -258,7 +265,7 @@ export function createDesignerStore({ storage = defaultStorage(), size = { width
     }
   }
   store.subscribe((s, prev) => {
-    if (s.cp === prev.cp && s.grid === prev.grid && s.customDivisions === prev.customDivisions && s.assignment === prev.assignment) return
+    if (s.cp === prev.cp && s.grid === prev.grid && s.customDivisions === prev.customDivisions && s.assignment === prev.assignment && s.detached === prev.detached) return
     if (timer !== undefined) clearTimeout(timer)
     timer = setTimeout(write, SAVE_MS)
   })

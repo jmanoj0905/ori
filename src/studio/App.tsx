@@ -189,7 +189,7 @@ export function App() {
         // `npm run build:e2e`; in a production build both conditions are constant false and
         // the hook is dropped from the bundle (scripts/bundle-size.mjs asserts it).
         if (import.meta.env.DEV || import.meta.env.VITE_ORI_E2E === '1') {
-          Object.assign(window, { __ori: { store: useStudio, stage: st, ui: useUi, settings: useSettings } })
+          Object.assign(window, { __ori: { store: useStudio, stage: st, ui: useUi, settings: useSettings, soft: () => import('../soft/harness') } })
         }
       })
       .catch(err => {

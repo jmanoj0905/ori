@@ -91,7 +91,8 @@ export default defineConfig({
     launchOptions: {
       ...(executablePath ? { executablePath } : {}),
       // Real GPU rasterisation where available (the perf gate measures WebGL frames).
-      args: ['--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'],
+      // WebGPU for the soft-paper solver's specs (e2e/soft.spec.ts); they skip where there is no adapter.
+      args: ['--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader', '--enable-unsafe-webgpu'],
     },
   },
   projects: [{ name: 'chromium' }],

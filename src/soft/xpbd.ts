@@ -22,6 +22,7 @@
 // explosion. Non-finite or non-positive dt does nothing.
 import { dihedral, dihedralGradient } from './dihedral'
 import type { SoftMesh } from './remesh'
+import { collide, type CollisionOptions, type CollisionResult } from './collision'
 
 export const MAX_DT = 1 / 30
 /** Wet paper: bending and crease compliance are multiplied by this (softer). */
@@ -39,6 +40,8 @@ export type SoftParams = {
   gravity?: Vec3
   /** Velocity damping per second (0: none). */
   damping?: number
+  /** Self-collision (visual; collision.ts), after every substep's constraint pass. */
+  collide?: boolean | CollisionOptions
 }
 
 /** The packed constraints, shared with the GPU solver. */
@@ -120,18 +123,20 @@ export class SoftSolver {
   readonly mesh: SoftMesh
   readonly constraints: Constraints
   protected params: Required<SoftParams>
+  /** The last substep's self-collision result (skipped cells render rigid). */
+  lastCollision: CollisionResult = { contacts: 0, skippedCells: 0 }
   protected x: Float64Array
   protected prev: Float64Array
   protected v: Float64Array
   protected invMass: Float64Array
-  protected pins = new Map<number, Vec3>()
+  protected pinned = new Map<number, Vec3>()
   private grad = new Float64Array(12)
   private out: Float32Array
 
   constructor(mesh: SoftMesh, params: SoftParams, constraints = buildConstraints(mesh)) {
     this.mesh = mesh
     this.constraints = constraints
-    this.params = { gravity: [0, 0, -9.81], damping: 0.5, ...params }
+    this.params = { gravity: [0, 0, -9.81], damping: 0.5, collide: false, ...params }
     this.x = Float64Array.from(mesh.positions)
     this.prev = this.x.slice()
     this.v = new Float64Array(this.x.length)
@@ -148,12 +153,16 @@ export class SoftSolver {
 
   pin(i: number, p: Vec3): void {
     if (i < 0 || 3 * i >= this.x.length) return
-    this.pins.set(i, [p[0], p[1], p[2]])
+    this.pinned.set(i, [p[0], p[1], p[2]])
     this.x.set(p, 3 * i)
     this.v.fill(0, 3 * i, 3 * i + 3)
   }
   unpin(i: number): void {
-    this.pins.delete(i)
+    this.pinned.delete(i)
+  }
+  /** The pinned particles and their targets. */
+  pins(): Map<number, Vec3> {
+    return new Map(this.pinned)
   }
 
   /** Copy positions in (device-loss hand-over, tests). */
@@ -214,7 +223,7 @@ export class SoftSolver {
       prev[i] = x[i]!
       prev[i + 1] = x[i + 1]!
       prev[i + 2] = x[i + 2]!
-      if (invMass[p] === 0 || this.pins.has(p)) continue
+      if (invMass[p] === 0 || this.pinned.has(p)) continue
       v[i] += gx * h
       v[i + 1] += gy * h
       v[i + 2] += gz * h
@@ -222,8 +231,8 @@ export class SoftSolver {
       x[i + 1] += v[i + 1]! * h
       x[i + 2] += v[i + 2]! * h
     }
-    for (const [p, t] of this.pins) x.set(t, 3 * p)
-    const w = (p: number) => (this.pins.has(p) ? 0 : invMass[p]!)
+    for (const [p, t] of this.pinned) x.set(t, 3 * p)
+    const w = (p: number) => (this.pinned.has(p) ? 0 : invMass[p]!)
     this.solveDistances(h, w)
     this.solveHinges(h, w)
     this.afterSolve(prev, w)
@@ -231,8 +240,11 @@ export class SoftSolver {
     for (let i = 0; i < x.length; i++) v[i] = ((x[i]! - prev[i]!) / h) * keep
   }
 
-  /** A hook after each substep's constraint pass (self-collision, Task 3). */
-  protected afterSolve(_prev: Float64Array, _w: (p: number) => number): void {}
+  /** After each substep's constraint pass: self-collision, when on. */
+  protected afterSolve(prev: Float64Array, w: (p: number) => number): void {
+    const c = this.params.collide
+    if (c) this.lastCollision = collide(this.x, prev, this.mesh, w, c === true ? {} : c)
+  }
 
   private solveDistances(h: number, w: (p: number) => number): void {
     const { x } = this

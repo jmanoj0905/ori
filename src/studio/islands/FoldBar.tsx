@@ -143,7 +143,9 @@ export function FoldBar() {
   const setLayers = useStudio(s => s.setLayers)
   const setNumeric = useStudio(s => s.setNumeric)
   const setLastFold = useStudio(s => s.setLastFold)
-  const last = useMemo(() => lastFold(history), [history])
+  // Lesson mode: a checked step is not re-committed from here (the store refuses it too).
+  const inLesson = useStudio(s => s.lesson !== null)
+  const last = useMemo(() => (inLesson ? null : lastFold(history)), [history, inLesson])
   const [open, setOpen] = useState(false)
   const [local, setLocal] = useState<number | null>(null)
   const readout = useRef<HTMLButtonElement>(null)

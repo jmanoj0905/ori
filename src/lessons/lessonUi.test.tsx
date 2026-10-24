@@ -10,6 +10,7 @@ import { setReducedMotionSource } from '../studio/motion'
 import { useStudio } from '../studio/store'
 import { useSettings, defaultSettings } from '../settings/store'
 import { Tools } from '../studio/islands/Tools'
+import { FoldBar } from '../studio/islands/FoldBar'
 import { Steps } from '../studio/islands/Steps'
 import { App } from '../studio/App'
 import { useUi } from '../studio/ui'
@@ -204,6 +205,18 @@ describe('lesson outline', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Exit lesson' }))
     expect(useStudio.getState().lesson).toBeNull()
     expect(useStudio.getState().history).toBe(model)
+  })
+})
+
+describe('fold bar in a lesson', () => {
+  test('a checked lesson step offers no post-release slider (it could not be re-committed)', async () => {
+    const { container } = render(<FoldBar />)
+    await start('cup')
+    await fold([0, 0], [1, 1])
+    expect(useStudio.getState().lesson!.index).toBe(1)
+    expect(container).toBeEmptyDOMElement()
+    act(() => useStudio.getState().exitLesson())
+    expect(container).not.toBeEmptyDOMElement() // in the sandbox the last fold is editable again
   })
 })
 

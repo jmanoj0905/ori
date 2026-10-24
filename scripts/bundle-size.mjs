@@ -81,6 +81,20 @@ for (const f of ['LICENSE.txt', 'THIRD_PARTY_NOTICES.txt']) {
   } else console.log(`Ships ${f}.`)
 }
 
+// Spec 00: "Lessons and the designer are code-split": their data and UI stay out of the first load.
+// Each marker is a string only that feature's on-demand chunks contain.
+const SPLIT = { lessons: ['Waterbomb base', 'Lesson summary'] }
+for (const [feature, markers] of Object.entries(SPLIT)) {
+  const leaked = [...eager].filter(f => markers.some(m => readFileSync(join(dist, f), 'utf8').includes(m)))
+  if (leaked.length) {
+    console.error(`FAIL: ${feature} code is in the first load: ${leaked.join(', ')}`)
+    failed = true
+  } else if (!markers.every(m => all.some(f => readFileSync(join(dist, f), 'utf8').includes(m)))) {
+    console.error(`FAIL: no ${feature} chunk found (markers ${markers.join(', ')}): update SPLIT`)
+    failed = true
+  } else console.log(`The ${feature} are code-split.`)
+}
+
 if (dist === 'dist') {
   const hooked = all.filter(f => readFileSync(join(dist, f), 'utf8').includes('__ori'))
   if (hooked.length) {

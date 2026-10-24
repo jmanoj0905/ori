@@ -808,6 +808,14 @@ input[type='range'] {
   border: 1px solid var(--frost-border);
   z-index: 5;
 }
+/* Wide: open rightward from the button, clear of the paper panel below the top bar's
+   left half (the Sandbox / Designer switch widened the bar). Narrow: flush right. */
+@media (min-width: 720px) {
+  .export-menu {
+    left: 0;
+    right: auto;
+  }
+}
 .export-opt {
   display: flex;
   align-items: center;

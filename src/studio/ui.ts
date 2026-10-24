@@ -20,8 +20,12 @@ export const STAGE_MESSAGES: Partial<Record<StageStatus, string>> = {
 /** True when the paper cannot be shown (and so cannot be folded). */
 export const stageDown = (s: StageStatus): boolean => s === 'webgl' || s === 'chunk' || s === 'lost'
 
+/** Sandbox folding, or the crease pattern designer (spec 07, code-split). */
+export type Mode = 'sandbox' | 'designer'
+
 export type UiState = {
   sheet: Sheet | null
+  mode: Mode
   kf: KeyboardPhase
   stage: StageStatus
   open(s: Sheet): void
@@ -29,10 +33,12 @@ export type UiState = {
   toggle(s: Sheet): void
   setKf(p: KeyboardPhase): void
   setStage(s: StageStatus): void
+  setMode(m: Mode): void
 }
 
 export const useUi = create<UiState>()((set, get) => ({
   sheet: null,
+  mode: 'sandbox',
   kf: 'idle',
   stage: 'loading',
   open: sheet => set({ sheet }),
@@ -40,4 +46,5 @@ export const useUi = create<UiState>()((set, get) => ({
   toggle: sheet => set({ sheet: get().sheet === sheet ? null : sheet }),
   setKf: kf => set({ kf }),
   setStage: stage => set({ stage }),
+  setMode: mode => set({ mode }),
 }))

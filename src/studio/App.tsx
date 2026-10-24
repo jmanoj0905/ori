@@ -100,6 +100,7 @@ export function syncLesson(stage: Stage, s: StudioState, prev?: StudioState, ani
 const ReplayBar = lazy(() => import('./replay/ReplayBar'))
 const LessonOutline = lazy(() => import('../lessons/LessonOutline'))
 const RecordDialog = lazy(() => import('./RecordDialog'))
+const DesignerMode = lazy(() => import('../designer/DesignerMode'))
 
 /** Enter replay: stops preset playback first (the Steps island), refused while a commit is pending. */
 const enterReplay = (): boolean => useStudio.getState().setReplaying(true)
@@ -118,6 +119,7 @@ export function App() {
   const folding = useStudio(s => s.gesture !== null)
   const replaying = useStudio(s => s.replaying)
   const inLesson = useStudio(s => s.lesson !== null)
+  const designing = useUi(s => s.mode === 'designer')
   // Leaving replay: focus goes back to the Replay button (once the dock is no longer inert).
   const wasReplaying = useRef(false)
   useEffect(() => {
@@ -212,14 +214,14 @@ export function App() {
     if (!stageReady || busy) return // never rescale the paper under a live fold; it reframes when the gesture ends
     const q = (sel: string) => document.querySelector(sel)?.getBoundingClientRect() ?? null
     stageReady.setInsets(
-      measureInsets({ width: window.innerWidth, height: window.innerHeight }, { tools: q('.tools'), steps: q('.steps'), dock: dockRef.current?.getBoundingClientRect() }),
+      measureInsets({ width: window.innerWidth, height: window.innerHeight }, { tools: q('.tools') ?? q('.designer'), steps: q('.steps'), dock: dockRef.current?.getBoundingClientRect() }),
     )
   }, [stageReady, busy])
   useEffect(() => {
     layout()
     window.addEventListener('resize', layout)
     const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(layout) : null
-    for (const sel of ['.tools', '.steps']) {
+    for (const sel of ['.tools', '.designer', '.steps']) {
       const el = document.querySelector(sel)
       if (el) ro?.observe(el)
     }
@@ -228,7 +230,7 @@ export function App() {
       window.removeEventListener('resize', layout)
       ro?.disconnect()
     }
-  }, [layout, sheetOpen, inLesson])
+  }, [layout, sheetOpen, inLesson, designing])
   return (
     // Landmarks: the top bar is the page's banner, so it sits beside <main>, not
     // inside it (a banner nested in main is not a top-level landmark). <main> uses
@@ -280,7 +282,7 @@ export function App() {
               <span className="grabber" aria-hidden="true" />
               Steps, presets and paper
             </button>
-            <Tools onView={stageReady ? v => stageReady.view(v, !prefersReducedMotion(useSettings.getState().reducedMotion)) : undefined} />
+            {!designing && <Tools onView={stageReady ? v => stageReady.view(v, !prefersReducedMotion(useSettings.getState().reducedMotion)) : undefined} />}
             <div className="dock-body" id="dock-body">
               {inLesson ? (
                 <Suspense fallback={null}>
@@ -293,6 +295,11 @@ export function App() {
             </div>
           </div>
         </div>
+        {designing && (
+          <Suspense fallback={null}>
+            <DesignerMode />
+          </Suspense>
+        )}
         <CoachMark stage={stageReady && !stageDown(stageStatus) ? stageReady : null} reduced={reducedMotion} />
         <Notice />
         {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}

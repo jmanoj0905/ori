@@ -4,6 +4,7 @@ import { canRedo, canUndo } from '@engine'
 import { useStudio } from '../store'
 import { useSettings } from '../../settings/store'
 import { withShortcut } from '../../settings/describe'
+import { useUi } from '../ui'
 
 export type TopBarProps = {
   paperOpen: boolean
@@ -18,6 +19,18 @@ export type TopBarProps = {
   onShare?: () => void
   /** Opens the Record dialog (GIF / WebM of the replay); off when absent or there is nothing to replay. */
   onRecord?: () => void
+}
+
+/** Sandbox ↔ Designer (spec 07 UI: "chosen with a switch in the top bar"). */
+function ModeSwitch() {
+  const mode = useUi(s => s.mode)
+  const setMode = useUi(s => s.setMode)
+  return (
+    <div role="group" aria-label="Mode" className="mode-switch">
+      <button type="button" className="tbtn text" aria-pressed={mode === 'sandbox'} onClick={() => setMode('sandbox')}>Sandbox</button>
+      <button type="button" className="tbtn text" aria-pressed={mode === 'designer'} onClick={() => setMode('designer')}>Designer</button>
+    </div>
+  )
 }
 
 export function TopBar({ paperOpen, onTogglePaper, onExport, onExportFile, onSettings, onShare, onRecord }: TopBarProps) {
@@ -41,6 +54,7 @@ export function TopBar({ paperOpen, onTogglePaper, onExport, onExportFile, onSet
   return (
     <header className="island topbar" role="banner" aria-label="Studio bar">
       <h1 className="wordmark">ori · 折り</h1>
+      <ModeSwitch />
       <div className="bar-actions">
         <button type="button" className="tbtn" onClick={undo} disabled={!undoable} aria-label="Undo" title={withShortcut('Undo', keys.undo)}>
           <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 4 3 8l4 4M3.5 8H12a4.5 4.5 0 0 1 0 9H8" /></svg>

@@ -1,0 +1,51 @@
+{
+  "id": "waterbomb",
+  "title": "Waterbomb base",
+  "difficulty": 1,
+  "paper": "square",
+  "material": {
+    "mode": "kami",
+    "front": "#C9962B",
+    "back": "#FFFFFF"
+  },
+  "steps": [
+    {
+      "caption": "Fold the square in half: the top edge down onto the bottom edge.",
+      "hint": "Grab the top edge and bring it all the way down until it lies on the bottom edge.",
+      "tool": "fold",
+      "allowMirror": true,
+      "demo": {"tool":"fold","grab":[0.5,1],"target":[0.5,0],"layers":1,"kind":"valley","progress":1,"snapAngle":false},
+      "target": {"vertices_coords":[[0,0],[1,0],[1,1],[0,1],[1,0.5],[0,0.5]],"edges_vertices":[[0,1],[2,3],[1,4],[4,2],[3,5],[5,0],[5,4]],"edges_assignment":["B","B","B","B","B","B","V"],"edges_foldAngle":[0,0,0,0,0,0,180],"faces_vertices":[[5,0,1,4],[4,2,3,5]],"faceOrders":[[0,1,1]]}
+    },
+    {
+      "caption": "Fold it in half again: the right side over to the left.",
+      "hint": "Take both layers: grab the right edge and bring it onto the left edge.",
+      "tool": "fold",
+      "allowMirror": true,
+      "demo": {"tool":"fold","grab":[1,0.25],"target":[0,0.25],"layers":2,"kind":"valley","progress":1,"snapAngle":false},
+      "target": {"vertices_coords":[[0,0],[1,0],[1,1],[0,1],[1,0.5],[0,0.5],[0.5,0],[0.5,1],[0.5,0.5]],"edges_vertices":[[1,4],[4,2],[3,5],[5,0],[0,6],[6,1],[2,7],[7,3],[5,8],[8,4],[8,6],[8,7]],"edges_assignment":["B","B","B","B","B","B","B","B","V","V","V","M"],"edges_foldAngle":[0,0,0,0,0,0,0,0,180,180,180,-180],"faces_vertices":[[8,5,0,6],[6,1,4,8],[7,3,5,8],[8,4,2,7]],"faceOrders":[[0,2,1],[1,3,1],[0,1,1],[2,3,-1],[1,2,-1],[0,3,-1]]}
+    },
+    {
+      "caption": "Squash the front flap: open it and press it flat into a triangle.",
+      "hint": "Choose Squash, grab the top flap near its closed corner and drag down and outward so it opens and flattens.",
+      "tool": "squash",
+      "camera": "top",
+      "demo": {"tool":"squash","grab":[0.4,0.4],"target":[0.1,0.1],"layers":2,"kind":"valley","progress":1,"snapAngle":false},
+      "target": {"vertices_coords":[[0,0],[1,0],[1,1],[0,1],[1,0.5],[0,0.5],[0.5,0],[0.5,1],[0.5,0.5]],"edges_vertices":[[1,4],[4,2],[3,5],[5,0],[0,6],[6,1],[2,7],[7,3],[5,8],[8,4],[8,6],[8,7],[1,8],[2,8]],"edges_assignment":["B","B","B","B","B","B","B","B","V","F","F","M","V","V"],"edges_foldAngle":[0,0,0,0,0,0,0,0,180,0,0,-180,180,180],"faces_vertices":[[0,6,8,5],[8,6,1],[1,4,8],[8,7,3,5],[2,7,8],[8,4,2]],"faceOrders":[[0,3,1],[3,4,-1],[1,2,1],[4,5,1],[0,4,-1],[3,5,1],[0,5,1]]}
+    },
+    {
+      "caption": "Turn the model over.",
+      "hint": "Press Turn over (or its shortcut).",
+      "tool": "turnOver",
+      "target": {"vertices_coords":[[1,0],[0,0],[0,1],[1,1],[0,0.5],[1,0.5],[0.5,0],[0.5,1],[0.5,0.5]],"edges_vertices":[[1,4],[4,2],[3,5],[5,0],[0,6],[6,1],[2,7],[7,3],[5,8],[8,4],[8,6],[8,7],[1,8],[2,8]],"edges_assignment":["B","B","B","B","B","B","B","B","M","F","F","V","M","M"],"edges_foldAngle":[0,0,0,0,0,0,0,0,-180,0,0,180,-180,-180],"faces_vertices":[[5,8,6,0],[1,6,8],[8,4,1],[5,3,7,8],[8,7,2],[2,4,8]],"faceOrders":[[0,3,-1],[3,4,1],[1,2,-1],[4,5,-1],[0,4,1],[3,5,-1],[0,5,-1]]}
+    },
+    {
+      "caption": "Squash the other flap to match. That is the waterbomb base.",
+      "hint": "Squash again: grab the square flap and drag down and outward to the right.",
+      "tool": "squash",
+      "camera": "reset",
+      "demo": {"tool":"squash","grab":[0.6,0.4],"target":[0.9,0.1],"layers":2,"kind":"valley","progress":1,"snapAngle":false},
+      "target": {"vertices_coords":[[1,0],[0,0],[0,1],[1,1],[0,0.5],[1,0.5],[0.5,0],[0.5,1],[0.5,0.5]],"edges_vertices":[[1,4],[4,2],[3,5],[5,0],[0,6],[6,1],[2,7],[7,3],[5,8],[8,4],[8,6],[8,7],[1,8],[2,8],[8,0],[8,3]],"edges_assignment":["B","B","B","B","B","B","B","B","F","F","V","V","M","M","M","M"],"edges_foldAngle":[0,0,0,0,0,0,0,0,0,0,180,180,-180,-180,-180,-180],"faces_vertices":[[1,6,8],[8,4,1],[8,7,2],[2,4,8],[0,5,8],[8,6,0],[8,5,3],[3,7,8]],"faceOrders":[[0,1,-1],[2,3,-1],[0,5,1],[2,7,1],[4,5,-1],[6,7,-1],[1,4,-1],[3,6,-1],[1,5,1],[3,7,1],[0,4,-1],[2,6,-1]]}
+    }
+  ]
+}

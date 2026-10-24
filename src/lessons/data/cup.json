@@ -1,0 +1,56 @@
+{
+  "id": "cup",
+  "title": "Cup",
+  "difficulty": 1,
+  "paper": "square",
+  "material": {
+    "mode": "kami",
+    "front": "#2F4A8A",
+    "back": "#FFFFFF"
+  },
+  "steps": [
+    {
+      "caption": "Fold the bottom left corner up to the top right corner: a triangle.",
+      "hint": "Fold along the diagonal: grab the bottom left corner and bring it onto the top right corner.",
+      "tool": "fold",
+      "allowMirror": true,
+      "demo": {"tool":"fold","grab":[0,0],"target":[1,1],"layers":1,"kind":"valley","progress":1,"snapAngle":false},
+      "target": {"vertices_coords":[[0,0],[1,0],[1,1],[0,1]],"edges_vertices":[[0,1],[1,2],[2,3],[3,0],[1,3]],"edges_assignment":["B","B","B","B","V"],"edges_foldAngle":[0,0,0,0,180],"faces_vertices":[[1,2,3],[3,0,1]],"faceOrders":[[0,1,1]]}
+    },
+    {
+      "caption": "Fold the right corner across to the opposite edge.",
+      "hint": "Take both layers: bring the right corner over to the top edge, so the flap's top edge lies level with the bottom fold.",
+      "tool": "fold",
+      "demo": {"tool":"fold","grab":[1,0],"target":[0.5857864376269049,1],"layers":2,"kind":"valley","progress":1,"snapAngle":false},
+      "target": {"vertices_coords":[[0,0],[1,0],[1,1],[0,1],[0.4142135623730949,0],[1,0.585786437626905],[0.585786437626905,0.41421356237309503]],"edges_vertices":[[2,3],[3,0],[0,4],[4,1],[1,5],[5,2],[1,6],[6,3],[5,6],[4,6]],"edges_assignment":["B","B","B","B","B","B","V","V","V","M"],"edges_foldAngle":[0,0,0,0,0,0,180,180,180,-180],"faces_vertices":[[5,2,3,6],[6,1,5],[4,1,6],[6,3,0,4]],"faceOrders":[[1,2,1],[0,3,1],[0,1,1],[2,3,-1],[0,2,-1],[1,3,-1]]}
+    },
+    {
+      "caption": "Fold the left corner across to match, over the first flap.",
+      "hint": "Both layers again: bring the left corner over to the right edge, crossing the first flap.",
+      "tool": "fold",
+      "demo": {"tool":"fold","grab":[0,1],"target":[1,0.5857864376269049],"layers":2,"kind":"valley","progress":1,"snapAngle":false},
+      "target": {"vertices_coords":[[0,0],[1,0],[1,1],[0,1],[0.4142135623730949,0],[1,0.585786437626905],[0.585786437626905,0.41421356237309503],[0.585786437626905,1],[0,0.41421356237309503],[0.41421356237309503,0.585786437626905]],"edges_vertices":[[0,4],[4,1],[1,5],[5,2],[1,6],[5,6],[4,6],[2,7],[7,3],[3,8],[8,0],[6,9],[9,3],[9,7],[9,8]],"edges_assignment":["B","B","B","B","V","V","M","B","B","B","B","V","V","V","M"],"edges_foldAngle":[0,0,0,0,180,180,-180,0,0,0,0,180,180,180,-180],"faces_vertices":[[9,6,5,2,7],[6,1,5],[4,1,6],[7,3,9],[8,0,4,6,9],[9,3,8]],"faceOrders":[[1,2,1],[0,4,1],[0,1,1],[2,4,-1],[0,2,-1],[1,4,-1],[3,5,1],[0,3,1],[4,5,-1],[3,4,-1],[0,5,-1],[2,3,-1],[1,5,1],[2,5,1],[1,3,-1]]}
+    },
+    {
+      "caption": "Fold the front top flap down over the corner flaps.",
+      "hint": "Only the top layer: bring the open point down to where the two corner flaps cross.",
+      "tool": "fold",
+      "demo": {"tool":"fold","grab":[1,1],"target":[0.5857864376269049,0.5857864376269049],"layers":1,"kind":"valley","progress":1,"snapAngle":false},
+      "target": {"vertices_coords":[[0,0],[1,0],[1,1],[0,1],[0.4142135623730949,0],[1,0.585786437626905],[0.585786437626905,0.41421356237309503],[0.585786437626905,1],[0,0.41421356237309503],[0.41421356237309503,0.585786437626905]],"edges_vertices":[[0,4],[4,1],[1,5],[5,2],[1,6],[5,6],[4,6],[2,7],[7,3],[3,8],[8,0],[6,9],[9,3],[9,7],[9,8],[8,4]],"edges_assignment":["B","B","B","B","V","V","M","B","B","B","B","V","V","V","M","M"],"edges_foldAngle":[0,0,0,0,180,180,-180,0,0,0,0,180,180,180,-180,-180],"faces_vertices":[[7,9,6,5,2],[6,1,5],[4,1,6],[7,3,9],[9,3,8],[4,6,9,8],[8,0,4]],"faceOrders":[[1,2,1],[0,1,1],[2,5,-1],[0,2,-1],[1,5,-1],[3,4,1],[0,3,1],[4,5,-1],[3,5,-1],[0,4,-1],[2,3,-1],[1,4,1],[2,4,1],[1,3,-1],[5,6,-1],[0,5,1],[0,6,-1],[1,6,1],[2,6,1],[3,6,1],[4,6,1]]}
+    },
+    {
+      "caption": "Turn the cup over.",
+      "hint": "Press Turn over (or its shortcut).",
+      "tool": "turnOver",
+      "target": {"vertices_coords":[[1.414213562373095,0],[0.4142135623730949,0],[0.4142135623730949,1],[1.414213562373095,1],[1,0],[0.4142135623730949,0.585786437626905],[0.82842712474619,0.41421356237309503],[0.82842712474619,1],[1.414213562373095,0.41421356237309503],[0.9999999999999999,0.585786437626905]],"edges_vertices":[[0,4],[4,1],[1,5],[5,2],[1,6],[5,6],[4,6],[2,7],[7,3],[3,8],[8,0],[6,9],[9,3],[9,7],[9,8],[8,4]],"edges_assignment":["B","B","B","B","M","M","V","B","B","B","B","M","M","M","V","V"],"edges_foldAngle":[0,0,0,0,-180,-180,180,0,0,0,0,-180,-180,-180,180,180],"faces_vertices":[[2,5,6,9,7],[5,1,6],[6,1,4],[9,3,7],[8,3,9],[8,9,6,4],[4,0,8]],"faceOrders":[[1,2,-1],[0,1,-1],[2,5,1],[0,2,1],[1,5,1],[3,4,-1],[0,3,-1],[4,5,1],[3,5,1],[0,4,1],[2,3,1],[1,4,-1],[2,4,-1],[1,3,1],[5,6,1],[0,5,-1],[0,6,1],[1,6,-1],[2,6,-1],[3,6,-1],[4,6,-1]]}
+    },
+    {
+      "caption": "Fold the other top flap down to match. Open the cup and it is done.",
+      "hint": "The top layer only: fold the remaining point down over the corner flaps.",
+      "tool": "fold",
+      "camera": "reset",
+      "demo": {"tool":"fold","grab":[0.41421356237309515,1],"target":[0.8284271247461903,0.5857864376269049],"layers":1,"kind":"valley","progress":1,"snapAngle":false},
+      "target": {"vertices_coords":[[1.414213562373095,0],[0.4142135623730949,0],[0.4142135623730949,1],[1.414213562373095,1],[1,0],[0.4142135623730949,0.585786437626905],[0.82842712474619,0.41421356237309503],[0.82842712474619,1],[1.414213562373095,0.41421356237309503],[0.9999999999999999,0.585786437626905]],"edges_vertices":[[0,4],[4,1],[1,5],[5,2],[1,6],[5,6],[4,6],[2,7],[7,3],[3,8],[8,0],[6,9],[9,3],[9,7],[9,8],[8,4],[5,7]],"edges_assignment":["B","B","B","B","M","M","V","B","B","B","B","M","M","M","V","V","V"],"edges_foldAngle":[0,0,0,0,-180,-180,180,0,0,0,0,-180,-180,-180,180,180,180],"faces_vertices":[[5,6,9,7],[5,1,6],[6,1,4],[9,3,7],[8,3,9],[8,9,6,4],[4,0,8],[7,2,5]],"faceOrders":[[1,2,-1],[2,5,1],[1,5,1],[3,4,-1],[4,5,1],[3,5,1],[2,3,1],[1,4,-1],[2,4,-1],[1,3,1],[5,6,1],[1,6,-1],[2,6,-1],[3,6,-1],[4,6,-1],[0,1,-1],[0,2,1],[0,3,-1],[0,4,1],[0,5,-1],[0,6,1],[0,7,1],[5,7,1],[2,7,1],[1,7,1],[4,7,1],[3,7,1],[6,7,1]]}
+    }
+  ]
+}

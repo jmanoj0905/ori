@@ -54,6 +54,7 @@ import { makeVerticesCoordsFolded } from 'rabbit-ear/graph/vertices/folded.js'
 import { makeFacesWinding } from 'rabbit-ear/graph/faces/winding.js'
 import { populate } from 'rabbit-ear/graph/populate.js'
 import { layer } from 'rabbit-ear/layer/layer.js'
+import { axiom1, axiom2, axiom3, axiom4, axiom5, axiom6, axiom7 } from 'rabbit-ear/axioms/axioms.js'
 import type { FOLD, FoldKind, Frame, Line, PaperSize, Vec2 } from './types'
 
 // ---- the untyped surface of rabbit-ear we use, contained here ----
@@ -360,6 +361,33 @@ export function foldThrough(
  */
 export function rebuildAdjacency(frame: Frame): Frame {
   return toFrame(repopulate(clone(frame)))
+}
+
+// ---- designer (Plan 5) ----
+
+type RELine = { vector: number[]; origin: number[] }
+const AXIOMS = [axiom1, axiom2, axiom3, axiom4, axiom5, axiom6, axiom7] as unknown as ((...a: unknown[]) => (RELine | undefined)[] | undefined)[]
+
+/**
+ * Rabbit Ear's Huzita–Justin axiom `n` (1–7), in Rabbit Ear's own argument
+ * order: 1, 2 (p1, p2); 3 (l1, l2); 4 (l, p); 5 (l, p1, p2): through p1,
+ * folding p2 onto l; 6 (l1, l2, p1, p2): p1 onto l1 and p2 onto l2;
+ * 7 (l1, l2, p): p onto l1, perpendicular to l2. Lines are unbounded; no
+ * solution gives []. Degenerate or non-finite results are dropped.
+ */
+export function axiomLines(n: number, args: (Line | Vec2)[]): Line[] {
+  const fn = AXIOMS[n - 1]
+  if (!fn) return []
+  const plain = args.map(a => ('vector' in a ? { vector: [...a.vector], origin: [...a.origin] } : [...a]))
+  let out: (RELine | undefined)[] | undefined
+  try {
+    out = fn(...plain)
+  } catch {
+    return []
+  }
+  return (out ?? [])
+    .filter((l): l is RELine => !!l && [...l.vector, ...l.origin].every(Number.isFinite) && Math.hypot(l.vector[0], l.vector[1]) > EPS)
+    .map(l => ({ origin: [l.origin[0], l.origin[1]] as Vec2, vector: [l.vector[0], l.vector[1]] as Vec2 }))
 }
 
 // ---- topology helpers for the face-subset path ----

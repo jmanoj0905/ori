@@ -37,6 +37,7 @@ describe('the @engine public API', () => {
         'canUndo',
         'canRedo',
         'frameFromFold',
+        'axiomLines',
       ].sort(),
     )
   })

@@ -147,7 +147,31 @@
   margin: 0;
   color: var(--refusal);
 }
-.mode-switch {
-  display: inline-flex;
-  gap: 2px;
+.fold-all {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+.fold-all-result {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.fold-all-result[role='alert'] {
+  color: var(--refusal);
+}
+.designer-issues {
+  padding: 8px 10px;
+  max-height: 22vh;
+  overflow: auto;
+}
+.issues-title {
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
+}
+.issues-list {
+  margin: 6px 0 0;
+  padding-left: 1.2em;
 }

@@ -38,6 +38,8 @@ describe('the @engine public API', () => {
         'canRedo',
         'frameFromFold',
         'axiomLines',
+        'patternFrame',
+        'foldPattern',
       ].sort(),
     )
   })

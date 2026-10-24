@@ -8,7 +8,7 @@ export { poses } from './poses'
 export { landmarks, snapPoint } from './snap'
 export { layerAt, layerRanks } from './layers'
 export { frameFromFold } from './fold'
-export { axiomLines } from './pattern'
+export { axiomLines, patternFrame, foldPattern } from './pattern'
 export { startHistory, push, undo, redo, jumpTo, current, canUndo, canRedo } from './history'
 
 export type { Frame, FaceOrder, Vec2, Line, PaperSize, FoldKind, Tool, Result, Ok, Refusal } from './types'

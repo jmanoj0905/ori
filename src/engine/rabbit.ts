@@ -81,7 +81,7 @@ type RE = {
     ): FoldEvent
     makeVerticesCoordsFolded(g: REGraph, roots: number[]): number[][]
     makeFacesWinding(g: { vertices_coords: number[][]; faces_vertices: number[][] }): boolean[]
-    populate(g: REGraph): REGraph
+    populate(g: REGraph, opts?: { faces?: boolean }): REGraph
   } & Record<BaseName, () => REGraph>
   layer(g: REGraph): SolverNode
 }
@@ -388,6 +388,25 @@ export function axiomLines(n: number, args: (Line | Vec2)[]): Line[] {
   return (out ?? [])
     .filter((l): l is RELine => !!l && [...l.vector, ...l.origin].every(Number.isFinite) && Math.hypot(l.vector[0], l.vector[1]) > EPS)
     .map(l => ({ origin: [l.origin[0], l.origin[1]] as Vec2, vector: [l.vector[0], l.vector[1]] as Vec2 }))
+}
+
+/**
+ * A crease pattern (vertices, edges, assignments; any faces ignored) with its
+ * planar faces built (Rabbit Ear's face walk, outer face dropped) and its
+ * adjacency populated. edges_foldAngle is kept; faceOrders start empty.
+ */
+export function planarFaces(cp: Frame): Frame {
+  const g: REGraph = {
+    vertices_coords: cp.vertices_coords.map(p => [p[0], p[1]]),
+    edges_vertices: cp.edges_vertices.map(([u, v]) => [u, v] as [number, number]),
+    edges_assignment: [...cp.edges_assignment],
+    edges_foldAngle: [...cp.edges_foldAngle],
+    faces_vertices: undefined as unknown as number[][],
+  }
+  delete (g as Record<string, unknown>).faces_vertices
+  re.graph.populate(g, { faces: true })
+  for (const k of ['faces_sectors', 'faces_faces', 'vertices_sectors'] as const) delete (g as Record<string, unknown>)[k]
+  return toFrame(repopulate(g))
 }
 
 // ---- topology helpers for the face-subset path ----

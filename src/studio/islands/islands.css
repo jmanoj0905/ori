@@ -52,6 +52,11 @@
 }
 
 /* ---- top bar ---- */
+/* Sandbox ↔ Designer (spec 07) */
+.mode-switch {
+  display: inline-flex;
+  gap: 2px;
+}
 .topbar {
   top: var(--space);
   left: var(--space);

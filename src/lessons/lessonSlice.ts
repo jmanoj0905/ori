@@ -41,11 +41,14 @@
  *     track frame at or before it; skips at or after it are forgotten.
  *   - Done: `finishedAt` is set when the last step matches or is skipped;
  *     the outline shows the summary.
+ *
+ * The comparison (check.ts) loads with the first lesson, like the lesson
+ * data, so it stays out of the first load (spec 00: lessons are code-split).
  */
 import { PAPER_SIZES, createPaper, current, preview as previewFold, push, startHistory } from '@engine'
 import type { FoldKind, Frame, Gesture, History, PaperSize, Preview, Result, Step, Tool, Vec2 } from '@engine'
 import type { PaperSettings, SheetSize } from '../paper'
-import { checkStep } from './check'
+import type { checkStep } from './check'
 import type { Lesson, LessonStep } from './schema'
 
 /** A hint appears from this many misses on a step. */
@@ -212,6 +215,8 @@ export function createLessonSlice(host: LessonHost): LessonActions {
   let showCtl: AbortController | null = null
   /** Bumped by every start, exit and restart: a slow track build for an old start is dropped. */
   let generation = 0
+  /** checkStep, loaded on demand by the first startLesson. */
+  let judge: typeof checkStep | null = null
 
   const stopShow = () => {
     showCtl?.abort()
@@ -264,6 +269,7 @@ export function createLessonSlice(host: LessonHost): LessonActions {
       stopShow()
       let lesson: Lesson | null = null
       try {
+        judge ??= (await import('./check')).checkStep
         lesson = await host.load(id)
       } catch (e) {
         console.error(`Lesson ${id} failed to load:`, e)
@@ -306,7 +312,7 @@ export function createLessonSlice(host: LessonHost): LessonActions {
       const ok =
         step.tool === 'turnOver'
           ? turned
-          : !turned && checkStep(result.frame, step.target, { allowMirror: step.allowMirror === true }).match
+          : !turned && judge !== null && judge(result.frame, step.target, { allowMirror: step.allowMirror === true }).match
       if (ok) {
         advance(l.index + 1, { message: { kind: 'success', text: SUCCESS_TEXT } }, SUCCESS_TEXT)
         return true

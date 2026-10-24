@@ -83,7 +83,7 @@ for (const f of ['LICENSE.txt', 'THIRD_PARTY_NOTICES.txt']) {
 
 // Spec 00: "Lessons and the designer are code-split": their data and UI stay out of the first load.
 // Each marker is a string only that feature's on-demand chunks contain.
-const SPLIT = { lessons: ['Waterbomb base', 'Lesson summary'] }
+const SPLIT = { lessons: ['Waterbomb base', 'Lesson summary', 'canonical: the sheet outline is not a rectangle'] }
 for (const [feature, markers] of Object.entries(SPLIT)) {
   const leaked = [...eager].filter(f => markers.some(m => readFileSync(join(dist, f), 'utf8').includes(m)))
   if (leaked.length) {

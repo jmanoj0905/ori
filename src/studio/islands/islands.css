@@ -935,3 +935,114 @@ input[type='range'] {
 .dialog p.record-warn {
   color: var(--ink);
 }
+
+/* ---- lesson mode (spec 06) ---- */
+.tool[data-lesson='dimmed'] {
+  opacity: 0.45;
+}
+.tool[data-lesson='expected'] {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.tool[data-lesson='expected'][aria-pressed='true'] {
+  box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 2px var(--ivory);
+}
+.lesson-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lesson-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+}
+.lesson-count {
+  color: var(--ink-soft);
+}
+.lesson-now {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lesson-caption {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+}
+.lesson-msg {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.lesson-msg.miss {
+  color: var(--refusal);
+}
+.lesson-hint {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--ink-faint);
+  border-radius: 0 6px 6px 0;
+}
+.lesson-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ink-check {
+  display: inline-block;
+  color: var(--ink);
+  animation: ink-check var(--settle-ms) ease-out both;
+}
+@keyframes ink-check {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+.step-item[data-state='done'],
+.step-item[data-state='skipped'] {
+  color: var(--ink-soft);
+}
+.step-item:disabled {
+  cursor: default;
+  color: var(--ink-soft);
+}
+.step-mark {
+  float: right;
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.lesson-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lesson-done {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+}
+.lesson-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+.lesson-stats dt {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+.lesson-stats dd {
+  margin: 0;
+}
+.lesson-pick .difficulty {
+  margin-left: 6px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--ink-soft);
+}
+.lesson-empty {
+  margin: 0;
+  color: var(--ink-soft);
+}

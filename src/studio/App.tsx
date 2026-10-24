@@ -31,6 +31,7 @@ import { CoachMark } from './CoachMark'
 import { ShareDialog } from './ShareDialog'
 import { OpenPrompt } from './islands/OpenPrompt'
 import { STAGE_MESSAGES, stageDown, useUi } from './ui'
+import { expectedStep, lessonTarget } from '../lessons/lessonSlice'
 import './islands/islands.css'
 
 // The store and the Stage read reduced motion lazily, from the live setting.
@@ -68,14 +69,36 @@ export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): voi
       // R55: the preview goes away because the fold landed (the commit pushed a
       // step, or the settle tween ended): the Stage lets the flap ease down.
       // A refusal or a cancel leaves the history alone: no landing.
-      const landed = s.history !== prev.history || (prev.settling !== null && prev.preview === null)
+      // Show me's demo (settleStyle.demo) just goes away: nothing landed.
+      const landed = s.history !== prev.history || (prev.settling !== null && prev.preview === null && !prev.settleStyle?.demo)
       const st = prev.gesture ?? prev.settleStyle
       stage.setPreview(null, landed && st ? { kind: st.kind, tool: st.tool, progress: st.progress, land: true } : {})
     } else stage.setPreview(shown, g ? { kind: g.kind, tool: g.tool, progress: g.progress } : {})
   }
 }
 
+let shownTarget: { preview: unknown; pulse: boolean } | null = null
+
+/**
+ * Lesson mode (spec 06): the current step's target ghost on the Stage, and
+ * the step's camera framing when the step changes.
+ */
+export function syncLesson(stage: Stage, s: StudioState, prev?: StudioState, animate = false): void {
+  const t = s.replaying ? null : lessonTarget(s)
+  if (!t) {
+    if (shownTarget) stage.setTarget(null)
+    shownTarget = null
+  } else if (!shownTarget || shownTarget.preview !== t.preview || shownTarget.pulse !== t.pulse) {
+    shownTarget = { preview: t.preview, pulse: t.pulse }
+    stage.setTarget({ preview: t.preview, kind: t.demo.kind, tool: t.demo.tool, points: [t.demo.grab, t.demo.target], pulse: t.pulse })
+  }
+  const step = expectedStep(s)
+  const moved = !prev || s.lesson?.index !== prev.lesson?.index || s.lesson?.id !== prev.lesson?.id
+  if (step?.camera && moved) stage.view(step.camera, animate)
+}
+
 const ReplayBar = lazy(() => import('./replay/ReplayBar'))
+const LessonOutline = lazy(() => import('../lessons/LessonOutline'))
 const RecordDialog = lazy(() => import('./RecordDialog'))
 
 /** Enter replay: stops preset playback first (the Steps island), refused while a commit is pending. */
@@ -94,6 +117,7 @@ export function App() {
   const narrow = useSyncExternalStore(subscribeResize, isNarrow, () => false)
   const folding = useStudio(s => s.gesture !== null)
   const replaying = useStudio(s => s.replaying)
+  const inLesson = useStudio(s => s.lesson !== null)
   // Leaving replay: focus goes back to the Replay button (once the dock is no longer inert).
   const wasReplaying = useRef(false)
   useEffect(() => {
@@ -154,7 +178,11 @@ export function App() {
         ui.setStage('ready')
         setStageReady(st)
         syncStage(st, useStudio.getState())
-        unsubscribe = useStudio.subscribe((s, prev) => syncStage(st, s, prev))
+        syncLesson(st, useStudio.getState())
+        unsubscribe = useStudio.subscribe((s, prev) => {
+          syncStage(st, s, prev)
+          syncLesson(st, s, prev, !prefersReducedMotion(useSettings.getState().reducedMotion))
+        })
         // Dev / e2e-only hook for manual and browser checks. VITE_ORI_E2E is set only by
         // `npm run build:e2e`; in a production build both conditions are constant false and
         // the hook is dropped from the bundle (scripts/bundle-size.mjs asserts it).
@@ -200,7 +228,7 @@ export function App() {
       window.removeEventListener('resize', layout)
       ro?.disconnect()
     }
-  }, [layout, sheetOpen])
+  }, [layout, sheetOpen, inLesson])
   return (
     // Landmarks: the top bar is the page's banner, so it sits beside <main>, not
     // inside it (a banner nested in main is not a top-level landmark). <main> uses
@@ -254,7 +282,13 @@ export function App() {
             </button>
             <Tools onView={stageReady ? v => stageReady.view(v, !prefersReducedMotion(useSettings.getState().reducedMotion)) : undefined} />
             <div className="dock-body" id="dock-body">
-              <Steps onReplay={stageReady ? enterReplay : undefined} />
+              {inLesson ? (
+                <Suspense fallback={null}>
+                  <LessonOutline />
+                </Suspense>
+              ) : (
+                <Steps onReplay={stageReady ? enterReplay : undefined} />
+              )}
               {paperOpen && <PaperPanel onClose={() => setPaperOpen(false)} />}
             </div>
           </div>

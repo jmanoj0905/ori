@@ -10,6 +10,13 @@
 // moving faces as the translucent ghost, plus the accent live crease. The
 // stationary part is rebuilt only when Preview.frame changes; each pointer
 // move rebuilds just the ghost and the live crease.
+//
+// Lesson target (spec 06 "a translucent ghost of the target fold: the crease
+// in diagram dashes and the flap's end position"): setTarget draws the target
+// step's moving faces at their end pose as a faint ink wash, its crease in
+// the fold kind's diagram dashes, and (after 2 misses, `pulse`) rings on the
+// step's grab and target points that pulse (steady under reduced motion). It
+// hides while a live preview is shown.
 import { clientToPlane, planeToClient, pxPerUnit, toNdc } from './pickMath'
 import * as THREE from 'three'
 import type { FacePose, FoldKind, Frame, Preview, Tool, Vec2 } from '@engine'
@@ -40,6 +47,20 @@ import { IVORY, createWashi, detectShadowMapSize, type WashiUniforms } from './w
 import { LAND_MS, flapLift } from './lift'
 
 export type Pick = { face: number; paper: Vec2; folded: Vec2 }
+
+/** A lesson step's target, drawn under the paper's own preview (see the header). */
+export type TargetGhost = { preview: Preview; kind: FoldKind; tool: Tool; points: readonly Vec2[]; pulse: boolean }
+
+type TargetPieces = {
+  group: THREE.Group
+  geometry: THREE.BufferGeometry
+  wash: THREE.Mesh
+  crease: CreaseLines
+  rings: THREE.Mesh[]
+}
+
+const TARGET_OPACITY = 0.16
+const PULSE_MS = 1400
 
 /**
  * An eased value animation: calls `onFrame` with values from `from` to `to`
@@ -157,6 +178,15 @@ export class Stage {
   private disposed = false
   /** Hover landmark marker (spec 03 step 1): a thin ring of constant screen size. */
   private marker: THREE.Mesh | null = null
+  /** The lesson target ghost (setTarget) and its pulse loop. */
+  private targetSpec: TargetGhost | null = null
+  private target: TargetPieces | null = null
+  private readonly targetMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(INK), transparent: true, opacity: TARGET_OPACITY, depthWrite: false, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2,
+  })
+  private readonly ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(ACCENT), transparent: true, opacity: 0.8, depthTest: false, depthWrite: false })
+  private pulseRaf = 0
 
   private readonly tween: Tween
   private readonly reducedMotion: () => boolean
@@ -322,6 +352,78 @@ export class Stage {
     this.invalidate()
   }
 
+  /** Draw (or with null, remove) the lesson step's target ghost. */
+  setTarget(t: TargetGhost | null): void {
+    if (t === this.targetSpec) return
+    this.targetSpec = t
+    this.buildTarget()
+    this.invalidate()
+  }
+
+  /** Whether a lesson target is drawn, and whether its landmarks pulse (e2e). */
+  get targetShown(): { shown: boolean; pulse: boolean } {
+    return { shown: this.target !== null, pulse: this.targetSpec?.pulse === true && this.target !== null }
+  }
+
+  private buildTarget(): void {
+    this.disposeTarget()
+    const t = this.targetSpec
+    if (!t || this.disposed) return
+    const p = t.preview
+    const above = t.tool !== 'fold' || t.kind !== 'mountain'
+    const lo = layerOffsets(p.frame, p.poses, this.gap(), { moving: p.moving, above })
+    const geometry = buildPaperGeometry(p.frame, p.poses, this.gap(), { offsets: lo.offsets, faces: p.moving })
+    const wash = new THREE.Mesh(geometry, this.targetMat)
+    wash.renderOrder = 8
+    const crease = buildLiveCrease(p.crease, t.kind, INK, 2 * this.gap())
+    crease.setViewport(this.width * this.dpr, this.height * this.dpr, this.dpr)
+    crease.renderOrder = 9
+    const group = new THREE.Group()
+    group.add(wash, crease)
+    const rings: THREE.Mesh[] = []
+    if (t.pulse) {
+      for (const q of t.points) {
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 40), this.ringMat)
+        ring.position.set(q[0], q[1], 0.02)
+        ring.renderOrder = 49
+        rings.push(ring)
+        group.add(ring)
+      }
+    }
+    group.visible = !this.preview
+    this.target = { group, geometry, wash, crease, rings }
+    this.scene.add(group)
+    this.updateMarkerScale()
+    if (t.pulse && !this.reducedMotion()) this.startPulse()
+    else this.ringMat.opacity = 0.8
+  }
+
+  private startPulse(): void {
+    if (this.pulseRaf) return
+    const t0 = performance.now()
+    const loop = (now: number) => {
+      this.pulseRaf = 0
+      if (this.disposed || !this.target || !this.targetSpec?.pulse) return
+      const k = 0.5 + 0.5 * Math.cos(((now - t0) / PULSE_MS) * 2 * Math.PI)
+      this.ringMat.opacity = 0.3 + 0.6 * k
+      this.invalidate()
+      this.pulseRaf = requestAnimationFrame(loop)
+    }
+    this.pulseRaf = requestAnimationFrame(loop)
+  }
+
+  private disposeTarget(): void {
+    cancelAnimationFrame(this.pulseRaf)
+    this.pulseRaf = 0
+    const t = this.target
+    if (!t) return
+    t.group.removeFromParent()
+    t.geometry.dispose()
+    t.crease.dispose()
+    for (const r of t.rings) r.geometry.dispose()
+    this.target = null
+  }
+
   /** Show a small ring at a folded-space landmark (null hides it). */
   setHoverMarker(p: Vec2 | null): void {
     if (!p) {
@@ -346,9 +448,11 @@ export class Stage {
   }
 
   private updateMarkerScale(): void {
-    if (!this.marker?.visible) return
+    const rings = this.target?.rings ?? []
+    if (!this.marker?.visible && rings.length === 0) return
     const ppu = this.pxPerUnit()
-    this.marker.scale.setScalar(ppu > 0 ? 8 / ppu : 0.02) // 8 css px radius
+    if (this.marker?.visible) this.marker.scale.setScalar(ppu > 0 ? 8 / ppu : 0.02) // 8 css px radius
+    for (const r of rings) r.scale.setScalar(ppu > 0 ? 11 / ppu : 0.03)
   }
 
   // ---- queries -----------------------------------------------------------
@@ -571,6 +675,9 @@ export class Stage {
     this.committed = null
     this.disposeStationary()
     this.disposeGhostPieces()
+    this.disposeTarget()
+    this.targetMat.dispose()
+    this.ringMat.dispose()
     disposeMaterials(this.materials)
     disposeGhost(this.ghostMats)
     this.shadeMat.dispose()
@@ -686,6 +793,7 @@ export class Stage {
   private buildPreview(): void {
     const p = this.preview
     if (this.committed) this.committed.group.visible = !p
+    if (this.target) this.target.group.visible = !p
     if (!p) {
       this.disposeStationary()
       this.disposeGhostPieces()

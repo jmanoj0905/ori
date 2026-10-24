@@ -17,12 +17,18 @@
 //  - Tab: reading order of the folded model as seen from above, top to bottom
 //    (descending y) and, within a row, left to right (ascending x). Shift+Tab
 //    goes back. Both wrap. From no position, Tab starts at the first landmark.
+//
+// Lessons (spec 06: completable by keyboard): the current step's demo grab and
+// target points (lessons/lessonSlice lessonPoints) join the landmarks, named
+// "lesson grab point" / "lesson target point", and the cursor starts on the
+// grab point.
 import { current, landmarks } from '@engine'
 import type { Landmark, Vec2 } from '@engine'
 import { dragProgress } from './useFoldGesture'
 import { announce as defaultAnnounce, foldWords } from './announce'
 import { useUi, type KeyboardPhase } from './ui'
 import type { StudioState } from './store'
+import { lessonPoints } from '../lessons/lessonSlice'
 
 export type Dir = 'tab' | 'up' | 'down' | 'left' | 'right'
 
@@ -121,6 +127,16 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
   let cursor: Landmark | null = null
   let ls: Landmark[] = []
   let grab: Vec2 | null = null
+  /** Lesson points among `ls` (see the header), by landmark. */
+  let lessonNames = new Map<Landmark, string>()
+  /** Lesson points that are not engine landmarks (named by place only). */
+  const own = new WeakSet<Landmark>()
+  const nameOf = (l: Landmark) => {
+    const extra = lessonNames.get(l)
+    if (!extra) return describeLandmark(l, ls)
+    const place = describeLandmark(l, ls)
+    return own.has(l) ? `${place.slice(0, place.length - KIND_NAMES[l.kind].length).trim()}, ${extra}` : `${place}, ${extra}`
+  }
 
   const setPhase = (p: KeyboardPhase) => {
     phase = p
@@ -134,6 +150,7 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
     cursor = null
     grab = null
     ls = []
+    lessonNames = new Map()
     marker(null)
     setPhase('idle')
   }
@@ -149,7 +166,7 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
   const moveTo = (l: Landmark) => {
     cursor = l
     marker(l.p)
-    const name = describeLandmark(l, ls)
+    const name = nameOf(l)
     if (phase === 'target' && grab) {
       const crease = bisector(grab, l.p)
       if (crease) {
@@ -191,7 +208,7 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
       grab = cursor.p
       store.getState().begin(cursor.p)
       setPhase('target')
-      announce(`Grab point set at ${describeLandmark(cursor, ls)}. Choose where to fold to, then press Enter.`)
+      announce(`Grab point set at ${nameOf(cursor)}. Choose where to fold to, then press Enter.`)
       return
     }
     const { preview, refusal } = store.getState()
@@ -217,10 +234,24 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
       if (store.getState().pending || store.getState().gesture) return
       ls = landmarks(current(store.getState().history))
       if (ls.length === 0) return
-      cursor = nextLandmark(ls, null, 'tab')
+      let start: Landmark | null = null
+      const lp = lessonPoints(store.getState())
+      if (lp) {
+        for (const [p, name] of [[lp.grab, 'lesson grab point'], [lp.target, 'lesson target point']] as const) {
+          let l = ls.find(x => dist(x.p, p) < SAME)
+          if (!l) {
+            l = { p: [p[0], p[1]], kind: 'edge' }
+            own.add(l)
+            ls.push(l)
+          }
+          lessonNames.set(l, lessonNames.has(l) ? `${lessonNames.get(l)} and ${name}` : name)
+          if (name === 'lesson grab point') start = l
+        }
+      }
+      cursor = start ?? nextLandmark(ls, null, 'tab')
       setPhase('grab')
       marker(cursor.p)
-      announce(`Keyboard fold. Choose a grab point with the arrow keys or Tab, then press Enter. ${describeLandmark(cursor, ls)}.`)
+      announce(`Keyboard fold. Choose a grab point with the arrow keys or Tab, then press Enter. ${nameOf(cursor)}.`)
     },
 
     /** Returns true when the key was consumed (the caller then preventDefault()s it). */

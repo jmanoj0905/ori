@@ -37,6 +37,14 @@
 // ignored, so the history and the autosave never change. Paper settings stay
 // live (they are the look, not the model). Entering it ends any gesture or
 // settle; it is refused while a commit is in flight.
+//
+// Lesson mode (spec 06, lessons/lessonSlice.ts): `lesson` / `lessonData` and
+// the lesson actions come from the lesson slice. While a lesson runs, a
+// released fold (pointer or keyboard) and a turn over are judged before they
+// are pushed (`submitFold`): a match pushes the lesson's own frame, a miss
+// is dropped. A turn over on a step that is not one waits for confirmTurn.
+// Undo / redo / jumpTo move the lesson with the cursor; a new sheet or a
+// restored history ends it; the slider cannot re-commit a lesson step.
 import { create } from 'zustand'
 import {
   PAPER_SIZES,
@@ -53,6 +61,11 @@ import type { FoldKind, Gesture, History, Line, PaperSize, Preview, Tool, Vec2 }
 import { createWorkerCommitter, type CommitRequest, type Committer } from './committer'
 import { SETTLE_MS, isReducedMotion, tween } from './motion'
 import { DEFAULT_PAPER, type PaperSettings, type SheetSize } from '../paper'
+import { announce as announceDefault } from './announce'
+import {
+  TURN_CONFIRM, createLessonSlice, expectedStep, type LessonActions, type LessonHost, type LessonProgress, type SettleStyle,
+} from '../lessons/lessonSlice'
+import type { Lesson } from '../lessons/schema'
 
 export { DEFAULT_PAPER, SWATCHES } from '../paper'
 export type { PaperSettings, SheetSize } from '../paper'
@@ -122,7 +135,7 @@ export type StudioState = {
   /** Visual only: the flap easing into its committed angle after a release. */
   settling: Preview | null
   /** The released gesture's draw style (kind / tool / progress), kept for the settle. */
-  settleStyle: { kind: FoldKind; tool: Tool; progress: number } | null
+  settleStyle: SettleStyle | null
   refusal: string | null
   paper: PaperSettings
   hint: string
@@ -179,9 +192,26 @@ export type StudioState = {
    * (material, colours, size) apply.
    */
   newSheet(size?: SheetSize): void
+
+  /** Lesson mode (lessons/lessonSlice): the learner's progress, and the lesson being followed. */
+  lesson: LessonProgress | null
+  lessonData: Lesson | null
+  /** Answer the "turn over anyway?" question (lesson.askTurn); yes turns the model over as a free move. */
+  confirmTurn(yes: boolean): Promise<boolean>
+} & LessonActions
+
+export type StudioOptions = {
+  committer?: Committer
+  reduced?: () => boolean
+  /** Lesson mode's dependencies (tests); by default the bundled lessons load on demand. */
+  lessons?: Partial<Pick<LessonHost, 'load' | 'announce' | 'now' | 'wait' | 'tween'>>
 }
 
-export type StudioOptions = { committer?: Committer; reduced?: () => boolean }
+/** The bundled lessons, loaded on demand (the lesson data is its own chunk). */
+const loadBundledLesson = (id: string): Promise<Lesson | null> =>
+  import('../lessons/schema').then(m => m.loadLessons().find(l => l.id === id) ?? null)
+
+const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
 const sizeOf = (size: SheetSize): PaperSize | null => {
   if (size === 'square' || size === 'a4') return PAPER_SIZES[size]
@@ -191,7 +221,7 @@ const sizeOf = (size: SheetSize): PaperSize | null => {
 
 const idle = { gesture: null, preview: null, refusal: null, settling: null, settleStyle: null } as const
 
-export function createStudioStore({ committer = createWorkerCommitter(), reduced = isReducedMotion }: StudioOptions = {}) {
+export function createStudioStore({ committer = createWorkerCommitter(), reduced = isReducedMotion, lessons = {} }: StudioOptions = {}) {
   return create<StudioState>()((set, get) => {
     let settleCtl: AbortController | null = null
     /** Stop a running settle; callers set `settling: null` themselves (idle does). */
@@ -235,7 +265,8 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
     const dragged = () => get().preview !== null || get().refusal !== null
 
     /** Send `req` to the committer and push its step, unless the history moved meanwhile. */
-    const runCommit = async (req: CommitRequest): Promise<boolean> => {
+    /** `judge`: a learner's own fold or turn over, which lesson mode checks before it is pushed. */
+    const runCommit = async (req: CommitRequest, judge = false): Promise<boolean> => {
       const base = get().history
       const shown = get().preview
       const isReduced = reduced()
@@ -257,6 +288,10 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
         set({ ...idle, refusal: result.reason, pending: false })
         return false
       }
+      if (judge && expectedStep(get())) {
+        set({ ...idle, pending: false })
+        return get().submitFold(base, result)
+      }
       set({ ...idle, history: push(base, result.step, result.frame), pending: false })
       const angle = (result.step.params as { angleDeg?: number } | null)?.angleDeg
       startSettle(base, 'gesture' in req ? req.gesture : undefined, shown, angle ?? NaN, isReduced)
@@ -267,6 +302,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
     const navigate = (h: History) => {
       endSettle()
       set({ ...idle, history: h })
+      if (get().lesson) get().syncLessonIndex()
     }
 
     /** At most one re-commit in flight; later edits merge into `queued` (latest wins). */
@@ -278,7 +314,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
     const recommit = async (edit: NumericEdit): Promise<boolean> => {
       const { gesture, pending, history } = get()
       const last = lastFold(history)
-      if (gesture || pending || !last || get().replaying) return false
+      if (gesture || pending || !last || get().replaying || get().lesson) return false
       const prev = undoHistory(history)
       const g: Gesture = {
         tool: last.tool, grab: last.grab, target: last.target, layers: last.layers, kind: edit.kind ?? last.kind,
@@ -310,7 +346,22 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       return true
     }
 
+    const host: LessonHost = {
+      get,
+      set,
+      commit: req => committer(req),
+      load: lessons.load ?? loadBundledLesson,
+      announce: lessons.announce ?? announceDefault,
+      reduced,
+      tween: lessons.tween ?? tween,
+      wait: lessons.wait ?? sleep,
+      now: lessons.now ?? (() => Date.now()),
+      newSheet: size => get().newSheet(size),
+      setPaper: p => get().setPaper(p),
+    }
+
     return {
+      ...createLessonSlice(host),
       history: startHistory(createPaper(PAPER_SIZES.square)),
       tool: 'fold',
       kind: 'valley',
@@ -320,6 +371,8 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       pending: false,
       restoring: false,
       replaying: false,
+      lesson: null,
+      lessonData: null,
 
       setReplaying(on) {
         if (on === get().replaying) return true
@@ -378,7 +431,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
           set({ gesture: null, preview: null })
           return Promise.resolve(false)
         }
-        return runCommit({ frame: current(history), gesture })
+        return runCommit({ frame: current(history), gesture }, true)
       },
 
       cancel() {
@@ -393,6 +446,23 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
 
       turnOver() {
         if (get().pending || get().replaying) return Promise.resolve(false)
+        const step = expectedStep(get())
+        if (step && step.tool !== 'turnOver') {
+          // Review Focus 3: a turn over that is not the step asks first (confirmTurn)
+          set({ lesson: { ...get().lesson!, askTurn: true } })
+          host.announce(TURN_CONFIRM)
+          return Promise.resolve(false)
+        }
+        endSettle()
+        set(idle)
+        return runCommit({ frame: current(get().history), turnOver: true }, step !== null)
+      },
+
+      confirmTurn(yes) {
+        const l = get().lesson
+        if (!l?.askTurn) return Promise.resolve(false)
+        set({ lesson: { ...l, askTurn: false } })
+        if (!yes || get().pending || get().replaying) return Promise.resolve(false)
         endSettle()
         set(idle)
         return runCommit({ frame: current(get().history), turnOver: true })
@@ -414,6 +484,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
 
       restoreHistory(h) {
         if (get().pending || get().replaying) return
+        get().exitLesson()
         navigate(h)
       },
 
@@ -471,6 +542,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
 
       newSheet(size) {
         if (get().replaying) return
+        get().exitLesson()
         const defaults = size === undefined ? paperDefaultsSource?.() : undefined
         const chosen = size ?? defaults?.size ?? get().paper.size
         const s = sizeOf(chosen)

@@ -1,8 +1,10 @@
 // Right island: the mini crease pattern, the numbered step list (click to jump)
-// and the preset menu (Paper plane, Cup, Crane) with stoppable playback.
+// and the preset menu (Paper plane, Cup, Crane) with stoppable playback, and
+// the Lessons button (the lesson menu loads on demand; spec 06). In lesson
+// mode the App shows the lesson outline here instead.
 // Step N is frames[N]; steps past the cursor are aria-disabled (greyed) but
 // still clickable (jump forward = redo).
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { current } from '@engine'
 import type { History } from '@engine'
 import { useStudio } from '../store'
@@ -21,6 +23,10 @@ export const PRESET_MENU = [
 type PresetId = (typeof PRESET_MENU)[number]['id']
 
 export const CONFIRM_PRESET = 'Playing a preset starts a new sheet and replaces your folds.'
+export const CONFIRM_LESSON = 'Starting a lesson starts a new sheet and replaces your folds.'
+export const LESSON_FAILED = "Couldn't load the lessons. Check your connection and try again."
+
+const LessonMenu = lazy(() => import('../../lessons/LessonMenu'))
 export const REDO_CLEARED = 'Redo history cleared'
 export const PRESET_FAILED = "Couldn't load the preset. Check your connection and try again."
 
@@ -43,6 +49,8 @@ export function Steps({ onReplay }: { onReplay?: () => boolean } = {}) {
   const pending = useStudio(s => s.pending)
   const [playing, setPlaying] = useState<PresetId | null>(null)
   const [ask, setAsk] = useState<PresetId | null>(null)
+  const [lessonsOpen, setLessonsOpen] = useState(false)
+  const [askLesson, setAskLesson] = useState<string | null>(null)
   const [toast, setToast] = useState<History | null>(null)
   const ctl = useRef<AbortController | null>(null)
   /** A Replay click waiting for an in-flight commit to land (one at most; dropped on unmount). */
@@ -111,6 +119,18 @@ export function Steps({ onReplay }: { onReplay?: () => boolean } = {}) {
     else void start(id)
   }
 
+  const startLesson = (id: string) => {
+    stop()
+    setLessonsOpen(false)
+    void useStudio.getState().startLesson(id).catch(() => notify(LESSON_FAILED))
+  }
+  const chooseLesson = (id: string) => {
+    useStudio.getState().cancel()
+    const { history: h } = useStudio.getState()
+    if (h.steps.length > 0 && useSettings.getState().confirmPresetReplace) setAskLesson(id)
+    else startLesson(id)
+  }
+
   const { steps, cursor } = history
   return (
     <section className="island steps" aria-label="Steps">
@@ -159,6 +179,20 @@ export function Steps({ onReplay }: { onReplay?: () => boolean } = {}) {
       )}
       <button
         type="button"
+        className="tbtn text lessons-btn"
+        aria-expanded={lessonsOpen}
+        disabled={down}
+        onClick={() => setLessonsOpen(o => !o)}
+      >
+        Lessons
+      </button>
+      {lessonsOpen && (
+        <Suspense fallback={<p className="lesson-empty">Loading lessons…</p>}>
+          <LessonMenu onPick={chooseLesson} />
+        </Suspense>
+      )}
+      <button
+        type="button"
         className="tbtn text replay-btn"
         disabled={!onReplay || down || cursor === 0 || (pending && !playing)}
         title={cursor === 0 ? 'Fold something to replay it' : 'Replay the folds from the blank sheet'}
@@ -200,6 +234,19 @@ export function Steps({ onReplay }: { onReplay?: () => boolean } = {}) {
             Undo
           </button>
         </div>
+      )}
+      {askLesson !== null && (
+        <ConfirmDialog
+          title="Replace your work?"
+          message={CONFIRM_LESSON}
+          confirmLabel="Start lesson"
+          onCancel={() => setAskLesson(null)}
+          onConfirm={() => {
+            const id = askLesson
+            setAskLesson(null)
+            startLesson(id)
+          }}
+        />
       )}
       {ask !== null && (
         <ConfirmDialog

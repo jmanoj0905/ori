@@ -1,4 +1,6 @@
 // Left island: the tool modes, Turn over, the camera views (R54) and the snap toggles.
+// In a lesson (spec 06 UI) the step's expected tool (or Turn over) is marked
+// data-lesson="expected" and the others "dimmed"; all stay usable.
 import { useEffect } from 'react'
 import type { Tool } from '@engine'
 import { useStudio } from '../store'
@@ -6,6 +8,7 @@ import { useSettings } from '../../settings/store'
 import { stageDown, useUi } from '../ui'
 import type { SnapSettings } from '../../settings/schema'
 import { withShortcut } from '../../settings/describe'
+import { expectedStep } from '../../lessons/lessonSlice'
 
 // Tooltips name the live bindings (describe.withShortcut), never a hard-coded key.
 const TOOLS: { tool: Tool; label: string; title: string; action?: 'reverse' | 'squash' | 'petal' }[] = [
@@ -61,6 +64,8 @@ export function Tools({ onView }: ToolsProps = {}) {
   const snap = useSettings(s => s.snap)
   const keys = useSettings(s => s.bindings)
   const update = useSettings(s => s.update)
+  const expected = useStudio(s => expectedStep(s)?.tool ?? null)
+  const mark = (t: Tool | 'turnOver') => (expected === null ? undefined : expected === t ? 'expected' : 'dimmed')
   return (
     <section className="island tools" aria-label="Tools">
       <div role="group" aria-label="Fold tool" className="stack">
@@ -69,6 +74,7 @@ export function Tools({ onView }: ToolsProps = {}) {
             key={t.tool}
             type="button"
             className="tool"
+            data-lesson={mark(t.tool)}
             aria-pressed={tool === t.tool}
             disabled={down}
             title={t.action ? withShortcut(t.title, keys[t.action]) : t.title}
@@ -78,7 +84,7 @@ export function Tools({ onView }: ToolsProps = {}) {
           </button>
         ))}
       </div>
-      <button type="button" className="tool action" disabled={pending || down} onClick={() => void turnOver()} title={withShortcut('Turn the model over', keys.turnOver)}>
+      <button type="button" className="tool action" data-lesson={mark('turnOver')} disabled={pending || down} onClick={() => void turnOver()} title={withShortcut('Turn the model over', keys.turnOver)}>
         Turn over
       </button>
       <div role="group" aria-label="View" className="stack views">

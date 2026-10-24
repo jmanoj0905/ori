@@ -509,6 +509,12 @@ export class Stage {
     this.invalidate()
   }
 
+  /** A sculpted frame (spec 08) is drawn from its mesh snapshot; null puts the rigid paper back. */
+  setSculpt(s: { positions: readonly number[]; tris: readonly number[]; uv: readonly number[] } | null): void {
+    if (!s) return this.hideSoft()
+    this.showSoft(Uint32Array.from(s.tris), Float32Array.from(s.uv), Float32Array.from(s.positions))
+  }
+
   get softShown(): boolean {
     return this.soft !== null
   }

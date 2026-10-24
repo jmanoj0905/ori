@@ -9,6 +9,8 @@ export { landmarks, snapPoint } from './snap'
 export { layerAt, layerRanks } from './layers'
 export { frameFromFold } from './fold'
 export { axiomLines, patternFrame, foldPattern, commitPattern } from './pattern'
+export { sculpt, sculptOf, validSnapshot, SCULPTED } from './sculpt'
+export type { SculptSnapshot, SculptParams } from './sculpt'
 export { startHistory, push, undo, redo, jumpTo, current, canUndo, canRedo, branch, patternStep } from './history'
 
 export type { Frame, FaceOrder, Vec2, Line, PaperSize, FoldKind, Tool, Result, Ok, Refusal } from './types'

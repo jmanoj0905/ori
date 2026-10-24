@@ -108,6 +108,7 @@
  * 'reverse' / 'squash' / 'petal' in compound.ts (which reuses `plan`,
  * `originsBy`, `settleBy` and friends exported from here).
  */
+import { SCULPTED, sculptOf } from './sculpt'
 import { sweep } from './collision'
 import { clipLineToPolygon, cross, scale, add, sub } from './geometry'
 import { creaseFromDrag, progressToAngle, snapAngle as snapLine } from './gesture'
@@ -215,6 +216,7 @@ export const isFlatFrame = (f: Frame) => f.edges_foldAngle.every(isFlatAngle)
 // ---- dispatch ----
 
 export function preview(frame: Frame, g: Gesture): Result<{ preview: Preview }> {
+  if (sculptOf(frame)) return refuse(SCULPTED)
   const bad = checkGesture(g)
   if (bad) return bad
   switch (g.tool) {
@@ -228,6 +230,7 @@ export function preview(frame: Frame, g: Gesture): Result<{ preview: Preview }> 
 }
 
 export function commit(frame: Frame, g: Gesture): Result<{ frame: Frame; step: Step }> {
+  if (sculptOf(frame)) return refuse(SCULPTED)
   const bad = checkGesture(g)
   if (bad) return bad
   switch (g.tool) {

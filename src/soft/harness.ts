@@ -69,3 +69,32 @@ export async function deviceLoss(): Promise<{ available: boolean; kind?: string;
   sim.step(1 / 60)
   return { available: true, kind: sim.kind, kept, finite: sim.positions().every(Number.isFinite), reason: sim.fellBack }
 }
+
+/**
+ * A flat sheet resting on the desk under the soft-paper defaults: the highest
+ * point after a second, on each solver. (Exactly flat hinges once read as half
+ * turns on SwiftShader's atan2; solver.wgsl's atan2q fixed it.)
+ */
+export async function restingSheet(): Promise<{ available: boolean; gpu?: number; cpu?: number; errors?: string[] }> {
+  const device = await requestDevice()
+  if (!device) return { available: false }
+  const errors: string[] = []
+  device.addEventListener('uncapturederror', e => errors.push((e as GPUUncapturedErrorEvent).error.message))
+  const { SOFT_PARAMS } = await import('./session')
+  const f = createPaper(PAPER_SIZES.square)
+  const mesh = remesh(f, poses(f), 1 / 32)
+  const params = { ...SOFT_PARAMS, collide: false }
+  const cpu = new SoftSolver(mesh, params)
+  const gpu = new GpuSolver(device, mesh, params)
+  for (let k = 0; k < 60; k++) {
+    cpu.step(1 / 60)
+    gpu.step(1 / 60)
+  }
+  const top = (p: ArrayLike<number>) => Math.max(...Array.from(p).filter((_, i) => i % 3 === 2))
+  const g = await gpu.read()
+  const out = { available: true, gpu: top(g), cpu: top(cpu.positions()), errors }
+  gpu.dispose()
+  device.destroy()
+  return out
+}
+

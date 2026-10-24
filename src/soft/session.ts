@@ -133,6 +133,8 @@ export class SoftSession {
   private last = -1
   private stopped = false
   private grab: { pointer: number; index: number; through: [number, number, number] } | null = null
+  /** A pulled point rises by this share of how far it has been pulled (the sheet curls up rather than sliding). */
+  static readonly LIFT = 0.5
   private host: HTMLElement
   private opts: SessionOptions
   private wet = false
@@ -245,7 +247,8 @@ export class SoftSession {
     e.stopPropagation()
     const p = this.stage.rayAt(e.clientX, e.clientY, g.through)
     const floor = SOFT_PARAMS.floor ?? -Infinity
-    this.sim.pin(g.index, [p[0], p[1], Math.max(p[2], floor)]) // never into the desk
+    const lift = g.through[2] + SoftSession.LIFT * Math.hypot(p[0] - g.through[0], p[1] - g.through[1])
+    this.sim.pin(g.index, [p[0], p[1], Math.max(p[2], lift, floor)]) // lifted as it is pulled, never into the desk
   }
 
   private readonly up = (e: PointerEvent): void => {

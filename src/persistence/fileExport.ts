@@ -1,7 +1,7 @@
 // Downloads for the .fold and crease-pattern SVG exports. Loaded on demand
 // (dynamic import) so the exporters stay out of the first-load bundle.
 import { current, type History } from '@engine'
-import { toFoldFile } from './foldExport'
+import { foldExportWarning, toFoldFile } from './foldExport'
 import { toCreasePatternSvg, type SvgOptions } from './svgExport'
 import { download, exportName } from './png'
 import { EXPORT_FAILED, notify } from './notice'
@@ -10,6 +10,8 @@ import { EXPORT_FAILED, notify } from './notice'
 export function exportFold(h: History): void {
   try {
     download(new Blob([toFoldFile(h)], { type: 'application/json' }), exportName(new Date(), h.cursor, 'fold'))
+    const warning = foldExportWarning(h)
+    if (warning) notify(warning)
   } catch {
     notify(EXPORT_FAILED)
   }

@@ -4,8 +4,9 @@ import type { Frame, Tool } from './types'
 /**
  * `pattern`: a crease pattern from the designer (Plan 5), shown unfolded or,
  * after "Fold all", collapsed flat. Its params are PatternParams.
+ * `sculpted`: a soft-paper shape kept as a mesh snapshot (Plan 6, sculpt.ts).
  */
-export type Step = { kind: Tool | 'turnOver' | 'pattern'; params: unknown; label: string; at: number }
+export type Step = { kind: Tool | 'turnOver' | 'pattern' | 'sculpted'; params: unknown; label: string; at: number }
 
 /** A pattern step's record: the crease pattern itself (faces and orders are rebuilt on replay). */
 export type PatternParams = {

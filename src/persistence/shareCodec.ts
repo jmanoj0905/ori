@@ -16,6 +16,10 @@
 //     index pairs) and their assignments (0 B, 1 M, 2 V, 3 F, 4 U); folded is
 //     0 or 1. It is all integers, like the other steps, so version 1 carries
 //     it: v1 links without one decode exactly as before.
+//         | [6, nv, x0, y0, z0, …, nt, a0, b0, c0, …, u0, v0, …]  sculpted (Plan 6)
+//     a sculpted step's mesh snapshot: nv particles (positions in 1e-6 units),
+//     nt triangles, the particles' paper coordinates (1e-6 units). A snapshot
+//     over SCULPT_MAX_BYTES (1 MB) is not put in a link (SCULPT_TOO_LARGE).
 //     coordinates are integers in 1e-10 units, kind 0 valley / 1 mountain, the
 //     fold angle is an integer in 1e-6 degrees (crease origin + vector make a
 //     plain fold replay exactly; compound tools replay from grab / target).
@@ -39,6 +43,10 @@ export const CODEC_VERSION = 1
 export const NEWER = 'This link was made with a newer Ori.'
 export const DAMAGED = 'This link is damaged.'
 export const TOO_LARGE = 'This model is too large to share as a link. Export a .fold file instead.'
+export const SCULPT_TOO_LARGE = 'This model has a sculpted (soft paper) shape over 1 MB, too large to share as a link.'
+/** A sculpted step's snapshot larger than this (as JSON) is not shared (spec 08: "warn that they can't be shared"). */
+export const SCULPT_MAX_BYTES = 1 << 20
+const QS = 1e6 // sculpt snapshot quantum
 
 const Q = 1e10 // coordinate quantum 1e-10 (1e-5 breaks replay: see below)
 const QA = 1e6 // angle quantum 1e-6 degrees
@@ -131,9 +139,34 @@ function unpackPattern(n: number[]): Step {
   return replayStepOf(step) ? step : bad()
 }
 
+function packSculpt(params: unknown): number[] {
+  const rs = replayStepOf({ kind: 'sculpted', params })
+  if (!rs || !('sculpted' in rs)) throw new Error('Step cannot be shared')
+  const s = rs.sculpted
+  if (JSON.stringify(s).length > SCULPT_MAX_BYTES) throw new Error(SCULPT_TOO_LARGE)
+  return [6, s.positions.length / 3, ...s.positions.map(x => q(x, QS)), s.tris.length / 3, ...s.tris, ...s.uv.map(x => q(x, QS))]
+}
+
+function unpackSculpt(n: number[]): Step {
+  const nv = n[1]!
+  const p0 = 2
+  const t0 = p0 + 3 * nv + 1
+  if (!(nv > 0) || n.length < t0) return bad()
+  const nt = n[t0 - 1]!
+  if (!(nt > 0) || n.length !== t0 + 3 * nt + 2 * nv) return bad()
+  const snapshot = {
+    positions: n.slice(p0, p0 + 3 * nv).map(x => x / QS),
+    tris: n.slice(t0, t0 + 3 * nt),
+    uv: n.slice(t0 + 3 * nt).map(x => x / QS),
+  }
+  const step: Step = { kind: 'sculpted', params: { snapshot }, label: 'sculpted', at: 0 }
+  return replayStepOf(step) ? step : bad()
+}
+
 function packStep(step: Step): number[] {
   if (step.kind === 'turnOver') return [4]
   if (step.kind === 'pattern') return packPattern(step.params)
+  if (step.kind === 'sculpted') return packSculpt(step.params)
   const rs = replayStepOf(step)
   if (!rs || !('gesture' in rs)) throw new Error('Step cannot be shared')
   const g = rs.gesture
@@ -191,6 +224,7 @@ function unpackStep(v: unknown): Step {
   if (!isArr(v) || v.length < 1 || !v.every(isInt)) return bad()
   const n = v as number[]
   if (n[0] === 5) return unpackPattern(n)
+  if (n[0] === 6) return unpackSculpt(n)
   if (n[0] === 4) return n.length === 1 ? { kind: 'turnOver', params: { axisX: 0 } /* placeholder: replay recomputes the axis from the frame */, label: 'Turn over', at: 0 } : bad()
   const tool = TOOLS[n[0]!]
   if (!tool) return bad()

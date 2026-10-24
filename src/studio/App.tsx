@@ -8,7 +8,7 @@
 // to 40% while a fold gesture is active (App.css, [data-folding]).
 import './App.css'
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
-import { current, poses } from '@engine'
+import { current, poses, sculptOf } from '@engine'
 import type { Stage } from '../render/Stage'
 import { setPaperDefaultsSource, useStudio, type StudioState } from './store'
 import { useInput } from '../input/useInput'
@@ -56,6 +56,7 @@ export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): voi
     stage.setPaper(s.paper)
     const frame = current(s.history)
     stage.setFrame(frame, poses(frame))
+    stage.setSculpt?.(sculptOf(frame))
     stage.setPreview(s.preview ?? s.settling, {})
     return
   }
@@ -63,6 +64,8 @@ export function syncStage(stage: Stage, s: StudioState, prev?: StudioState): voi
   if (!prev || s.history !== prev.history) {
     const frame = current(s.history)
     stage.setFrame(frame, poses(frame))
+    // a sculpted step (soft paper) is drawn from its mesh snapshot
+    stage.setSculpt?.(sculptOf(frame))
   }
   const shown = s.preview ?? s.settling
   const was = prev && (prev.preview ?? prev.settling)
@@ -133,12 +136,19 @@ export function App() {
   const designing = useUi(s => s.mode === 'designer')
   // Soft paper (spec 08): the session (src/soft, loaded on demand) while it runs.
   const softRef = useRef<SoftSession | null>(null)
-  const stopSoft = useCallback(() => {
+  /** End soft paper. `handOff`: the user left it (snap back or keep a sculpted step); otherwise the model changed under it. */
+  const stopSoft = useCallback((handOff = false) => {
     const session = softRef.current
     if (!session) return
     softRef.current = null
-    session.stop()
+    const { mesh, positions } = session.stop()
     useSoftUi.getState().set({ active: false, busy: false, wet: false, curves: 0, curveDeg: 0, solver: null })
+    if (!handOff) return
+    void import('../soft/handoff').then(m => {
+      const leave = m.leaveSoft(session.frame, mesh, positions)
+      const s = useStudio.getState()
+      if (leave.kind === 'sculpted' && current(s.history) === session.frame) s.pushStep(leave.step, leave.frame)
+    })
   }, [])
   const startSoft = useCallback(async (stage: Stage) => {
     const ui = useSoftUi.getState()
@@ -162,14 +172,14 @@ export function App() {
   useEffect(
     () =>
       useStudio.subscribe((s, prev) => {
-        if (softRef.current && (s.history !== prev.history || s.replaying || s.lesson)) stopSoft()
+        if (softRef.current && (s.history !== prev.history || s.replaying || s.lesson)) stopSoft(false)
       }),
     [stopSoft],
   )
   useEffect(() => {
-    if (designing) stopSoft()
+    if (designing) stopSoft(true)
   }, [designing, stopSoft])
-  useEffect(() => stopSoft, [stopSoft])
+  useEffect(() => () => stopSoft(false), [stopSoft])
   // Leaving replay: focus goes back to the Replay button (once the dock is no longer inert).
   const wasReplaying = useRef(false)
   useEffect(() => {
@@ -336,7 +346,7 @@ export function App() {
               <Tools
                 onView={stageReady ? v => stageReady.view(v, !prefersReducedMotion(useSettings.getState().reducedMotion)) : undefined}
                 soft={{
-                  onToggle: stageReady ? on => (on ? void startSoft(stageReady) : stopSoft()) : undefined,
+                  onToggle: stageReady ? on => (on ? void startSoft(stageReady) : stopSoft(true)) : undefined,
                   onWet: on => {
                     softRef.current?.setWet(on)
                     useSoftUi.getState().set({ wet: on })

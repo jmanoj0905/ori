@@ -35,7 +35,7 @@ test('a device loss switches to the CPU solver and keeps the positions (Review F
   expect(r).toMatchObject({ available: true, kind: 'cpu', kept: true, finite: true })
 })
 
-test('soft paper in the studio: switch it on, pull the sheet, switch it off', async ({ page }) => {
+test('soft paper in the studio: on shows the soft sheet; off with no edit snaps back to the exact frame (no step)', async ({ page }) => {
   await page.evaluate(() => window.__ori!.settings.getState().update({ softPaper: true }))
   const tools = page.getByRole('region', { name: 'Tools' })
   const soft = tools.getByRole('button', { name: 'Soft paper' })
@@ -43,15 +43,39 @@ test('soft paper in the studio: switch it on, pull the sheet, switch it off', as
   await expect(soft).toHaveAttribute('aria-pressed', 'true')
   await expect(tools.getByRole('button', { name: 'Wet' })).toBeEnabled()
   expect(await page.evaluate(() => (window.__ori!.stage as unknown as { softShown: boolean }).softShown)).toBe(true)
-  // pull the top-right corner up and across
+  await page.waitForTimeout(500) // the sheet settles on the desk
+  await soft.click()
+  await expect(soft).toHaveAttribute('aria-pressed', 'false')
+  await page.waitForTimeout(300)
+  expect(await page.evaluate(() => window.__ori!.store.getState().history.steps.length)).toBe(0)
+  expect(await page.evaluate(() => (window.__ori!.stage as unknown as { softShown: boolean }).softShown)).toBe(false)
+})
+
+test('leaving soft paper with a sculpted shape keeps it as a step; undo is back on the exact folded frame', async ({ page }) => {
+  await page.evaluate(() => window.__ori!.settings.getState().update({ softPaper: true }))
+  const tools = page.getByRole('region', { name: 'Tools' })
+  await tools.getByRole('button', { name: 'Soft paper' }).click()
+  await tools.getByRole('button', { name: 'Wet' }).click()
   const [x, y] = await page.evaluate(() => window.__ori!.stage.clientOf([0.95, 0.95]))
   await page.mouse.move(x, y)
   await page.mouse.down()
-  await page.mouse.move(x - 120, y - 80, { steps: 8 })
-  await page.mouse.up()
-  // the rigid model is untouched while soft (no fold was committed)
-  expect(await page.evaluate(() => window.__ori!.store.getState().history.steps.length)).toBe(0)
-  await soft.click()
-  await expect(soft).toHaveAttribute('aria-pressed', 'false')
+  await page.mouse.move(x - 250, y - 120, { steps: 15 })
+  await page.waitForTimeout(600)
+  await page.mouse.up() // wet: it dries in this shape
+  await page.waitForTimeout(300)
+  await tools.getByRole('button', { name: 'Soft paper' }).click()
+  await expect.poll(() => page.evaluate(() => window.__ori!.store.getState().history.steps.map((s: { kind: string }) => s.kind))).toEqual(['sculpted'])
+  expect(await page.evaluate(() => (window.__ori!.stage as unknown as { softShown: boolean }).softShown)).toBe(true) // drawn from the snapshot
+  await expect(page.getByRole('list', { name: 'Fold steps' })).toContainText('Sculpted (soft paper)')
+  await page.getByRole('button', { name: 'Undo' }).click()
+  expect(await page.evaluate(() => window.__ori!.store.getState().history.cursor)).toBe(0)
   expect(await page.evaluate(() => (window.__ori!.stage as unknown as { softShown: boolean }).softShown)).toBe(false)
+})
+
+test('a flat sheet resting on the desk stays flat on the GPU, as on the CPU', async ({ page }) => {
+  const r = await page.evaluate(async () => ((await (window.__ori as unknown as { soft(): Promise<{ restingSheet(): Promise<{ available: boolean; gpu?: number; cpu?: number; errors?: string[] }> }> }).soft()).restingSheet()))
+  console.log(`[soft] ${JSON.stringify(r)}`)
+  expect(r).toMatchObject({ available: true, errors: [] })
+  expect(r.cpu!).toBeLessThan(1e-4)
+  expect(r.gpu!).toBeLessThan(1e-4)
 })

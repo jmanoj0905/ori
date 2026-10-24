@@ -54,10 +54,12 @@ import {
   preview as previewFold,
   push,
   redo as redoHistory,
+  SCULPTED,
+  sculptOf,
   startHistory,
   undo as undoHistory,
 } from '@engine'
-import type { FoldKind, Gesture, History, Line, PaperSize, Preview, Tool, Vec2 } from '@engine'
+import type { FoldKind, Frame, Gesture, History, Line, PaperSize, Preview, Step, Tool, Vec2 } from '@engine'
 import { createWorkerCommitter, type CommitRequest, type Committer } from './committer'
 import { SETTLE_MS, isReducedMotion, tween } from './motion'
 import { DEFAULT_PAPER, type PaperSettings, type SheetSize } from '../paper'
@@ -170,6 +172,11 @@ export type StudioState = {
   commitStep(step: Gesture | { tool: 'turnOver' }): Promise<CommitStepResult>
   /** Restore a History captured earlier (toast Undo): like undo / jumpTo, drops any gesture, ignored while pending. */
   restoreHistory(h: History): void
+  /**
+   * Push a step made outside the committer (soft paper's sculpted step, spec 08).
+   * Ignored (false) while a commit is pending or replaying, or in a lesson.
+   */
+  pushStep(step: Step, frame: Frame): boolean
   /**
    * Numeric input / angle slider. While a gesture is active it sets
    * Gesture.crease / Gesture.angleDeg and re-runs the preview. Otherwise it
@@ -446,6 +453,10 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
 
       turnOver() {
         if (get().pending || get().replaying) return Promise.resolve(false)
+        if (sculptOf(current(get().history))) {
+          set({ ...idle, refusal: SCULPTED })
+          return Promise.resolve(false)
+        }
         const step = expectedStep(get())
         if (step && step.tool !== 'turnOver') {
           // Review Focus 3: a turn over that is not the step asks first (confirmTurn)
@@ -486,6 +497,12 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
         if (get().pending || get().replaying) return
         get().exitLesson()
         navigate(h)
+      },
+
+      pushStep(step, frame) {
+        if (get().pending || get().replaying || get().lesson) return false
+        navigate(push(get().history, step, frame))
+        return true
       },
 
       setNumeric(edit) {

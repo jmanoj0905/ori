@@ -27,8 +27,8 @@ import { collide, type CollisionOptions, type CollisionResult } from './collisio
 export const MAX_DT = 1 / 30
 /** Wet paper: bending and crease compliance are multiplied by this (softer). */
 export const WET_SOFTER = 25
-/** Share of a substep's slide along the desk that friction takes back. */
-export const DESK_FRICTION = 0.9
+/** The desk's friction coefficient μ (positional Coulomb friction: up to μ × the depth pressed into it). */
+export const DESK_FRICTION = 0.8
 const DEG = Math.PI / 180
 
 export type Vec3 = [number, number, number]
@@ -250,11 +250,16 @@ export class SoftSolver {
     const floor = this.params.floor
     if (floor !== null && floor !== undefined)
       for (let i = 0; i < this.x.length; i += 3) {
-        if (this.x[i + 2]! >= floor) continue
-        // on the desk: held there, and most of this substep's slide taken back (friction)
+        const depth = floor - this.x[i + 2]!
+        if (depth <= 0) continue
+        // on the desk: back on it, and Coulomb friction (up to μ × the depth) takes back the slide
         this.x[i + 2] = floor
-        this.x[i] = prev[i]! + (this.x[i]! - prev[i]!) * (1 - DESK_FRICTION)
-        this.x[i + 1] = prev[i + 1]! + (this.x[i + 1]! - prev[i + 1]!) * (1 - DESK_FRICTION)
+        const dx = this.x[i]! - prev[i]!
+        const dy = this.x[i + 1]! - prev[i + 1]!
+        const slide = Math.hypot(dx, dy)
+        const keep = slide <= DESK_FRICTION * depth ? 0 : 1 - (DESK_FRICTION * depth) / slide
+        this.x[i] = prev[i]! + dx * keep
+        this.x[i + 1] = prev[i + 1]! + dy * keep
       }
     const c = this.params.collide
     if (c) this.lastCollision = collide(this.x, prev, this.mesh, w, c === true ? {} : c)

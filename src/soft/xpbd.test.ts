@@ -135,7 +135,14 @@ describe('the desk', () => {
 })
 
 describe('the desk holds the paper', () => {
-  test('pulling one corner sideways lifts and curls the sheet more than it slides it', () => {
+  test('a sheet resting on the desk stays flat (friction does not fight the paper)', () => {
+    const m = meshOf(sheet(), 1 / 32)
+    const s = new SoftSolver(m, params({ gravity: [0, 0, -2], floor: 0, iterations: 8 }))
+    for (let k = 0; k < 60; k++) s.step(1 / 60)
+    expect(Math.max(...z(s))).toBeLessThan(1e-4)
+  })
+
+  test('pulling one corner up and across curls the sheet; the far corner moves less than half as far', () => {
     const m = meshOf(sheet())
     const s = new SoftSolver(m, params({ gravity: [0, 0, -2], floor: 0 }))
     const corner = where(m, (x, y) => x > 0.999 && y > 0.999)[0]!
@@ -145,7 +152,7 @@ describe('the desk holds the paper', () => {
       s.step(1 / 60)
     }
     const p = s.positions()
-    expect(Math.hypot(p[3 * far]!, p[3 * far + 1]!)).toBeLessThan(0.1) // the far corner barely moves
+    expect(Math.hypot(p[3 * far]!, p[3 * far + 1]!)).toBeLessThan(0.5 * 0.4 * Math.SQRT2) // the desk holds the rest of the sheet back
     expect(Math.max(...z(s))).toBeGreaterThan(0.3)
   })
 })

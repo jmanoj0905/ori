@@ -107,7 +107,7 @@ describe('the soft session', () => {
 })
 
 describe('the governor and grabs', () => {
-  test('a slow machine coarsens the mesh only between grabs, and grab targets stay above the desk', async () => {
+  test('a slow machine coarsens the mesh only between grabs, and grab targets rise as they are pulled, never into the desk', async () => {
     const { stage, canvas } = fakeStage()
     stage.rayAt = () => [0.5, 0.5, -0.3] // a pointer ray that would go into the desk
     const f = frames()
@@ -116,7 +116,8 @@ describe('the governor and grabs', () => {
     canvas.dispatchEvent(new PointerEvent('pointerdown', { button: 0, pointerId: 1, bubbles: true }))
     const pin = vi.spyOn(s.sim, 'pin')
     window.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1 }))
-    expect(pin).toHaveBeenLastCalledWith(0, [0.5, 0.5, 0])
+    // never into the desk: lifted by half the distance pulled instead
+    expect(pin).toHaveBeenLastCalledWith(0, [0.5, 0.5, 0.5 * Math.hypot(0.5, 0.5)])
     // 30 slow frames (40 ms each): iterations drop to the minimum, then a coarser mesh is due
     let t = 0
     for (let k = 0; k < 30; k++) f.run((t += 40))

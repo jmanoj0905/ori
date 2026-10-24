@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { PAPER_SIZES, branch, commit, createPaper, startHistory, turnOver, type Frame } from '@engine'
+import { PAPER_SIZES, branch, commit, createPaper, push, sculpt, startHistory, turnOver, type Frame } from '@engine'
 import { PRESETS, runPreset } from '../presets'
 import { checkStep } from './check'
 import { LAUNCH_LESSONS, loadLessons, parseLesson, sheetOf, type Lesson } from './schema'
@@ -155,6 +155,14 @@ describe('devExport', () => {
     const sheet = createPaper(PAPER_SIZES.square)
     const h = branch(startHistory(sheet), sheet)
     expect(() => lessonSkeleton(h, { id: 'x', title: 'X', difficulty: 1, paper: 'square' })).toThrow(/crease pattern/)
+  })
+
+  test('a sculpted (soft paper) step cannot become a lesson step (phase 5 decision 3)', () => {
+    const sheet = createPaper(PAPER_SIZES.square)
+    const r = sculpt(sheet, { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0.2], tris: [0, 1, 2], uv: [0, 0, 1, 0, 0, 1] })
+    if (!r.ok) throw new Error(r.reason)
+    const h = push(startHistory(sheet), r.step, r.frame)
+    expect(() => lessonSkeleton(h, { id: 'x', title: 'X', difficulty: 1, paper: 'square' })).toThrow(/sculpted/)
   })
 
   test('gestureOf rebuilds the committed gesture from the step params (tool, grab, target, layers, kind, snap, face)', () => {

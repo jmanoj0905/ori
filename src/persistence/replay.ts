@@ -8,10 +8,12 @@
 // with snapAngle off and progress 1; crease + angleDeg make the replay exact
 // for plain folds (compound tools record neither and replay from grab /
 // target / layers / kind). A designer pattern step (Plan 5) records its crease
-// pattern and whether it was folded flat; it replays through commitPattern.
+// pattern and whether it was folded flat; it replays through commitPattern. A
+// sculpted step (Plan 6, soft paper) records its mesh snapshot and replays on
+// top of the frame before it (engine `sculpt`).
 // Any refusal, throw or malformed field means the save is corrupt (null).
-import { PAPER_SIZES, commit, commitPattern, createPaper, frameFromFold, jumpTo, push, startHistory, turnOver } from '@engine'
-import type { Gesture, History, Line, PatternParams, Tool, Vec2 } from '@engine'
+import { PAPER_SIZES, commit, commitPattern, createPaper, frameFromFold, jumpTo, push, sculpt, startHistory, turnOver, validSnapshot } from '@engine'
+import type { Gesture, History, Line, PatternParams, SculptSnapshot, Tool, Vec2 } from '@engine'
 import { cleanPaper, type PaperSettings, type SheetSize } from '../paper'
 
 /**
@@ -21,7 +23,7 @@ import { cleanPaper, type PaperSettings, type SheetSize } from '../paper'
  */
 export const MAX_RESTORE_STEPS = 1000
 
-export type ReplayStep = { turnOver: true } | { gesture: Gesture } | { pattern: PatternParams }
+export type ReplayStep = { turnOver: true } | { gesture: Gesture } | { pattern: PatternParams } | { sculpted: SculptSnapshot }
 
 /** A validated save, ready to replay. */
 export type SavedModel = { paper: PaperSettings; steps: ReplayStep[]; cursor: number }
@@ -79,6 +81,10 @@ export function replayStepOf(s: unknown): ReplayStep | null {
     const p = patternOf(s.params)
     return p && { pattern: p }
   }
+  if (s.kind === 'sculpted') {
+    const snap = isObj(s.params) ? s.params.snapshot : undefined
+    return validSnapshot(snap) ? { sculpted: snap } : null
+  }
   const g = gestureOf(s.params)
   return g && s.kind === g.tool ? { gesture: g } : null
 }
@@ -109,7 +115,11 @@ export function replaySave(saved: SavedModel): Restored | null {
   let h = startHistory(createPaper(sizeOf(saved.paper.size)))
   for (const s of saved.steps) {
     const frame = h.frames[h.cursor]
-    const res = 'turnOver' in s ? turnOver(frame) : 'pattern' in s ? commitPattern(s.pattern) : commit(frame, s.gesture)
+    const res =
+      'turnOver' in s ? turnOver(frame)
+        : 'pattern' in s ? commitPattern(s.pattern)
+          : 'sculpted' in s ? sculpt(frame, s.sculpted)
+            : commit(frame, s.gesture)
     if (!res.ok) return null
     h = push(h, res.step, res.frame)
   }

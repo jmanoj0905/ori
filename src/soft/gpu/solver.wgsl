@@ -66,6 +66,19 @@ fn distances(@builtin(global_invocation_id) id: vec3<u32>) {
 
 const PI = 3.14159265358979;
 
+// atan2 by quadrant: some WebGPU implementations (SwiftShader) return ±π for
+// atan2(0, x > 0), which turned every exactly flat hinge into a half turn.
+fn atan2q(y: f32, x: f32) -> f32 {
+  if (x > 0.0) { return atan(y / x); }
+  if (x < 0.0) {
+    if (y >= 0.0) { return atan(y / x) + PI; }
+    return atan(y / x) - PI;
+  }
+  if (y > 0.0) { return 0.5 * PI; }
+  if (y < 0.0) { return -0.5 * PI; }
+  return 0.0;
+}
+
 fn wrapAngle(x: f32) -> f32 {
   return x - 2.0 * PI * round(x / (2.0 * PI));
 }
@@ -92,7 +105,7 @@ fn hinges(@builtin(global_invocation_id) id: vec3<u32>) {
   let l1 = dot(n1, n1);
   let l2 = dot(n2, n2);
   if (el < 1e-12 || l1 < 1e-24 || l2 < 1e-24) { return; }
-  let theta = -atan2(dot(cross(n1, n2), e) / el, dot(n1, n2));
+  let theta = -atan2q(dot(cross(n1, n2), e) / el, dot(n1, n2));
   let m1 = n1 / l1;
   let m2 = n2 / l2;
   let ga = dot(x1 - x4, e) / el * m1 + dot(x2 - x4, e) / el * m2;
@@ -116,9 +129,14 @@ fn velocities(@builtin(global_invocation_id) id: vec3<u32>) {
   if (i >= sim.n) { return; }
   var p = pos[i];
   if (sim.floorOn == 1u && p.z < sim.gravity.w) {
-    // on the desk: held there, and most of the slide taken back (friction, as xpbd.ts DESK_FRICTION)
+    // on the desk: back on it, and Coulomb friction (μ = xpbd.ts DESK_FRICTION) takes back the slide
+    let depth = sim.gravity.w - p.z;
     let q = prev[i];
-    p = vec4<f32>(q.x + (p.x - q.x) * 0.1, q.y + (p.y - q.y) * 0.1, sim.gravity.w, p.w);
+    let d = p.xy - q.xy;
+    let slide = length(d);
+    var keep = 0.0;
+    if (slide > 0.8 * depth) { keep = 1.0 - 0.8 * depth / slide; }
+    p = vec4<f32>(q.xy + d * keep, sim.gravity.w, p.w);
     pos[i] = p;
   }
   vel[i] = vec4<f32>((p.xyz - prev[i].xyz) / sim.h * sim.keep, 0.0);

@@ -10,7 +10,7 @@ import { useModal } from './useModal'
 export const SHARE_LIMIT = 4096
 export const LONG_LINK = 'This link is long and may not work everywhere. Consider exporting a .fold file instead.'
 
-type Link = { state: 'working' } | { state: 'ready'; url: string } | { state: 'failed' }
+type Link = { state: 'working' } | { state: 'ready'; url: string } | { state: 'failed'; reason?: string }
 
 export function ShareDialog({ onClose }: { onClose(): void }) {
   const { ref, onKeyDown } = useModal(onClose)
@@ -27,7 +27,15 @@ export function ShareDialog({ onClose }: { onClose(): void }) {
     import('../persistence/shareCodec')
       .then(m => {
         if (!live) return
-        const code = m.encodeShare(paper, history.steps.slice(0, history.cursor))
+        let code: string
+        try {
+          code = m.encodeShare(paper, history.steps.slice(0, history.cursor))
+        } catch (e) {
+          // a model too large for a link (or a sculpted shape over 1 MB) says so
+          const reason = e instanceof Error && (e.message === m.TOO_LARGE || e.message === m.SCULPT_TOO_LARGE) ? e.message : undefined
+          setLink({ state: 'failed', reason })
+          return
+        }
         setLink({ state: 'ready', url: `${location.origin}${location.pathname}${location.search}#${code}` })
       })
       .catch(() => live && setLink({ state: 'failed' }))
@@ -63,7 +71,7 @@ export function ShareDialog({ onClose }: { onClose(): void }) {
         <h2 id={`${id}-t`}>Share this model</h2>
         <p>Anyone with the link can open the model as you see it now. Nothing is uploaded.</p>
         {link.state === 'failed' ? (
-          <p role="alert">Couldn't make a link for this model.</p>
+          <p role="alert">{link.reason ?? "Couldn't make a link for this model."}</p>
         ) : (
           <input
             ref={field}

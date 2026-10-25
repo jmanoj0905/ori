@@ -128,11 +128,15 @@ export type NumericEdit = { crease?: Line; angleDeg?: number; kind?: FoldKind }
 /** `refused`: the engine (or committer) rejected the step; false when merely skipped (pending / history moved). */
 export type CommitStepResult = { ok: true } | { ok: false; refused: boolean; reason: string | null }
 
+export type DragOptions = { crease?: Line; kind?: FoldKind; reading?: 'swing' | 'new' }
+
 export type StudioState = {
   history: History
   tool: Tool
   kind: FoldKind
   gesture: Gesture | null
+  /** Which reading the live drag has: a swing on an existing hinge, a new fold, or none yet. */
+  reading: 'swing' | 'new' | null
   preview: Preview | null
   /** Visual only: the flap easing into its committed angle after a release. */
   settling: Preview | null
@@ -153,7 +157,12 @@ export type StudioState = {
 
   /** Start a fold gesture; `face` is the face hit at grab (Gesture.face). */
   begin(grab: Vec2, face?: number): void
-  drag(target: Vec2, progress: number): void
+  /**
+   * Move the live gesture. `opts.crease` / `opts.kind` pin a swing on an existing
+   * hinge (or a snapped new fold); without them the crease is derived and the
+   * kind is the store's. `opts.reading` labels the fold bar.
+   */
+  drag(target: Vec2, progress: number, opts?: DragOptions): void
   setLayers(k: number): void
   setKind(k: FoldKind): void
   /** Hold-to-snap the fold angle (angleSnap modifier); re-previews mid-drag. */
@@ -226,7 +235,7 @@ const sizeOf = (size: SheetSize): PaperSize | null => {
   return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? { width, height } : null
 }
 
-const idle = { gesture: null, preview: null, refusal: null, settling: null, settleStyle: null } as const
+const idle = { gesture: null, reading: null, preview: null, refusal: null, settling: null, settleStyle: null } as const
 
 export function createStudioStore({ committer = createWorkerCommitter(), reduced = isReducedMotion, lessons = {} }: StudioOptions = {}) {
   return create<StudioState>()((set, get) => {
@@ -398,10 +407,13 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
         set({ ...idle, gesture: face === undefined ? g : { ...g, face } })
       },
 
-      drag(target, progress) {
-        const { gesture, pending } = get()
+      drag(target, progress, opts) {
+        const { gesture, pending, kind } = get()
         if (!gesture || pending) return
-        runPreview({ ...gesture, target, progress })
+        const { crease: _old, ...rest } = gesture
+        const g: Gesture = { ...rest, target, progress, kind: opts?.kind ?? kind }
+        set({ reading: opts?.reading ?? null })
+        runPreview(opts?.crease ? { ...g, crease: opts.crease } : g)
       },
 
       setLayers(k) {
@@ -415,8 +427,8 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
       setKind(kind) {
         if (get().pending || get().replaying) return
         set({ kind })
-        const { gesture } = get()
-        if (!gesture) return
+        const { gesture, reading } = get()
+        if (!gesture || reading === 'swing') return
         const g = { ...gesture, kind }
         if (dragged()) runPreview(g)
         else set({ gesture: g })
@@ -435,7 +447,7 @@ export function createStudioStore({ committer = createWorkerCommitter(), reduced
         if (pending || !gesture) return Promise.resolve(false)
         if (!preview || refusal) {
           // Nothing valid to commit: end the gesture, keep the refusal for the hint line.
-          set({ gesture: null, preview: null })
+          set({ gesture: null, reading: null, preview: null })
           return Promise.resolve(false)
         }
         return runCommit({ frame: current(history), gesture }, true)

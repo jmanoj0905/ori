@@ -139,6 +139,7 @@ export function FoldBar() {
   const history = useStudio(s => s.history)
   const kind = useStudio(s => s.kind)
   const pending = useStudio(s => s.pending)
+  const reading = useStudio(s => s.reading)
   const setKind = useStudio(s => s.setKind)
   const setNumeric = useStudio(s => s.setNumeric)
   const setLastFold = useStudio(s => s.setLastFold)
@@ -171,6 +172,7 @@ export function FoldBar() {
   useEffect(() => setOpen(false), [live, gesture?.grab, history.cursor, history.steps.length])
 
   if (!subject) return null
+  const swinging = live && reading === 'swing'
 
   const k = live ? gesture.layers : subject.layers
   const shownKind: FoldKind = live ? kind : subject.kind
@@ -214,10 +216,10 @@ export function FoldBar() {
       )}
       <div className="fold-row">
         <div role="group" aria-label="Fold direction" className="seg kinds">
-          <button type="button" aria-pressed={shownKind === 'valley'} disabled={pending} onClick={() => onKind('valley')}>
+          <button type="button" aria-pressed={shownKind === 'valley'} disabled={pending || swinging} onClick={() => onKind('valley')}>
             <span className="glyph" aria-hidden="true">┄┄</span> Valley
           </button>
-          <button type="button" aria-pressed={shownKind === 'mountain'} disabled={pending} onClick={() => onKind('mountain')}>
+          <button type="button" aria-pressed={shownKind === 'mountain'} disabled={pending || swinging} onClick={() => onKind('mountain')}>
             <span className="glyph" aria-hidden="true">┄·┄</span> Mountain
           </button>
         </div>
@@ -237,6 +239,8 @@ export function FoldBar() {
           />
           <output className="mono" aria-hidden="true">{Math.round(angle)}°</output>
         </label>
+
+        {live && reading && <span className="mono" data-testid="reading">{reading === 'swing' ? 'Swing on crease' : 'New fold'}</span>}
 
         <div className="badge" role="group" aria-label="Layers">
           <span className="mono" data-testid="layer-badge">{k} of {total} {total === 1 ? 'layer' : 'layers'}</span>

@@ -50,6 +50,7 @@ describe('the @engine public API', () => {
         'branch',
         'patternStep',
         'hingesAt',
+        'progressToAngle',
       ].sort(),
     )
   })

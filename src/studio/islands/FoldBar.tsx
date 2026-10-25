@@ -175,7 +175,7 @@ export function FoldBar() {
   const swinging = live && reading === 'swing'
 
   const k = live ? gesture.layers : subject.layers
-  const shownKind: FoldKind = live ? kind : subject.kind
+  const shownKind: FoldKind = live ? (gesture.kind ?? kind) : subject.kind
   const liveAngle = live ? (gesture.angleDeg ?? preview?.angleDeg ?? 0) : last!.angleDeg
   const angle = local ?? liveAngle
   const canAngle = tool === 'fold'

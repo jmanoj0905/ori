@@ -1,0 +1,35 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`toCreasePatternSvg > snapshot: the paper plane crease pattern > blank 1`] = `
+"<svg xmlns="http://www.w3.org/2000/svg" width="314.843px" height="432px" viewBox="0 0 314.843 432">
+<title>Crease pattern</title>
+<rect width="314.843" height="432" fill="#ffffff"/>
+<path class="cp-boundary" d="M16 416L298.843 416M298.843 416L298.843 16M298.843 16L16 16M16 16L16 416" fill="none" stroke="#26231f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+"
+`;
+
+exports[`toCreasePatternSvg > snapshot: the paper plane crease pattern > plane 1`] = `
+"<svg xmlns="http://www.w3.org/2000/svg" width="314.843px" height="432px" viewBox="0 0 314.843 432">
+<title>Crease pattern</title>
+<rect width="314.843" height="432" fill="#ffffff"/>
+<g class="cp-grid" stroke="#b9b3a8" stroke-width="0.6" fill="none"><line class="cp-grid-line" x1="86.711" y1="16" x2="86.711" y2="416"/><line class="cp-grid-line" x1="16" y1="116" x2="298.843" y2="116"/><line class="cp-grid-line" x1="157.421" y1="16" x2="157.421" y2="416"/><line class="cp-grid-line" x1="16" y1="216" x2="298.843" y2="216"/><line class="cp-grid-line" x1="228.132" y1="16" x2="228.132" y2="416"/><line class="cp-grid-line" x1="16" y1="316" x2="298.843" y2="316"/></g>
+<line class="cp-valley" x1="157.421" y1="16" x2="298.843" y2="74.579" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 4" stroke-linecap="round"/>
+<line class="cp-valley" x1="157.421" y1="16" x2="16" y2="74.579" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 4" stroke-linecap="round"/>
+<line class="cp-valley" x1="157.421" y1="16" x2="157.421" y2="416" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 4" stroke-linecap="round"/>
+<line class="cp-valley" x1="157.421" y1="16" x2="16" y2="227.652" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 4" stroke-linecap="round"/>
+<line class="cp-valley" x1="157.421" y1="16" x2="16" y2="44.13" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 4" stroke-linecap="round"/>
+<line class="cp-valley" x1="157.421" y1="16" x2="298.843" y2="227.652" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 4" stroke-linecap="round"/>
+<line class="cp-valley" x1="157.421" y1="16" x2="298.843" y2="44.13" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 4" stroke-linecap="round"/>
+<line class="cp-mountain" x1="298.843" y1="157.421" x2="157.421" y2="16" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 3 1.5 3" stroke-linecap="round"/>
+<line class="cp-mountain" x1="157.421" y1="16" x2="16" y2="157.421" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 3 1.5 3" stroke-linecap="round"/>
+<line class="cp-mountain" x1="157.421" y1="16" x2="298.843" y2="357.421" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 3 1.5 3" stroke-linecap="round"/>
+<line class="cp-mountain" x1="157.421" y1="16" x2="16" y2="357.421" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 3 1.5 3" stroke-linecap="round"/>
+<line class="cp-mountain" x1="157.421" y1="16" x2="77.856" y2="416" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 3 1.5 3" stroke-linecap="round"/>
+<line class="cp-mountain" x1="157.421" y1="16" x2="16" y2="110.495" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 3 1.5 3" stroke-linecap="round"/>
+<line class="cp-mountain" x1="157.421" y1="16" x2="298.843" y2="110.495" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 3 1.5 3" stroke-linecap="round"/>
+<line class="cp-mountain" x1="157.421" y1="16" x2="236.986" y2="416" stroke="#26231f" stroke-width="1.4" stroke-dasharray="6 3 1.5 3" stroke-linecap="round"/>
+<path class="cp-boundary" d="M16 16L157.421 16M157.421 16L298.843 16M298.843 357.421L298.843 416M16 416L16 357.421M16 357.421L16 227.652M16 227.652L16 157.421M16 157.421L16 110.495M16 110.495L16 74.579M16 74.579L16 44.13M16 44.13L16 16M157.421 416L77.856 416M77.856 416L16 416M298.843 16L298.843 44.13M298.843 44.13L298.843 74.579M298.843 74.579L298.843 110.495M298.843 110.495L298.843 157.421M298.843 157.421L298.843 227.652M298.843 227.652L298.843 357.421M298.843 416L236.986 416M236.986 416L157.421 416" fill="none" stroke="#26231f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+"
+`;

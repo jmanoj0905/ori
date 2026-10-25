@@ -1,0 +1,202 @@
+/* Designer mode (spec 07): the crease pattern panel on the left half, its
+   tools above it, the numeric input below; the 3D view stays on the right.
+   Same washi islands; measurements in IBM Plex Mono. */
+.designer {
+  position: absolute;
+  inset: 76px auto 96px var(--space);
+  width: min(46vw, 620px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.designer > .island {
+  position: relative;
+  pointer-events: auto;
+}
+.designer .mono,
+.designer-issues .mono {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.designer-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 8px;
+}
+.designer-tools .row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.designer-tools .tool.axiom {
+  min-width: 34px;
+}
+.designer-tools select,
+.designer-tools input,
+.cp-numeric input {
+  font: inherit;
+  border: 1px solid var(--frost-border);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 2px 6px;
+}
+.designer-tools input[type='number'] {
+  width: 5em;
+}
+.designer-prompt {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ink-soft);
+  min-height: 1.4em;
+}
+.cp-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 8px;
+  display: flex;
+}
+.cp-editor {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cp-editor svg {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  touch-action: none;
+  cursor: crosshair;
+}
+.cp-sheet {
+  fill: rgba(255, 255, 255, 0.55);
+}
+.cp-grid line {
+  stroke: var(--ink-faint);
+  stroke-width: 1;
+}
+.cp-editor path,
+.cp-editor line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.2;
+}
+.cp-editor .cp-boundary {
+  stroke-width: 1.6;
+}
+.cp-editor .cp-unassigned {
+  stroke: var(--ink-soft);
+  stroke-width: 0.8;
+  opacity: 0.6;
+}
+.cp-editor .cp-grid line {
+  stroke: var(--ink-faint);
+  stroke-width: 1;
+}
+.cp-editor .cp-selected,
+.cp-editor .cp-candidate {
+  stroke: var(--accent);
+  stroke-width: 2.4;
+}
+.cp-editor .cp-input {
+  stroke: var(--accent);
+  stroke-dasharray: 2 4;
+}
+.cp-point,
+.cp-cursor {
+  fill: var(--accent);
+}
+.cp-cursor {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.cp-issue {
+  fill: rgba(168, 70, 58, 0.25);
+  stroke: var(--refusal);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.cp-readout {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-soft);
+  text-align: right;
+}
+.cp-numeric {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 6px;
+  padding: 8px;
+}
+.cp-numeric label {
+  display: flex;
+  flex-direction: column;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.cp-numeric input {
+  width: 6.5em;
+}
+.cp-error {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--refusal);
+}
+.fold-all {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+}
+.fold-all-result {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.fold-all-result[role='alert'] {
+  color: var(--refusal);
+}
+.designer-issues {
+  padding: 8px 10px;
+  max-height: 22vh;
+  overflow: auto;
+}
+.issues-title {
+  margin: 0;
+  font: inherit;
+  font-weight: 600;
+}
+.issues-list {
+  margin: 6px 0 0;
+  padding-left: 1.2em;
+}
+.cp-files {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+}
+.cp-files .files-label {
+  color: var(--ink-soft);
+  margin-left: 6px;
+}
+.cp-files-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ink-soft);
+}
+.cp-files-status[role='alert'] {
+  color: var(--refusal);
+}
+.designer-banner {
+  padding: 6px 10px;
+}
+.designer-banner p {
+  margin: 0;
+}

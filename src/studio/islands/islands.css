@@ -1,0 +1,1080 @@
+/* Floating islands: frosted ivory, hairline borders, the paper stays the hero.
+   Text colours (--ink, --ink-soft) meet WCAG AA on the frosted ivory. */
+
+.island {
+  transition: opacity var(--settle-ms) ease;
+  color: var(--ink);
+  font-size: 13px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 6px 24px -12px rgba(43, 42, 40, 0.25);
+}
+
+/* Fade back while a fold gesture is active; the fold bar stays at full strength
+   (it is the live readout), and any island comes back on hover or focus. */
+.studio[data-folding] .island:not(.foldbar) {
+  opacity: 0.4;
+}
+.studio[data-folding] .island:not(.foldbar):hover,
+.studio[data-folding] .island:not(.foldbar):focus-within {
+  opacity: 1;
+}
+
+.studio button,
+.studio input,
+.studio select {
+  font: inherit;
+  color: inherit;
+}
+
+.studio :focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Islands that sit over the paper are a touch more opaque, so text stays readable on any colour. */
+.foldbar,
+.paper-panel {
+  background: rgba(250, 247, 241, 0.9);
+}
+
+/* ---- top bar ---- */
+/* Sandbox ↔ Designer (spec 07) */
+.mode-switch {
+  display: inline-flex;
+  gap: 2px;
+}
+.topbar {
+  top: var(--space);
+  left: var(--space);
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 5px 8px 5px 18px;
+}
+.wordmark {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 25px;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  padding-bottom: 2px;
+}
+.bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--frost-border);
+}
+.tbtn {
+  display: inline-grid;
+  place-items: center;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+.tbtn.text {
+  padding: 0 11px;
+  font-weight: 500;
+}
+.tbtn.primary {
+  background: var(--ink);
+  color: var(--ivory);
+}
+.tbtn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.tbtn:hover:not(:disabled) {
+  background: var(--ink-faint);
+}
+.tbtn.primary:hover:not(:disabled) {
+  background: var(--ink);
+  opacity: 0.88;
+}
+.tbtn:disabled,
+.tool:disabled,
+.seg button:disabled,
+.step:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+/* ---- tools ---- */
+.tools {
+  left: var(--space);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  width: 124px;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.tool {
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.tool:hover:not(:disabled) {
+  background: var(--ink-faint);
+}
+.tool[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--ivory);
+}
+.tool.action {
+  border: 1px solid var(--frost-border);
+}
+.snaps,
+.views {
+  border-top: 1px solid var(--frost-border);
+  padding-top: 8px;
+}
+.tool.view {
+  height: 28px;
+  font-size: 12.5px;
+}
+.group-label {
+  padding: 0 10px 2px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.tool.snap {
+  height: 28px;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+  position: relative;
+  padding-left: 26px;
+}
+.tool.snap::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-top: -4.5px;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+.tool.snap[aria-pressed='true'] {
+  background: transparent;
+  color: var(--ink);
+}
+.tool.snap[aria-pressed='true']::before {
+  background: currentColor;
+}
+
+/* ---- bottom: fold bar over the hint line ---- */
+.bottom {
+  position: absolute;
+  left: 50%;
+  bottom: var(--space);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: max-content;
+  max-width: calc(100% - 2 * var(--space));
+  pointer-events: none;
+}
+.bottom > * {
+  pointer-events: auto;
+}
+.hint {
+  margin: 0;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(250, 247, 241, 0.88);
+  -webkit-backdrop-filter: blur(var(--frost-blur));
+  backdrop-filter: blur(var(--frost-blur));
+  max-width: 60ch;
+  font-size: 14px;
+  color: var(--ink-soft);
+  text-align: center;
+  text-wrap: balance;
+}
+.hint[data-refusal],
+.hint[data-blocked] {
+  color: var(--refusal);
+}
+
+.foldbar {
+  position: relative;
+  padding: 8px 10px;
+  max-width: 100%;
+}
+.fold-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 14px;
+}
+.seg {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--frost-border);
+  border-radius: 9px;
+}
+.seg button {
+  height: 28px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.seg button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--ivory);
+}
+.glyph {
+  font-family: var(--font-mono);
+  letter-spacing: -0.1em;
+  margin-right: 4px;
+}
+.angle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.angle output {
+  min-width: 4ch;
+  text-align: right;
+}
+input[type='range'] {
+  width: 150px;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.step {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--frost-border);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  line-height: 1;
+}
+.readout {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px dashed rgba(43, 42, 40, 0.35);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.readout:hover:not(:disabled) {
+  background: var(--ink-faint);
+}
+.readout:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.numeric {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--frost-border);
+}
+.nrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.nfield {
+  display: grid;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.nfield input {
+  width: 72px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid rgba(43, 42, 40, 0.3);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.6);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.nactions {
+  display: flex;
+  gap: 6px;
+}
+.nerror {
+  margin: 0;
+  font-size: 12px;
+  color: var(--refusal);
+}
+
+/* ---- paper panel ---- */
+.paper-panel {
+  left: calc(var(--space) * 2 + 124px);
+  top: 64px;
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px 14px;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.panel-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 20px;
+}
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.mode {
+  display: grid;
+  gap: 1px;
+  padding: 7px 9px;
+  border: 1px solid var(--frost-border);
+  border-radius: 9px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.mode small {
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.mode[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--ivory);
+}
+.mode[aria-pressed='true'] small {
+  color: rgba(244, 239, 230, 0.78);
+}
+.swatches {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.swatch {
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(43, 42, 40, 0.25);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.swatch[aria-pressed='true'] {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.swatch.custom {
+  overflow: hidden;
+  background: conic-gradient(#d9472b, #c9962b, #7a9a57, #2f4a8a, #d9472b);
+}
+.swatch.custom input {
+  position: absolute;
+  inset: -4px;
+  width: 36px;
+  height: 36px;
+  opacity: 0;
+  cursor: pointer;
+}
+.swatch.custom:focus-within {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.field-row input[type='range'] {
+  width: 140px;
+}
+.note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-soft);
+}
+.sizes {
+  align-self: flex-start;
+}
+.dims {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+.dims input {
+  width: 56px;
+  height: 28px;
+  margin-left: 3px;
+  padding: 0 6px;
+  border: 1px solid rgba(43, 42, 40, 0.3);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.6);
+  font-family: var(--font-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .island {
+    transition: none;
+  }
+}
+
+/* ---- touch: bigger targets for the layer stepper ---- */
+.foldbar[data-coarse] .step {
+  width: 44px;
+  height: 44px;
+  font-size: 20px;
+}
+.foldbar[data-coarse] .badge {
+  gap: 8px;
+}
+.foldbar[data-coarse] .seg button {
+  height: 40px;
+}
+.foldbar[data-coarse] input[type='range'] {
+  height: 32px;
+}
+
+/* ---- dock: floating islands wide, one bottom sheet narrow ---- */
+.lower,
+.dock,
+.dock-body {
+  display: contents;
+}
+.dock-handle {
+  display: none;
+}
+
+@media (max-width: 719.98px) {
+  .lower {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .lower > * {
+    pointer-events: auto;
+  }
+  .bottom {
+    position: static;
+    transform: none;
+    width: auto;
+    max-width: none;
+    padding: 0 var(--space);
+    pointer-events: none;
+  }
+  .bottom > * {
+    max-width: 100%;
+  }
+  .dock {
+    display: flex;
+    flex-direction: column;
+    max-height: 62vh;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: rgba(250, 247, 241, 0.94);
+    border-top: 1px solid var(--frost-border);
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -8px 28px -14px rgba(43, 42, 40, 0.35);
+    backdrop-filter: blur(var(--frost-blur));
+    -webkit-backdrop-filter: blur(var(--frost-blur));
+  }
+  .dock-handle {
+    display: flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    height: 44px;
+    padding-top: 8px;
+    border: 0;
+    background: transparent;
+    font-size: 12.5px;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .grabber {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: rgba(43, 42, 40, 0.28);
+  }
+  .dock .island {
+    position: static;
+    transform: none;
+    width: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  /* Tools: one swipeable row, always within reach of the thumb. */
+  .dock .tools {
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 0 var(--space) 8px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .dock .tools > * {
+    flex: none;
+  }
+  .dock .tools .stack {
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+  }
+  .dock .tools .snaps,
+  .dock .tools .views {
+    border-top: 0;
+    border-left: 1px solid var(--frost-border);
+    padding: 0 0 0 8px;
+  }
+  .dock .tool {
+    height: 40px;
+    white-space: nowrap;
+  }
+  .dock .tool.snap,
+  .dock .tool.view {
+    height: 40px;
+  }
+  .dock .group-label {
+    display: none;
+  }
+  .dock-body {
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    padding: 4px var(--space) var(--space);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-top: 1px solid var(--frost-border);
+  }
+  .dock[data-open] .dock-body {
+    display: flex;
+  }
+  .dock .steps,
+  .dock .paper-panel {
+    padding: 8px 0;
+    gap: 10px;
+  }
+  .dock .step-list {
+    max-height: 168px;
+    flex: none;
+  }
+  .dock .mini-cp {
+    height: 110px;
+  }
+  .dock .step-item,
+  .dock .preset-btn {
+    min-height: 40px;
+  }
+  .topbar {
+    max-width: calc(100% - 2 * var(--space));
+    padding-left: 12px;
+    gap: 8px;
+  }
+  .notice {
+    max-width: calc(100% - 2 * var(--space));
+  }
+}
+
+/* ---- confirm dialog ---- */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(43, 42, 40, 0.18);
+}
+.dialog {
+  position: static;
+  width: min(360px, calc(100% - 2 * var(--space)));
+  padding: 16px 18px;
+  background: rgba(250, 247, 241, 0.96);
+}
+.dialog h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 21px;
+}
+.dialog p {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ---- steps island (right) ---- */
+.steps {
+  right: var(--space);
+  top: var(--space);
+  bottom: calc(var(--space) + 90px);
+  width: 236px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(250, 247, 241, 0.9);
+}
+.mini-cp {
+  flex: none;
+  width: 100%;
+  height: 150px;
+  border: 1px solid var(--frost-border);
+  border-radius: 8px;
+  background: var(--ivory);
+}
+.mini-cp line {
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+}
+.mini-cp .cp-boundary {
+  stroke-width: 1.6;
+}
+.step-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+.step-item {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  line-height: 1.3;
+}
+.step-item:hover {
+  background: var(--ink-faint);
+}
+.step-item[aria-current='step'] {
+  background: var(--ink);
+  color: var(--ivory);
+}
+.step-item[aria-disabled='true'] {
+  /* Undone (redo) steps: full-contrast ink-soft (AA), told apart by style, not fading. */
+  color: var(--ink-soft);
+  font-style: italic;
+  border-left: 2px dashed var(--ink-soft);
+  border-radius: 0 6px 6px 0;
+}
+.presets {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.preset-btn {
+  flex: 1;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--frost-border);
+  border-radius: 7px;
+  background: transparent;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.preset-btn[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--ivory);
+}
+.steps .stop {
+  border: 1px solid var(--ink);
+}
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border-radius: 8px;
+  background: var(--ivory);
+  border: 1px solid var(--frost-border);
+}
+
+.export-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.export-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  white-space: nowrap;
+  border-radius: 10px;
+  background: var(--ivory);
+  border: 1px solid var(--frost-border);
+  z-index: 5;
+}
+/* Wide: open rightward from the button, clear of the paper panel below the top bar's
+   left half (the Sandbox / Designer switch widened the bar). Narrow: flush right. */
+@media (min-width: 720px) {
+  .export-menu {
+    left: 0;
+    right: auto;
+  }
+}
+.export-opt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+.notice {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--space) + 64px);
+  transform: translateX(-50%);
+  z-index: 6;
+}
+
+/* ---- share dialog ---- */
+.share {
+  width: min(460px, calc(100% - 2 * var(--space)));
+}
+.share-field {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--frost-border);
+  border-radius: 8px;
+  background: var(--ivory);
+  color: var(--ink);
+  font-size: 12px;
+  text-overflow: ellipsis;
+}
+.share-warn {
+  color: var(--ink);
+}
+.share-copied {
+  min-height: 1.2em;
+  margin: 0 0 8px;
+}
+
+/* ---- replay (R61): the replay bar takes the fold bar's place; editing islands step back ---- */
+.studio[data-replaying] .dock,
+.studio[data-replaying] .tools {
+  opacity: 0.4;
+}
+.replaybar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 14px;
+  padding: 8px 10px;
+  max-width: 100%;
+  background: rgba(250, 247, 241, 0.9);
+}
+.replaybar .scrub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.replaybar .scrub input[type='range'] {
+  width: 220px;
+}
+.replaybar .scrub output {
+  min-width: 6ch;
+  text-align: right;
+}
+.replaybar .autoframe {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.replaybar .autoframe input {
+  accent-color: var(--ink);
+}
+@media (max-width: 719px) {
+  .replaybar .scrub input[type='range'] {
+    width: 140px;
+  }
+}
+
+/* ---- record dialog (Plan 3 Task 5) ---- */
+.record {
+  width: min(400px, calc(100% - 2 * var(--space)));
+}
+.record-opts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  font-size: 13.5px;
+}
+.record-opts legend {
+  float: left;
+  width: 88px;
+  padding: 0;
+  color: var(--ink-soft);
+}
+.record-opts label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+.record-note {
+  font-size: 12px;
+}
+.record-progress {
+  height: 8px;
+  margin: 0 0 14px;
+  border-radius: 4px;
+  background: var(--ink-faint);
+  overflow: hidden;
+}
+.record-progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 120ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .record-progress > span {
+    transition: none;
+  }
+}
+.dialog p.record-warn {
+  color: var(--ink);
+}
+
+/* ---- lesson mode (spec 06) ---- */
+.tool[data-lesson='dimmed'] {
+  opacity: 0.45;
+}
+.tool[data-lesson='expected'] {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.tool[data-lesson='expected'][aria-pressed='true'] {
+  box-shadow: inset 0 0 0 1.5px var(--accent), 0 0 0 2px var(--ivory);
+}
+.lesson-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.lesson-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 400;
+}
+.lesson-count {
+  color: var(--ink-soft);
+}
+.lesson-now {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lesson-caption {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+}
+.lesson-msg {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.lesson-msg.miss {
+  color: var(--refusal);
+}
+.lesson-hint {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 2px solid var(--accent);
+  background: var(--ink-faint);
+  border-radius: 0 6px 6px 0;
+}
+.lesson-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ink-check {
+  display: inline-block;
+  color: var(--ink);
+  animation: ink-check var(--settle-ms) ease-out both;
+}
+@keyframes ink-check {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+.step-item[data-state='done'],
+.step-item[data-state='skipped'] {
+  color: var(--ink-soft);
+}
+.step-item:disabled {
+  cursor: default;
+  color: var(--ink-soft);
+}
+.step-mark {
+  float: right;
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.lesson-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lesson-done {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 18px;
+}
+.lesson-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0;
+}
+.lesson-stats dt {
+  color: var(--ink-soft);
+  font-size: 11px;
+}
+.lesson-stats dd {
+  margin: 0;
+}
+.lesson-pick .difficulty {
+  margin-left: 6px;
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--ink-soft);
+}
+.lesson-empty {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+/* Soft paper (spec 08): shown in the Tools island only when it is on in Settings */
+.soft-unavailable,
+.soft-note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.soft-curve {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+.soft-curve input {
+  width: 100%;
+  accent-color: var(--ink);
+}

@@ -1,0 +1,30 @@
+# Unit tests, type-checks and the production build (with its postbuild size
+# and licence gate) on every push and pull request. The Playwright e2e suite
+# stays local / opt-in: its perf gate needs a real GPU (R46) and its visual
+# baselines are per platform.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build

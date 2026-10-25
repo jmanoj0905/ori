@@ -32,7 +32,12 @@ import { ccwLoop, edgeFaces, edgeKey, layerOffsets, LAYER_GAP, paperSize, poseTa
 export const DASH = Object.freeze({
   valley: Object.freeze([6, 4]) as readonly number[],
   mountain: Object.freeze([6, 3, 1.5, 3]) as readonly number[],
+  /** Open crease: solid (a zero-length gap). */
+  open: Object.freeze([1, 0]) as readonly number[],
 })
+
+/** Open creases: faint and thin (spec: never dashed). */
+export const OPEN_CREASE = Object.freeze({ opacity: 0.35, width: 0.75 })
 
 export const INK = '#2B2A28'
 
@@ -226,13 +231,14 @@ export type CreaseOptions = CreaseStyle & {
 
 /**
  * The frame's valley and mountain creases (edges assigned V / M), posed into
- * world space on the higher of the two faces they join.
+ * world space on the higher of the two faces they join. Open creases (F / U,
+ * or V / M at angle 0, never the boundary) are a third, faint solid set.
  */
 export function buildCreaseLines(
   frame: Frame,
   poses: readonly FacePose[],
   opts: CreaseOptions = {},
-): { valley: CreaseLines; mountain: CreaseLines } {
+): { valley: CreaseLines; mountain: CreaseLines; open: CreaseLines } {
   const table = poseTable(frame, poses)
   const lo =
     opts.offsets && opts.levels && opts.up
@@ -243,21 +249,26 @@ export function buildCreaseLines(
   const only = opts.faces ? new Set(opts.faces) : null
   const valley: number[] = []
   const mountain: number[] = []
+  const open: number[] = []
   const vN: number[] = []
   const mN: number[] = []
+  const oN: number[] = []
   const c = frame.vertices_coords
   frame.edges_vertices.forEach(([a, b], e) => {
     const asg = frame.edges_assignment[e]
-    const isV = asg === 'V' || asg === 'v'
-    const isM = asg === 'M' || asg === 'm'
-    if (!isV && !isM) return
+    const vm = asg === 'V' || asg === 'v' || asg === 'M' || asg === 'm'
+    const ang = frame.edges_foldAngle[e]
+    const isOpen = /^[FfUu]$/.test(asg ?? '') || (vm && typeof ang === 'number' && Math.abs(ang) < 1e-6)
+    const isV = !isOpen && (asg === 'V' || asg === 'v')
+    const isM = !isOpen && (asg === 'M' || asg === 'm')
+    if (!isV && !isM && !isOpen) return
     let faces = ef.get(edgeKey(frame, a, b)) ?? []
     if (only) faces = faces.filter(f => only.has(f))
     if (!faces.length) return
     const f = faces.reduce((best, g) => (lo.levels[g]! > lo.levels[best]! ? g : best), faces[0]!)
     const m = table[f]!
-    const out = isV ? valley : mountain
-    ;(isV ? vN : mN).push(m[8]!, m[9]!, m[10]!)
+    const out = isOpen ? open : isV ? valley : mountain
+    ;(isOpen ? oN : isV ? vN : mN).push(m[8]!, m[9]!, m[10]!)
     for (const v of [a, b]) {
       const [x, y] = c[v]!
       out.push(
@@ -270,11 +281,12 @@ export function buildCreaseLines(
   return {
     valley: makeCreaseLines(new Float32Array(valley), DASH.valley, opts, new Float32Array(vN)),
     mountain: makeCreaseLines(new Float32Array(mountain), DASH.mountain, opts, new Float32Array(mN)),
+    open: makeCreaseLines(new Float32Array(open), DASH.open, { ...opts, ...OPEN_CREASE }, new Float32Array(oN)),
   }
 }
 
 /** The live crease (Preview.crease, world z = 0 segments) in the accent colour, over everything. */
-export function buildLiveCrease(crease: readonly (readonly [Vec2, Vec2])[], kind: 'valley' | 'mountain', color: string, z = 0): CreaseLines {
+export function buildLiveCrease(crease: readonly (readonly [Vec2, Vec2])[], kind: keyof typeof DASH, color: string, z = 0): CreaseLines {
   const seg = new Float32Array(6 * crease.length)
   crease.forEach(([p, q], i) => seg.set([p[0], p[1], z, q[0], q[1], z], 6 * i))
   return makeCreaseLines(seg, DASH[kind], { color, opacity: 0.95, width: 2, onTop: true })

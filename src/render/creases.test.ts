@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import { commit, createPaper, PAPER_SIZES, poses } from '@engine'
 import type { Frame, Gesture, Vec2 } from '@engine'
 import { buildCreaseLines, buildCreaseShade, CREASE_LIFT, DASH } from './creases'
+import { halfFolded, openedHalf } from '../engine/testkit'
 import { LAYER_GAP } from './paperMesh'
 
 const fold = (frame: Frame, grab: Vec2, target: Vec2, kind: 'valley' | 'mountain'): Frame => {
@@ -72,6 +73,30 @@ describe('buildCreaseLines', () => {
     const sheet = createPaper(PAPER_SIZES.square)
     const { valley, mountain } = buildCreaseLines(sheet, poses(sheet))
     expect(valley.segments + mountain.segments).toBe(0)
+  })
+})
+
+describe('open creases', () => {
+  test('an opened crease is one open segment, not valley or mountain', () => {
+    const frame = openedHalf()
+    const { valley, mountain, open } = buildCreaseLines(frame, poses(frame))
+    expect(open.segments).toBe(1)
+    expect(valley.segments).toBe(0)
+    expect(mountain.segments).toBe(0)
+  })
+
+  test('a folded sheet has no open creases', () => {
+    const frame = halfFolded()
+    expect(buildCreaseLines(frame, poses(frame)).open.segments).toBe(0)
+  })
+
+  test('open creases are solid, faint and thin', () => {
+    const frame = openedHalf()
+    const { open } = buildCreaseLines(frame, poses(frame))
+    const d = open.material.uniforms.uDash!.value
+    expect([d.x, d.y, d.z, d.w]).toEqual([1, 0, 0, 0])
+    expect(open.material.uniforms.uOpacity!.value).toBe(0.35)
+    expect(open.material.uniforms.uWidth!.value).toBe(0.75)
   })
 })
 

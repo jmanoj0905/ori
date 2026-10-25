@@ -267,6 +267,48 @@ export function stackFrom(frame: Frame, p: Vec2, face?: number): number[] {
   return i > 0 ? stack.slice(i) : stack
 }
 
+export type StackProfile = {
+  /** `stackFrom(frame, p, face)`: top → bottom */
+  faces: number[]
+  /** Pairs of indices into `faces` joined by a shared non-boundary edge; `at` is that edge's folded midpoint. */
+  joins: { upper: number; lower: number; at: Vec2 }[]
+}
+
+/**
+ * The paper stack at `p` plus how its layers connect: two layers are joined
+ * when their faces share a non-boundary edge (a fold or crease line), which
+ * is where the side view draws the paper turning back on itself.
+ */
+export function stackProfile(frame: Frame, p: Vec2, face?: number): StackProfile {
+  const faces = stackFrom(frame, p, face)
+  const at = new Map(faces.map((f, i) => [f, i]))
+  const { key, assignment, edgeFaces } = sideIndex(frame)
+  const coords = foldedCoords(frame)
+  const seen = new Set<string>()
+  const joins: StackProfile['joins'] = []
+  faces.forEach((f, i) => {
+    const vs = frame.faces_vertices[f]
+    vs.forEach((u, k) => {
+      const v = vs[(k + 1) % vs.length]
+      const kf = key(u, v)
+      if (seen.has(kf)) return
+      const fs = edgeFaces.get(kf) ?? []
+      const a = assignment.get(kf)
+      if (fs.length !== 2 || a === 'B' || a === 'b') return
+      const j = at.get(fs[0] === f ? fs[1] : fs[0])
+      if (j === undefined) return
+      seen.add(kf)
+      joins.push({
+        upper: Math.min(i, j),
+        lower: Math.max(i, j),
+        at: [(coords[u][0] + coords[v][0]) / 2, (coords[u][1] + coords[v][1]) / 2],
+      })
+    })
+  })
+  joins.sort((a, b) => a.upper - b.upper || a.lower - b.lower)
+  return { faces, joins }
+}
+
 const sideOf = (p: Vec2, l: Line) => cross(l.vector, sub(p, l.origin))
 
 /**

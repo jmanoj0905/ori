@@ -28,6 +28,7 @@ describe('the @engine public API', () => {
         'snapCreaseLine',
         'layerAt',
         'layerRanks',
+        'stackProfile',
         'PAPER_SIZES',
         'startHistory',
         'push',

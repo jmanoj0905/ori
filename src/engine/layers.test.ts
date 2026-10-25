@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { containsPoint, layerAt, layerRanks, selectFlap, withLayerOrder } from './layers'
+import { containsPoint, layerAt, layerRanks, selectFlap, stackProfile, withLayerOrder } from './layers'
 import { BASE_NAMES, baseFrame, foldThrough, foldedCoords, makeSheet } from './rabbit'
 import { accordion, base, doubleTriangle, halfFolded, preliminary } from './testkit'
 import type { Frame, Line } from './types'
@@ -161,5 +161,27 @@ describe('layerRanks (final review 4a)', () => {
   })
   test('unordered faces tie-break like layerAt: the lowest face id is on top', () => {
     expect(layerRanks({ ...halfFolded(), faceOrders: [] })).toEqual([1, 0])
+  })
+})
+
+describe('stackProfile', () => {
+  test('half fold: two layers joined at the hinge', () => {
+    const p = stackProfile(halfFolded(), [0.25, 0.5])
+    expect(p.faces).toHaveLength(2)
+    expect(p.joins).toHaveLength(1)
+    expect(p.joins[0].upper).toBe(0)
+    expect(p.joins[0].lower).toBe(1)
+    expect(p.joins[0].at[0]).toBeCloseTo(0.5)
+    expect(p.joins[0].at[1]).toBeCloseTo(0.5)
+  })
+  test('accordion(4): four layers, three joins', () => {
+    const p = stackProfile(accordion(4), [0.125, 0.5])
+    expect(p.faces).toHaveLength(4)
+    expect(p.joins).toHaveLength(3)
+  })
+  test('fresh sheet: one face, no joins', () => {
+    const p = stackProfile(sheet(), [0.5, 0.5])
+    expect(p.faces).toHaveLength(1)
+    expect(p.joins).toEqual([])
   })
 })

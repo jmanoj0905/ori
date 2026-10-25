@@ -61,6 +61,13 @@ describe('readDrag', () => {
   })
 })
 
+describe('readDrag flicker', () => {
+  test('dragging away from every hinge is new, not a switch', () => {
+    const prev: Reading = { mode: 'swing', hinge: 0 }
+    expect(read(offBy(200), { prev, hinges: [H, V] })).toEqual(NEW) // H -0.94, V -0.34
+  })
+})
+
 describe('settleOpen', () => {
   const at = (deg: number) => 1 - Math.sqrt(1 - deg / 180)
   test('settles within 10 degrees of the range', () => {

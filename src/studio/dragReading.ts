@@ -44,7 +44,7 @@ export function readDrag(a: {
   const cur = a.prev.hinge
   const sc = scores[cur]
   if (sc === undefined) return scores[best]! >= SWING_ENTER ? { mode: 'swing', hinge: best } : NEW
-  if (best !== cur && scores[best]! - sc >= SWITCH_MARGIN) return { mode: 'swing', hinge: best }
+  if (best !== cur && scores[best]! - sc >= SWITCH_MARGIN && scores[best]! >= SWING_EXIT) return { mode: 'swing', hinge: best }
   return sc >= SWING_EXIT ? a.prev : NEW
 }
 

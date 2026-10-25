@@ -70,6 +70,19 @@ describe('migrate', () => {
     expect(s.snap.creases).toBe(true)
   })
 
+  test('v1 save whose binding clashes with a new default keeps the custom bindings', () => {
+    const none = { mod: false, shift: false, alt: false }
+    const s1 = migrate({ version: 1, bindings: { valley: [{ type: 'key', key: 'l', mods: none }], undo: [{ type: 'key', key: 'u', mods: { ...none, mod: true } }] } })
+    expect(s1.bindings.valley).toEqual([{ type: 'key', key: 'l', mods: none }])
+    expect(s1.bindings.undo[0]).toMatchObject({ key: 'u' })
+    expect(s1.bindings.layerPicker).toEqual([])
+    expect(findConflicts(s1.bindings)).toEqual([])
+    const s2 = migrate({ version: 1, bindings: { angleSnap: [{ type: 'modifier', key: 'alt' }], undo: [{ type: 'key', key: 'u', mods: { ...none, mod: true } }] } })
+    expect(s2.bindings.angleSnap).toEqual([{ type: 'modifier', key: 'alt' }])
+    expect(s2.bindings.undo[0]).toMatchObject({ key: 'u' })
+    expect(s2.bindings.forceNewFold).toEqual([])
+    expect(findConflicts(s2.bindings)).toEqual([])
+  })
   test('undefined and garbage give defaults', () => {
     expect(migrate(undefined)).toEqual(defaultSettings())
     expect(migrate('x')).toEqual(defaultSettings())

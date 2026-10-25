@@ -51,10 +51,20 @@ export const clampRadius = (r: unknown, fallback: number): number =>
 function cleanBindings(raw: unknown): Bindings {
   const out = cloneBindings(DEFAULT_BINDINGS)
   if (!isObj(raw)) return out
+  const stored = new Set<Action>()
   for (const a of ACTIONS) {
     const v = raw[a]
     // Pre-layout-aware saves stored every key by code: migrate (keys.ts).
-    if (Array.isArray(v) && v.every(validBinding)) out[a] = (v as Binding[]).map(b => migrateKeyBinding(b))
+    if (Array.isArray(v) && v.every(validBinding)) {
+      out[a] = (v as Binding[]).map(b => migrateKeyBinding(b))
+      stored.add(a)
+    }
+  }
+  // A default the save never saw (an action added later) must not override the
+  // user's own bindings: where it clashes, it is left unbound.
+  for (const [x, y] of findConflicts(out)) {
+    if (!stored.has(x) && stored.has(y)) out[x] = []
+    else if (!stored.has(y) && stored.has(x)) out[y] = []
   }
   return findConflicts(out).length ? cloneBindings(DEFAULT_BINDINGS) : out
 }

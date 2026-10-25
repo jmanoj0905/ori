@@ -21,7 +21,7 @@ afterEach(() => {
   el.remove()
 })
 
-const setup = (actions: Action[] = ['fold', 'orbit', 'pan', 'zoom', 'angleSnap', 'valley', 'mountain', 'undo', 'redo', 'cancel']) => {
+const setup = (actions: Action[] = ['fold', 'orbit', 'pan', 'zoom', 'angleSnap', 'forceNewFold', 'valley', 'mountain', 'undo', 'redo', 'cancel']) => {
   const log: Log = []
   const handlers: Partial<Record<Action, (e: ActionEvent) => void>> = {}
   for (const a of actions) handlers[a] = e => void log.push([a, e])
@@ -225,6 +225,17 @@ describe('keyboard', () => {
     key('ShiftLeft', { shiftKey: true, repeat: true })
     key('ShiftLeft', {}, 'keyup')
     expect(phases(log, 'angleSnap')).toEqual(['start', 'end'])
+  })
+
+  test('forceNewFold (Alt) emits start/end once and never blocks a fold drag', () => {
+    const log = setup()
+    key('AltLeft', { altKey: true })
+    key('AltLeft', { altKey: true, repeat: true })
+    ptr('pointerdown', { altKey: true })
+    expect(phases(log, 'fold')).toEqual(['start'])
+    ptr('pointerup', { buttons: 0, altKey: true })
+    key('AltLeft', {}, 'keyup')
+    expect(phases(log, 'forceNewFold')).toEqual(['start', 'end'])
   })
 
   test('shift held before a click does not stop the fold from matching', () => {

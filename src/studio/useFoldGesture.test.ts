@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import * as THREE from 'three'
-import { describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Vec2 } from '@engine'
 import { clientToPlane, planeToClient, pxPerUnit, snapRadiusPaper, type RectLike } from '../render/pickMath'
 import { inProcessCommitter } from './committer'
@@ -8,6 +8,8 @@ import { createStudioStore } from './store'
 import { current, layerAt, progressToAngle, startHistory } from '@engine'
 import type { Frame } from '@engine'
 import { halfFolded, openedHalf } from '../engine/testkit'
+import { useUi } from './ui'
+import { BELT_RADIUS_PX, rowPx } from './belt'
 import { createFoldGesture, dragProgress, SNAP_RADIUS_PX, type GestureOptions, type GestureStage } from './useFoldGesture'
 
 const line = (a: Vec2, b: Vec2) => ({ origin: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as Vec2, vector: [-(b[1] - a[1]), b[0] - a[0]] as Vec2 })
@@ -431,5 +433,124 @@ describe('swing on an existing crease (spec 09)', () => {
     g.down(at([0.1, 0.5]))
     g.move(at([0.9, 0.5]))
     expect(store.getState().reading).toBeNull()
+  })
+})
+
+describe('layer belt: press and hold (spec 09)', () => {
+  // Identity projection at 100 px per paper unit (y up), as in the swing tests.
+  const at = (p: Vec2) => ({ button: 0, pointerId: 1, clientX: p[0] * 100, clientY: (1 - p[1]) * 100 })
+  const press = at([0.25, 0.5]) // client (25, 50): the two-layer stack of halfFolded(), away from any landmark
+  const by = (dx: number, dy: number) => ({ ...press, clientX: press.clientX + dx, clientY: press.clientY + dy })
+  const setup = () => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    store.getState().restoreHistory(startHistory(halfFolded()))
+    const toPaper = (x: number, y: number): Vec2 => [x / 100, 1 - y / 100]
+    const stage: GestureStage = {
+      canvas: document.createElement('canvas'),
+      pick: (x, y) => {
+        const p = toPaper(x, y)
+        const face = layerAt(current(store.getState().history), p)[0]
+        return face === undefined ? null : { face, paper: p, folded: p }
+      },
+      projectToPaperPlane: toPaper,
+      pxPerUnit: () => 100,
+    }
+    return { store, g: createFoldGesture(stage, store) }
+  }
+  beforeEach(() => {
+    vi.useFakeTimers()
+    useUi.getState().closeBelt()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useUi.getState().closeBelt()
+  })
+
+  test('hold opens the belt', () => {
+    const { g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(399)
+    expect(useUi.getState().belt).toBeNull()
+    vi.advanceTimersByTime(1)
+    const belt = useUi.getState().belt!
+    expect(belt).not.toBeNull()
+    expect(belt.stack.faces.length).toBe(2)
+    expect([belt.clientX, belt.clientY]).toEqual([press.clientX, press.clientY])
+    expect(belt.hovered).toBeNull()
+    expect(belt.keyboard).toBe(false)
+  })
+
+  test('drift under slop still opens (Review Focus 2)', () => {
+    const { g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(150)
+    g.move(by(2, 1))
+    vi.advanceTimersByTime(150)
+    g.move(by(3, -2))
+    vi.advanceTimersByTime(100)
+    expect(useUi.getState().belt).not.toBeNull()
+  })
+
+  test('moving 5px first never opens (Review Focus 2)', async () => {
+    const { store, g } = setup()
+    g.down(press)
+    g.move(by(5, 0))
+    g.move(by(0, 0)) // coming back does not re-arm the hold
+    vi.advanceTimersByTime(1000)
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().gesture!.layers).toBe(1) // the fold proceeds with the top layer
+    g.move(at([0.4, 0.5]))
+    expect(store.getState().preview).not.toBeNull()
+  })
+
+  test('drag out takes the hovered layer and those above', () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2)) // row 1: the second layer
+    expect(useUi.getState().belt!.hovered).toBe(1)
+    expect(store.getState().preview).toBeNull() // inside the belt nothing folds
+    const out = by(BELT_RADIUS_PX + 10, rowPx(2) / 2)
+    g.move(out)
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().gesture!.layers).toBe(2)
+    expect(store.getState().gesture!.target).toEqual([out.clientX / 100, 1 - out.clientY / 100]) // the same move drags
+    g.move(at([0.4, 0.5])) // back over the press point: the belt stays closed, the two layers fold
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().gesture!.layers).toBe(2)
+    expect(store.getState().preview).not.toBeNull()
+  })
+
+  test('release inside the belt does nothing (Review Focus 3)', async () => {
+    const { store, g } = setup()
+    const before = store.getState().history.steps.length
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2))
+    await g.up(by(0, rowPx(2) / 2))
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().history.steps.length).toBe(before)
+    expect(store.getState().gesture).toBeNull()
+  })
+
+  test('cancel closes the belt; a quick release clears the hold timer', async () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.cancel()
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().gesture).toBeNull()
+    g.down(press)
+    await g.up(press)
+    vi.advanceTimersByTime(1000)
+    expect(useUi.getState().belt).toBeNull()
+  })
+
+  test('only the Fold tool holds for the belt', () => {
+    const { store, g } = setup()
+    store.getState().setTool('reverse')
+    g.down(press)
+    vi.advanceTimersByTime(1000)
+    expect(useUi.getState().belt).toBeNull()
   })
 })

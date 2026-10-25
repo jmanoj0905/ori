@@ -21,6 +21,7 @@ import { HintLine } from './islands/HintLine'
 import { Steps } from './islands/Steps'
 import { PaperPanel } from './islands/PaperPanel'
 import { Notice } from './islands/Notice'
+import { LayerBelt } from './islands/LayerBelt'
 import { bootStudio, recordingGate } from './boot'
 import { exportPng } from '../persistence/png'
 import { EXPORT_FAILED, notify } from '../persistence/notice'
@@ -375,6 +376,7 @@ export function App() {
           </Suspense>
         )}
         <CoachMark stage={stageReady && !stageDown(stageStatus) ? stageReady : null} reduced={reducedMotion} />
+        <LayerBelt stage={stageReady} />
         <Notice />
         {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
         {recordOpen && stageReady && (

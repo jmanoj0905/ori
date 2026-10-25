@@ -18,13 +18,23 @@
 // whose bisector locks onto a nearby existing crease when crease snapping is
 // on. A swing released within SETTLE_OPEN_DEG of flat settles fully open.
 // Other tools (reverse, squash, petal) keep their plain bisector drag.
-import { current, hingesAt, landmarks, snapCreaseLine, snapPoint } from '@engine'
+//
+// Layer belt (spec 09, Fold tool only): a press held HOLD_MS within
+// HOLD_SLOP_PX opens the belt (ui.belt) over the stack at the grab. While it is
+// open, moves inside it only hover a row; leaving it takes the hovered layer
+// and every layer above it (setLayers), re-collects the hinges for that stack
+// and carries on as an ordinary drag. Releasing inside it cancels: no step.
+// A move past the slop before the hold fires cancels the hold, so a quick
+// fold is never held up (it folds the top layer).
+import { current, hingesAt, landmarks, snapCreaseLine, snapPoint, stackProfile } from '@engine'
 import type { Frame, HingeCandidate, Line, Vec2 } from '@engine'
 import type { Pick } from '../render/Stage'
 import { snapRadiusPaper } from '../render/pickMath'
 import { useStudio, type DragOptions, type StudioState } from './store'
 import { useSettings } from '../settings/store'
 import { readDrag, settleOpen, type Reading } from './dragReading'
+import { useUi } from './ui'
+import { beltRowAt, HOLD_MS, HOLD_SLOP_PX, insideBelt } from './belt'
 
 /** Crease snap: a new fold's bisector within this angle of an existing crease locks onto it. */
 const CREASE_SNAP_DEG = 4
@@ -52,6 +62,9 @@ export type GestureOptions = {
   snapRadiusPx?: () => number
   /** Frame scheduler for the hover query (default requestAnimationFrame). */
   raf?: (cb: () => void) => void
+  /** Timer for the press-and-hold that opens the layer belt (default the global setTimeout / clearTimeout). */
+  setTimeout?: (cb: () => void, ms: number) => unknown
+  clearTimeout?: (handle: unknown) => void
 }
 type PointerLike = { button?: number; pointerId: number; clientX: number; clientY: number }
 
@@ -92,6 +105,11 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
   let active: {
     id: number
     grab: Vec2
+    face: number
+    /** The press point (client px), for the hold's slop. */
+    press: Vec2
+    /** The pending hold timer, until it fires or the pointer drifts past the slop. */
+    hold: { handle: unknown } | null
     moved: boolean
     hinges: readonly HingeCandidate[]
     reading: Reading
@@ -100,6 +118,30 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
   let forceNew = false
   const radiusPx = opts.snapRadiusPx ?? (() => useSettings.getState().snapRadiusPx)
   const raf = opts.raf ?? (cb => void requestAnimationFrame(cb))
+  const later = opts.setTimeout ?? ((cb, ms) => setTimeout(cb, ms))
+  const unlater = opts.clearTimeout ?? (h => clearTimeout(h as ReturnType<typeof setTimeout>))
+
+  /** Drop the pending hold, if any. */
+  const unhold = () => {
+    if (!active?.hold) return
+    unlater(active.hold.handle)
+    active.hold = null
+  }
+  /** End the live gesture's hold and belt (every path that drops `active`). */
+  const endPress = () => {
+    unhold()
+    useUi.getState().closeBelt()
+  }
+  /** The hold fired: open the belt over the stack at the grab. */
+  const openBelt = () => {
+    if (!active) return
+    active.hold = null
+    const { gesture, pending, history } = store.getState()
+    if (!gesture || pending) return
+    const stack = stackProfile(current(history), active.grab, active.face)
+    if (stack.faces.length < 2) return // a single layer: nothing to pick
+    useUi.getState().openBelt({ clientX: active.press[0], clientY: active.press[1], stack, hovered: null, keyboard: false })
+  }
 
   /** Landmarks the user has snapping switched on for (Tools island / settings). */
   const enabled = () => {
@@ -153,6 +195,7 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
         // A press from the same pointer is a duplicate; a different pointer means the
         // previous one was lost (released outside the window): drop its stale gesture.
         if (active.id === e.pointerId) return false
+        endPress()
         active = null
         store.getState().cancel()
       }
@@ -162,7 +205,11 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
       store.getState().begin(grab, hit.face)
       const { gesture, tool, history } = store.getState()
       const hinges = gesture && tool === 'fold' ? hingesAt(current(history), grab, gesture.layers, hit.face) : []
-      active = { id: e.pointerId, grab, moved: false, hinges, reading: { mode: 'new' }, last: null }
+      active = {
+        id: e.pointerId, grab, face: hit.face, press: [e.clientX, e.clientY], hold: null,
+        moved: false, hinges, reading: { mode: 'new' }, last: null,
+      }
+      if (gesture && tool === 'fold') active.hold = { handle: later(openBelt, HOLD_MS) }
       stage.setHoverMarker?.(null)
       clearHover()
       setCursor('grabbing')
@@ -195,6 +242,7 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
 
     /** Cancel the gesture as if Esc was pressed (also the pointercancel / blur path). */
     cancel(): void {
+      endPress()
       active = null
       store.getState().cancel()
       setCursor('')
@@ -203,6 +251,18 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
     move(e: PointerLike): void {
       if (!active) return
       if (e.pointerId !== active.id) return
+      if (active.hold && Math.hypot(e.clientX - active.press[0], e.clientY - active.press[1]) > HOLD_SLOP_PX) unhold()
+      const ui = useUi.getState()
+      if (ui.belt) {
+        if (insideBelt(ui.belt, e.clientX, e.clientY)) return ui.hoverBelt(beltRowAt(ui.belt, e.clientX, e.clientY))
+        // Out of the belt: take the hovered layer and those above, then fold on.
+        store.getState().setLayers((ui.belt.hovered ?? 0) + 1)
+        const { gesture, history } = store.getState()
+        // A new stack has new hinges; a swing index into the old list must not survive.
+        active.hinges = gesture ? hingesAt(current(history), active.grab, gesture.layers, active.face) : []
+        active.reading = { mode: 'new' }
+        ui.closeBelt()
+      }
       const { grab, hinges } = active
       const cursor = stage.projectToPaperPlane(e.clientX, e.clientY)
       const st = store.getState()
@@ -237,6 +297,7 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
     /** The pointer capture was lost without a pointerup: cancel cleanly. */
     lost(e: { pointerId: number }): void {
       if (!active || e.pointerId !== active.id) return
+      endPress()
       active = null
       store.getState().cancel()
       setCursor('')
@@ -245,9 +306,12 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
     async up(e: PointerLike): Promise<void> {
       if (!active || e.pointerId !== active.id) return
       const { moved, reading, hinges, last } = active
+      const inBelt = useUi.getState().belt !== null
+      endPress()
       active = null
       setCursor(stage.pick(e.clientX, e.clientY) ? 'grab' : '')
-      if (!moved) return store.getState().cancel()
+      // Released inside the belt (or never moved): nothing to fold.
+      if (!moved || inBelt) return store.getState().cancel()
       // A swing released close to flat settles fully open.
       const h = reading.mode === 'swing' ? hinges[reading.hinge] : undefined
       if (h && last) {

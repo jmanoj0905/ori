@@ -1059,3 +1059,31 @@ input[type='range'] {
   width: 100%;
   accent-color: var(--ink);
 }
+
+/* The layer belt (spec 09): a frosted circle at the press point with a side
+   view of the stack. The router owns the pointer, so it takes no events; it
+   stays at full strength while the fold gesture fades the other islands.
+   Position and size (BELT_RADIUS_PX) come from LayerBelt.tsx. */
+.layer-belt {
+  border-radius: 50%;
+  z-index: 5;
+  pointer-events: none;
+}
+.studio[data-folding] .island.layer-belt {
+  opacity: 1;
+}
+.layer-belt svg {
+  display: block;
+  overflow: visible;
+}
+.layer-belt line,
+.layer-belt path {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+.layer-belt [data-picked] {
+  stroke: var(--accent);
+  stroke-width: 2;
+}

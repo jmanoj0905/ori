@@ -1,6 +1,8 @@
 // Transient UI state shared between the input wiring and the islands: which
-// sheet is open, and the keyboard-fold phase (for the hint line).
+// sheet is open, the keyboard-fold phase (for the hint line), and the layer
+// belt while it is open (the gesture opens it, the LayerBelt island draws it).
 import { create } from 'zustand'
+import type { BeltState } from './belt'
 
 export type Sheet = 'settings' | 'shortcuts'
 export type KeyboardPhase = 'idle' | 'grab' | 'target'
@@ -28,12 +30,17 @@ export type UiState = {
   mode: Mode
   kf: KeyboardPhase
   stage: StageStatus
+  belt: BeltState | null
   open(s: Sheet): void
   close(): void
   toggle(s: Sheet): void
   setKf(p: KeyboardPhase): void
   setStage(s: StageStatus): void
   setMode(m: Mode): void
+  openBelt(b: BeltState): void
+  /** The row under the pointer (no-op while the belt is closed). */
+  hoverBelt(i: number | null): void
+  closeBelt(): void
 }
 
 export const useUi = create<UiState>()((set, get) => ({
@@ -41,10 +48,19 @@ export const useUi = create<UiState>()((set, get) => ({
   mode: 'sandbox',
   kf: 'idle',
   stage: 'loading',
+  belt: null,
   open: sheet => set({ sheet }),
   close: () => set({ sheet: null }),
   toggle: sheet => set({ sheet: get().sheet === sheet ? null : sheet }),
   setKf: kf => set({ kf }),
   setStage: stage => set({ stage }),
   setMode: mode => set({ mode }),
+  openBelt: belt => set({ belt }),
+  hoverBelt: hovered => {
+    const { belt } = get()
+    if (belt && belt.hovered !== hovered) set({ belt: { ...belt, hovered } })
+  },
+  closeBelt: () => {
+    if (get().belt) set({ belt: null })
+  },
 }))

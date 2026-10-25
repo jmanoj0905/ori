@@ -1,12 +1,14 @@
 // @engine: the public API (spec §6). The UI imports the engine only from here.
-// Runtime exports are exactly the R5 list plus frameFromFold (R60), layerRanks (final review 4a)
-// and the designer's crease-pattern operations (Plan 5),
+// Runtime exports are exactly the R5 list plus frameFromFold (R60), layerRanks (final review 4a),
+// the designer's crease-pattern operations (Plan 5) and hingesAt (Plan 7),
 // pinned by api.test.ts; everything else is types. Nothing here imports
 // rabbit-ear (only rabbit.ts may).
 export { createPaper, PAPER_SIZES, preview, commit, turnOver } from './ops'
 export { poses } from './poses'
 export { landmarks, snapPoint } from './snap'
 export { layerAt, layerRanks } from './layers'
+export { hingesAt } from './hinges'
+export type { HingeCandidate } from './hinges'
 export { frameFromFold } from './fold'
 export { axiomLines, patternFrame, foldPattern, commitPattern } from './pattern'
 export { sculpt, sculptOf, validSnapshot, SCULPTED } from './sculpt'

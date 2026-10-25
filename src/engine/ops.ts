@@ -964,7 +964,7 @@ function reroot(frame: Frame, s: number, A: Planar): { frame: Frame; index: numb
  * shown angle is how far the flap turns, at most `range`; progress 1 lands
  * flat. The swept collision check clamps it as for any fold.
  */
-type Hinge = {
+export type Hinge = {
   line: Line
   /** Hinge edges and, for each, the per-unit paper-angle rate of the swing. */
   edges: { e: number; rate: number }[]
@@ -978,7 +978,7 @@ type Hinge = {
 
 const HINGE_EPS = 1e-7
 
-function hingePlan(frame: Frame, g: Gesture): Result<{ hinge: Hinge }> | null {
+export function hingePlan(frame: Frame, g: Gesture): Result<{ hinge: Hinge }> | null {
   const cl = creaseLine(g)
   if (!cl.ok) return null
   const line = cl.line

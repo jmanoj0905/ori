@@ -47,6 +47,7 @@ describe('the @engine public API', () => {
         'SCULPTED',
         'branch',
         'patternStep',
+        'hingesAt',
       ].sort(),
     )
   })

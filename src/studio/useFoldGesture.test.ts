@@ -5,8 +5,10 @@ import type { Vec2 } from '@engine'
 import { clientToPlane, planeToClient, pxPerUnit, snapRadiusPaper, type RectLike } from '../render/pickMath'
 import { inProcessCommitter } from './committer'
 import { createStudioStore } from './store'
-import { current } from '@engine'
-import { createFoldGesture, dragProgress, SNAP_RADIUS_PX, type GestureStage } from './useFoldGesture'
+import { current, layerAt, progressToAngle, startHistory } from '@engine'
+import type { Frame } from '@engine'
+import { halfFolded, openedHalf } from '../engine/testkit'
+import { createFoldGesture, dragProgress, SNAP_RADIUS_PX, type GestureOptions, type GestureStage } from './useFoldGesture'
 
 const line = (a: Vec2, b: Vec2) => ({ origin: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as Vec2, vector: [-(b[1] - a[1]), b[0] - a[0]] as Vec2 })
 
@@ -301,5 +303,133 @@ describe('lost pointer capture', () => {
     expect(store.getState().preview).toBeNull() // fresh gesture, not dragged yet
     g.move(ev(2))
     expect(store.getState().preview).not.toBeNull()
+  })
+})
+
+describe('swing on an existing crease (spec 09)', () => {
+  // Identity projection at 100 px per paper unit (y up): client (x, y) is paper (x / 100, 1 − y / 100).
+  const at = (p: Vec2) => ({ button: 0, pointerId: 1, clientX: p[0] * 100, clientY: (1 - p[1]) * 100 })
+  const setup = (frame: Frame, extra: Partial<GestureStage> = {}, opts: GestureOptions = {}) => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    store.getState().restoreHistory(startHistory(frame))
+    const toPaper = (x: number, y: number): Vec2 => [x / 100, 1 - y / 100]
+    const stage: GestureStage = {
+      canvas: document.createElement('canvas'),
+      pick: (x, y) => {
+        const p = toPaper(x, y)
+        const face = layerAt(current(store.getState().history), p)[0]
+        return face === undefined ? null : { face, paper: p, folded: p }
+      },
+      projectToPaperPlane: toPaper,
+      pxPerUnit: () => 100,
+      ...extra,
+    }
+    return { store, g: createFoldGesture(stage, store, opts) }
+  }
+  /** Fold angles of the edges lying on x = 0.5 (crease-pattern coordinates). */
+  const anglesOnHalf = (f: Frame) =>
+    f.edges_vertices.flatMap(([u, v], e) => {
+      const [a, b] = [f.vertices_coords[u]!, f.vertices_coords[v]!]
+      return Math.abs(a[0] - 0.5) < 1e-6 && Math.abs(b[0] - 0.5) < 1e-6 ? [{ a: f.edges_foldAngle[e]!, as: f.edges_assignment[e]! }] : []
+    })
+
+  test('pulling the flap back opens it', async () => {
+    const { store, g } = setup(halfFolded())
+    expect(g.down(at([0.1, 0.5]))).toBe(true)
+    g.move(at([0.9, 0.5]))
+    expect(store.getState().reading).toBe('swing')
+    await g.up(at([0.9, 0.5]))
+    const f = current(store.getState().history)
+    expect(store.getState().history.steps.length).toBe(1)
+    expect(f.edges_foldAngle.every(a => Math.abs(a) < 1e-6)).toBe(true)
+    const half = anglesOnHalf(f)
+    expect(half.length).toBeGreaterThan(0)
+    expect(half.every(h => h.as === 'F')).toBe(true)
+  })
+
+  test('release near open settles open', async () => {
+    const { store, g } = setup(halfFolded())
+    g.down(at([0.1, 0.5]))
+    // The grab snaps onto the left edge, [0, 0.5]: the hinge is 0.5 away, its mirror 1.
+    // progressToAngle(p) = 172 at p = 1 − sqrt(8 / 180), about 0.79 (cursor x ≈ 0.79).
+    const grab = store.getState().gesture!.grab
+    const p = 1 - Math.sqrt(8 / 180)
+    expect(progressToAngle(p)).toBeCloseTo(172)
+    const cursor: Vec2 = [grab[0] + 2 * (0.5 - grab[0]) * p, 0.5]
+    g.move(at(cursor))
+    expect(store.getState().gesture!.progress).toBeCloseTo(p)
+    await g.up(at(cursor))
+    const f = current(store.getState().history)
+    expect(f.edges_foldAngle.every(a => Math.abs(a) < 1e-6)).toBe(true)
+  })
+
+  test('forceNew makes a new fold', async () => {
+    const before = halfFolded()
+    const { store, g } = setup(before)
+    g.setForceNew(true)
+    g.down(at([0.1, 0.5]))
+    g.move(at([0.3, 0.5])) // straight toward the hinge: a swing without the modifier
+    expect(store.getState().reading).toBe('new')
+    await g.up(at([0.3, 0.5]))
+    const f = current(store.getState().history)
+    expect(store.getState().history.steps.length).toBe(1)
+    expect(f.edges_vertices.length).toBeGreaterThan(before.edges_vertices.length)
+    const half = anglesOnHalf(f)
+    expect(half.length).toBeGreaterThan(0)
+    expect(half.every(h => Math.abs(Math.abs(h.a) - 180) < 1e-6)).toBe(true)
+  })
+
+  test('crease snap: a bisector at x = 0.51 locks onto the open crease at x = 0.5', async () => {
+    const before = openedHalf()
+    const onLine = (f: Frame, x: number) => f.vertices_coords.filter(v => Math.abs(v[0] - x) < 1e-6).length
+    const { store, g } = setup(before)
+    g.down(at([0.25, 0.5]))
+    g.move(at([0.77, 0.5])) // bisector x = 0.51
+    expect(store.getState().reading).toBe('new')
+    expect(store.getState().gesture!.crease!.origin[0]).toBeCloseTo(0.5)
+    await g.up(at([0.77, 0.5]))
+    const f = current(store.getState().history)
+    expect(store.getState().history.steps.length).toBe(1)
+    expect(onLine(f, 0.5)).toBe(onLine(before, 0.5))
+    expect(onLine(f, 0.51)).toBe(0)
+    expect(anglesOnHalf(f).every(h => Math.abs(Math.abs(h.a) - 180) < 1e-6)).toBe(true)
+  })
+
+  test('hover highlights hinge, at most once per frame', () => {
+    const calls: { faces: readonly number[] | null; hinges: readonly (readonly [Vec2, Vec2])[] }[] = []
+    let queued: (() => void)[] = []
+    const flush = () => {
+      const q = queued
+      queued = []
+      q.forEach(cb => cb())
+    }
+    const { g } = setup(halfFolded(), { setHoverFlap: (faces, hinges) => void calls.push({ faces, hinges }) }, {
+      raf: cb => void queued.push(cb),
+    })
+    g.hover(at([0.1, 0.5]))
+    g.hover(at([0.12, 0.5]))
+    flush()
+    expect(calls.length).toBe(1)
+    expect(calls[0]!.faces!.length).toBeGreaterThan(0)
+    expect(calls[0]!.hinges.length).toBeGreaterThan(0)
+    g.leave()
+    expect(calls.at(-1)!.faces).toBeNull()
+  })
+
+  test('a press clears the hover flap', () => {
+    const calls: (readonly number[] | null)[] = []
+    const { g } = setup(halfFolded(), { setHoverFlap: faces => void calls.push(faces) }, { raf: cb => cb() })
+    g.hover(at([0.1, 0.5]))
+    expect(calls.at(-1)).not.toBeNull()
+    g.down(at([0.1, 0.5]))
+    expect(calls.at(-1)).toBeNull()
+  })
+
+  test('other tools never swing', () => {
+    const { store, g } = setup(halfFolded())
+    store.getState().setTool('reverse')
+    g.down(at([0.1, 0.5]))
+    g.move(at([0.9, 0.5]))
+    expect(store.getState().reading).toBeNull()
   })
 })

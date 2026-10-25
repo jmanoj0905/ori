@@ -127,6 +127,7 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
       el.removeEventListener('pointermove', hover)
       el.removeEventListener('pointerleave', leave)
       stage.setHoverMarker?.(null)
+      stage.setHoverFlap?.(null, [])
       el.style.cursor = ''
     }
   }, [stage, opts])

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest'
-import { landmarks, snapPoint, type Landmark } from './snap'
+import { landmarks, snapCreaseLine, snapPoint, type Landmark } from './snap'
 import { makeSheet, rebuildAdjacency } from './rabbit'
 import { commit, type Gesture } from './ops'
-import { halfFolded } from './testkit'
+import { halfFolded, openedHalf } from './testkit'
 import type { Vec2 } from './types'
 
 const sheet = () => makeSheet({ width: 1, height: 1 })
@@ -175,5 +175,43 @@ describe('cached landmarks cannot be corrupted through results (final review 5c)
     tryMutate(() => ((ls[ls.length - 1].seg![1] as unknown as number[])[1] = 42))
     ls.length = 0
     expect(JSON.stringify(landmarks(f, { edges: true }))).toBe(before)
+  })
+})
+
+describe('snapCreaseLine', () => {
+  const line = { origin: [0.52, 0.3] as Vec2, vector: [0.02, 1] as Vec2 }
+
+  test('locks onto the crease at x = 0.5', () => {
+    const f = openedHalf()
+    const r = snapCreaseLine(f, line, { angleDeg: 4, dist: 0.04 })
+    expect(r).not.toBeNull()
+    expect(r!.origin[0]).toBeCloseTo(0.5, 9)
+    expect(Math.abs(r!.vector[0])).toBeLessThan(1e-9)
+    expect(Math.abs(r!.vector[1])).toBeGreaterThan(0)
+  })
+
+  test('the result is a fresh, unfrozen line, not the cached one', () => {
+    const f = openedHalf()
+    const a = snapCreaseLine(f, line, { angleDeg: 4, dist: 0.04 })!
+    const b = snapCreaseLine(f, line, { angleDeg: 4, dist: 0.04 })!
+    for (const r of [a, b]) {
+      expect(Object.isFrozen(r)).toBe(false)
+      expect(Object.isFrozen(r.origin)).toBe(false)
+      expect(Object.isFrozen(r.vector)).toBe(false)
+    }
+    expect(a).not.toBe(b)
+    expect(a.vector).not.toBe(b.vector)
+  })
+
+  test('too far away: null', () => {
+    expect(snapCreaseLine(openedHalf(), line, { angleDeg: 4, dist: 0.01 })).toBeNull()
+  })
+
+  test('too far off angle: null', () => {
+    expect(snapCreaseLine(openedHalf(), line, { angleDeg: 0.5, dist: 0.04 })).toBeNull()
+  })
+
+  test('a fresh sheet has only boundary: null', () => {
+    expect(snapCreaseLine(sheet(), line, { angleDeg: 4, dist: 0.04 })).toBeNull()
   })
 })

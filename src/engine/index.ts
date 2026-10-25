@@ -5,7 +5,7 @@
 // rabbit-ear (only rabbit.ts may).
 export { createPaper, PAPER_SIZES, preview, commit, turnOver } from './ops'
 export { poses } from './poses'
-export { landmarks, snapPoint } from './snap'
+export { landmarks, snapPoint, snapCreaseLine } from './snap'
 export { layerAt, layerRanks } from './layers'
 export { hingesAt } from './hinges'
 export type { HingeCandidate } from './hinges'

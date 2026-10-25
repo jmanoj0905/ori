@@ -30,13 +30,15 @@
  * and returns its point (for an edge, the nearest point on its segment);
  * `snapped` is that landmark (an edge's `p` is the projected point). With
  * nothing in range it returns the raw point and no `snapped`.
+ * `snapCreaseLine` locks a line onto an existing crease line (see below); the deduped crease lines
+ * are cached with the landmarks and frozen the same way.
  * Landmarks are cached per frame and shared, so they are frozen (with their
  * points and segments); `landmarks()` returns a fresh array of them, and
  * `snapPoint`'s `p` is a fresh copy the caller may keep or change.
  */
 import { cross, dot, sub } from './geometry'
 import { foldedCoords } from './rabbit'
-import type { Frame, Vec2 } from './types'
+import type { Frame, Line, Vec2 } from './types'
 
 export type LandmarkKind = 'corner' | 'midpoint' | 'intersection' | 'edge'
 
@@ -55,18 +57,24 @@ const isBoundary = (a: string) => a === 'B' || a === 'b'
 const near = (a: Vec2, b: Vec2, eps = DEDUPE) => Math.hypot(a[0] - b[0], a[1] - b[1]) <= eps
 const mid = (a: Vec2, b: Vec2): Vec2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
 
-const cache = new WeakMap<Frame, { points: Landmark[]; edges: Landmark[] }>()
+type Computed = { points: Landmark[]; edges: Landmark[]; creases: Line[] }
+const cache = new WeakMap<Frame, Computed>()
 
-export function landmarks(frame: Frame, opts: { edges?: boolean } = {}): Landmark[] {
+function cached(frame: Frame): Computed {
   let hit = cache.get(frame)
   if (!hit) {
     hit = compute(frame)
     cache.set(frame, hit)
   }
+  return hit
+}
+
+export function landmarks(frame: Frame, opts: { edges?: boolean } = {}): Landmark[] {
+  const hit = cached(frame)
   return opts.edges ? [...hit.points, ...hit.edges] : [...hit.points]
 }
 
-function compute(frame: Frame): { points: Landmark[]; edges: Landmark[] } {
+function compute(frame: Frame): Computed {
   const coords = foldedCoords(frame)
   const segs = frame.edges_vertices
     .map(([u, v], e) => ({ a: coords[u], b: coords[v], boundary: isBoundary(frame.edges_assignment[e]) }))
@@ -117,7 +125,25 @@ function compute(frame: Frame): { points: Landmark[]; edges: Landmark[] } {
     })
     if (!same) edges.push({ p: mid(s.a, s.b), kind: 'edge', seg: [s.a, s.b] })
   }
-  return { points: points.map(freeze), edges: edges.map(freeze) }
+
+  // creases: the distinct infinite lines through non-boundary folded edges
+  const creases: Line[] = []
+  for (const s of segs) {
+    if (s.boundary) continue
+    const v = sub(s.b, s.a)
+    const len = Math.hypot(...v)
+    const u: Vec2 = [v[0] / len, v[1] / len]
+    const dup = creases.some(c => {
+      const cl = Math.hypot(...c.vector)
+      return Math.abs(cross(u, c.vector)) <= 1e-9 * cl && Math.abs(cross(u, sub(c.origin, s.a))) <= DEDUPE
+    })
+    if (!dup) creases.push({ origin: s.a, vector: v })
+  }
+  return {
+    points: points.map(freeze),
+    edges: edges.map(freeze),
+    creases: creases.map(c => Object.freeze({ origin: Object.freeze(c.origin), vector: Object.freeze(c.vector) }) as Line),
+  }
 }
 
 /** Cached landmarks are shared by every caller: freeze them, points and segments included. */
@@ -129,6 +155,31 @@ function freeze(l: Landmark): Landmark {
     Object.freeze(l.seg)
   }
   return Object.freeze(l)
+}
+
+/**
+ * The existing crease line (any non-boundary edge, in folded space) closest to `line`, or null.
+ * It must lie within `tol.angleDeg` of `line`'s direction (either way round) and within `tol.dist`
+ * of `line.origin`; the closest is the one with the smallest such offset. The result is a fresh
+ * line: the crease's direction, with `origin` the projection of `line.origin` onto the crease.
+ */
+export function snapCreaseLine(frame: Frame, line: Line, tol: { angleDeg: number; dist: number }): Line | null {
+  const len = Math.hypot(...line.vector)
+  if (len < EPS) return null
+  const sinMax = Math.sin((tol.angleDeg * Math.PI) / 180)
+  let best: { c: Line; d: number } | null = null
+  for (const c of cached(frame).creases) {
+    const cl = Math.hypot(...c.vector)
+    const sin = Math.abs(cross(line.vector, c.vector)) / (len * cl)
+    if (!(sin <= sinMax)) continue
+    const d = Math.abs(cross(c.vector, sub(line.origin, c.origin))) / cl
+    if (!(d <= tol.dist)) continue
+    if (!best || d < best.d) best = { c, d }
+  }
+  if (!best) return null
+  const { c } = best
+  const t = dot(sub(line.origin, c.origin), c.vector) / dot(c.vector, c.vector)
+  return { origin: [c.origin[0] + c.vector[0] * t, c.origin[1] + c.vector[1] * t], vector: [c.vector[0], c.vector[1]] }
 }
 
 /** The crossing point of segments ab and cd (endpoints included); null if parallel or apart. */

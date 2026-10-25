@@ -1,6 +1,7 @@
 // Test helpers shared by engine tests. Not a test file, so it must not import
 // rabbit-ear: fixtures are built through the rabbit.ts adapter.
-import { commit } from './ops'
+import { hingesAt } from './hinges'
+import { commit, type Gesture } from './ops'
 import { baseFrame, foldThrough, layerOrders, makeSheet, rebuildAdjacency } from './rabbit'
 import type { Frame, Vec2 } from './types'
 
@@ -146,4 +147,20 @@ export function grid(cols: number, rows: number = cols): Frame {
     faces_vertices,
     faceOrders: [],
   })
+}
+
+/**
+ * halfFolded() swung open along its hinge: flat again, with an 'F' crease at x = 0.5.
+ * Built as the gesture does: commit a fold on the hinge line with its openKind.
+ */
+export function openedHalf(): Frame {
+  const f = halfFolded()
+  const [h] = hingesAt(f, [0.1, 0.5], 1)
+  const g: Gesture = {
+    tool: 'fold', grab: [0.1, 0.5], target: [0.1, 0.5], layers: 1, kind: h.openKind,
+    progress: 1, snapAngle: false, crease: h.line,
+  }
+  const r = commit(f, g)
+  if (!r.ok) throw new Error(`openedHalf fixture refused: ${r.reason}`)
+  return r.frame
 }

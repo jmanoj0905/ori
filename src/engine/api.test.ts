@@ -25,6 +25,7 @@ describe('the @engine public API', () => {
         'poses',
         'landmarks',
         'snapPoint',
+        'snapCreaseLine',
         'layerAt',
         'layerRanks',
         'PAPER_SIZES',

@@ -3,7 +3,7 @@ import { hingesAt } from '@engine'
 import type { Frame, Gesture } from '@engine'
 import { commit } from './ops'
 import { makeSheet } from './rabbit'
-import { accordion, halfFolded } from './testkit'
+import { accordion, halfFolded, openedHalf } from './testkit'
 
 const close = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps
 
@@ -23,12 +23,6 @@ const fold = (over: Partial<Gesture>): Gesture => ({
   ...over,
 })
 
-function opened(): Frame {
-  const f = halfFolded()
-  const [h] = hingesAt(f, [0.1, 0.5], 1)
-  return ok(commit(f, fold({ crease: h.line, kind: h.openKind, progress: 1, grab: [0.1, 0.5], target: [0.1, 0.5] }))).frame
-}
-
 describe('hingesAt', () => {
   test('half fold: one hinge at x = 0.5', () => {
     const hs = hingesAt(halfFolded(), [0.1, 0.5], 1)
@@ -44,7 +38,7 @@ describe('hingesAt', () => {
   })
 
   test('openKind swings it open', () => {
-    const f = opened()
+    const f = openedHalf()
     expect(f.edges_foldAngle.every(a => a === 0)).toBe(true)
     const mid = f.edges_vertices.findIndex(([u, v]) => close(f.vertices_coords[u][0], 0.5) && close(f.vertices_coords[v][0], 0.5))
     expect(mid).toBeGreaterThanOrEqual(0)
@@ -70,7 +64,7 @@ describe('hingesAt', () => {
   })
 
   test('open crease is not a hinge', () => {
-    expect(hingesAt(opened(), [0.1, 0.5], 1)).toEqual([])
+    expect(hingesAt(openedHalf(), [0.1, 0.5], 1)).toEqual([])
   })
 
   test('grab on the hinge line: none for that line', () => {

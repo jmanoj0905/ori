@@ -8,10 +8,10 @@
 // preference applies immediately and persists through useSettings.
 //
 // Capture rules: a capture replaces the action's binding of the SAME kind
-// (so Fewer layers keeps its scroll wheel when its key changes) and adds one
+// (so Zoom keeps its scroll wheel when a key is added) and adds one
 // when there is none. Esc cancels the capture, Backspace/Delete unbinds, a
-// modifier-only press is ignored (except for Angle snap, which is a held
-// modifier and takes only those). Because Esc and Backspace are commands there,
+// modifier-only press is ignored (except for Angle snap and Force a new fold,
+// which are held modifiers and take only those). Because Esc and Backspace are commands there,
 // they cannot be captured as bindings from this sheet: Cancel keeps its default
 // Esc and "Reset" restores anything remapped away from it.
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
@@ -108,7 +108,7 @@ function ControlRow({
   onReset(): void
 }) {
   const label = ACTION_LABELS[action]
-  const modifierOnly = action === 'angleSnap'
+  const modifierOnly = action === 'angleSnap' || action === 'forceNewFold'
   const isDefault = sameList(list, DEFAULT_BINDINGS[action])
   const change = useRef<HTMLButtonElement>(null)
   const was = useRef(false)

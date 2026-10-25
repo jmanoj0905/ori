@@ -100,11 +100,11 @@ describe('settings sheet: controls', () => {
     expect(binds('Angle snap')).toHaveTextContent('Hold Alt')
   })
 
-  test('replacing a binding keeps the other kinds (layers keeps its scroll wheel)', () => {
+  test('replacing a binding keeps the other kinds (zoom keeps its scroll wheel)', () => {
     open()
-    fireEvent.click(screen.getByRole('button', { name: 'Change Fewer layers' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change Zoom' }))
     fireEvent.keyDown(capture(), { key: 'q', code: 'KeyQ' })
-    expect(binds('Fewer layers')).toHaveTextContent('Q or Scroll')
+    expect(binds('Zoom')).toHaveTextContent('Scroll or Q')
   })
 
   test('a clash is shown inline, Save is disabled, and resolving it re-enables Save', () => {

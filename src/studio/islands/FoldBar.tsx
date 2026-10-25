@@ -17,7 +17,7 @@ const subscribeCoarse = (cb: () => void) => {
   q?.addEventListener?.('change', cb)
   return () => q?.removeEventListener?.('change', cb)
 }
-/** True on touch-first devices, where the layer stepper replaces the scroll wheel. */
+/** True on touch-first devices, where the fold bar gets bigger targets. */
 export const useCoarsePointer = (): boolean => useSyncExternalStore(subscribeCoarse, () => coarseQuery()?.matches === true, () => false)
 
 const fmt = (n: number) => (Math.abs(n) < 0.0005 ? 0 : n).toFixed(2)
@@ -140,7 +140,6 @@ export function FoldBar() {
   const kind = useStudio(s => s.kind)
   const pending = useStudio(s => s.pending)
   const setKind = useStudio(s => s.setKind)
-  const setLayers = useStudio(s => s.setLayers)
   const setNumeric = useStudio(s => s.setNumeric)
   const setLastFold = useStudio(s => s.setLastFold)
   // Lesson mode: a checked step is not re-committed from here (the store refuses it too).
@@ -240,9 +239,7 @@ export function FoldBar() {
         </label>
 
         <div className="badge" role="group" aria-label="Layers">
-          <button type="button" className="step" aria-label="Fewer layers" disabled={!live || k <= 1} onClick={() => setLayers(k - 1)}>−</button>
           <span className="mono" data-testid="layer-badge">{k} of {total} {total === 1 ? 'layer' : 'layers'}</span>
-          <button type="button" className="step" aria-label="More layers" disabled={!live || k >= total} onClick={() => setLayers(k + 1)}>+</button>
         </div>
 
         <button

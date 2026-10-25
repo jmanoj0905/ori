@@ -26,7 +26,7 @@ export const TOOL_HINTS: Record<Tool, string> = {
 
 export const KEYBOARD_HINTS = {
   grab: 'Keyboard fold: arrows or Tab choose a grab point, Enter grabs, Esc stops.',
-  target: 'Choose where to fold to. Enter commits, [ ] layers, V M fold type, + − angle, Esc cancels.',
+  target: 'Choose where to fold to. Enter commits, L layers, V M fold type, + − angle, Esc cancels.',
 } as const
 
 /** True once `on` has held for `ms` (false again as soon as it drops). */

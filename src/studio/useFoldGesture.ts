@@ -87,6 +87,11 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
   }
 
   return {
+    /** Hold-modifier: the next fold ignores hinge candidates (Task 8). Stub: no-op for now. */
+    setForceNew(on: boolean): void {
+      void on
+    },
+
     /** Returns true when a gesture began (false: the router should treat the drag as refused). */
     down(e: PointerLike): boolean {
       if (store.getState().pending) return false

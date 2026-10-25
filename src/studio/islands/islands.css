@@ -122,8 +122,7 @@
 }
 .tbtn:disabled,
 .tool:disabled,
-.seg button:disabled,
-.step:disabled {
+.seg button:disabled {
   opacity: 0.42;
   cursor: default;
 }
@@ -296,16 +295,6 @@ input[type='range'] {
   align-items: center;
   gap: 4px;
   font-size: 12.5px;
-}
-.step {
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 1px solid var(--frost-border);
-  border-radius: 50%;
-  background: transparent;
-  cursor: pointer;
-  line-height: 1;
 }
 .readout {
   height: 28px;
@@ -492,15 +481,7 @@ input[type='range'] {
   }
 }
 
-/* ---- touch: bigger targets for the layer stepper ---- */
-.foldbar[data-coarse] .step {
-  width: 44px;
-  height: 44px;
-  font-size: 20px;
-}
-.foldbar[data-coarse] .badge {
-  gap: 8px;
-}
+/* ---- touch: bigger targets ---- */
 .foldbar[data-coarse] .seg button {
   height: 40px;
 }

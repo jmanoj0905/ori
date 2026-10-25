@@ -10,12 +10,10 @@
 //    missed the paper): the router then treats it as never begun.
 //  - Key actions emit a single `tap`. Keys match layout-aware (settings/keys.ts):
 //    letters and symbols by the character typed, named keys by code.
-//  - Modifier bindings (angleSnap) emit
+//  - Modifier bindings (angleSnap, forceNewFold) emit
 //    `start` on press and `end` on release of the key, once per hold.
-//  - Wheel: while a fold drag is active the wheel means layers (deltaY < 0,
-//    wheel up = layersMore; deltaY > 0, wheel down = layersLess), otherwise
-//    zoom. `delta` carries deltaY in pixels (positive = out). Layer steps are
-//    accumulated (LAYER_STEP_PX) so a trackpad does not skip dozens of layers.
+//  - Wheel: always zoom, folding or not. `delta` carries deltaY in pixels
+//    (positive = out). Layers are never stepped by the wheel.
 //  - `cancel` (tap) is also emitted, instead of `end`, when a fold drag is
 //    lost: pointercancel, lostpointercapture, window blur, a move with no
 //    button down, or a second pointer pressing. Orbit and pan just end.
@@ -32,7 +30,7 @@
 //    Ctrl+wheel, so it never falls through to the browser's page zoom.
 //  - `mod` (Ctrl-or-Cmd) matches ctrlKey || metaKey on every platform.
 //    Mouse and wheel matching ignores modifiers that are themselves bound as
-//    hold-modifiers (Shift for angleSnap), so holding Shift never blocks a fold.
+//    hold-modifiers (Shift for angleSnap, Alt for forceNewFold), so holding Shift never blocks a fold.
 //  - Key events are ignored while focus is in an input, textarea, select or
 //    contenteditable element, and while focus is inside a modal dialog
 //    ([aria-modal="true"]: the confirm dialog, the settings and shortcut
@@ -54,9 +52,6 @@ export interface ActionEvent {
 
 export type ActionHandler = (e: ActionEvent) => void | boolean
 export type Handlers = Partial<Record<Action, ActionHandler>>
-
-/** Wheel pixels (normalised) that make one layer step while folding. */
-export const LAYER_STEP_PX = 100 // one mouse-wheel notch
 
 /** Travel (centre or finger distance, CSS px) before a two-finger gesture engages. */
 export const TOUCH_SLOP_PX = 6
@@ -103,7 +98,6 @@ export function inModal(_target?: EventTarget | null): boolean {
 export function createRouter(el: HTMLElement, getBindings: () => Bindings, handlers: Handlers): () => void {
   let drag: { action: DragAction; id: number; x: number; y: number; touch?: boolean } | null = null
   const held = new Set<Action>()
-  let wheelAcc = 0
   // Touch: every finger down, the two-finger gesture, and whether a finger left
   // over from one must be ignored until all lift.
   const touches = new Map<number, { x: number; y: number }>()
@@ -255,7 +249,6 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
     e.preventDefault()
     if (!emit(action, { phase: 'start', clientX: e.clientX, clientY: e.clientY, pointerId: e.pointerId })) return
     drag = { action, id: e.pointerId, x: e.clientX, y: e.clientY }
-    wheelAcc = 0
     try {
       el.setPointerCapture?.(e.pointerId)
     } catch {
@@ -306,18 +299,6 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
     const bound = (a: Action) => handlers[a] !== undefined && b[a].some(x => x.type === 'wheel' && sameMods(x.mods, mods))
     const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1
     const dy = e.deltaY * scale
-    if (drag?.action === 'fold' && (bound('layersMore') || bound('layersLess'))) {
-      e.preventDefault()
-      if (wheelAcc !== 0 && Math.sign(wheelAcc) !== Math.sign(dy)) wheelAcc = 0
-      wheelAcc += dy
-      while (Math.abs(wheelAcc) >= LAYER_STEP_PX) {
-        const more = wheelAcc < 0 // wheel up
-        wheelAcc += more ? LAYER_STEP_PX : -LAYER_STEP_PX
-        const a: Action = more ? 'layersMore' : 'layersLess'
-        if (bound(a)) emit(a, { phase: 'tap', delta: dy })
-      }
-      return
-    }
     if (bound('zoom')) {
       e.preventDefault()
       emit('zoom', { phase: 'tap', delta: dy, clientX: e.clientX, clientY: e.clientY })
@@ -350,7 +331,7 @@ export function createRouter(el: HTMLElement, getBindings: () => Bindings, handl
       handlers[a] && b[a].some(x => x.type === 'key' && matchesKey(x, e)))
     if (!action) return
     e.preventDefault()
-    if (e.repeat && action !== 'layersLess' && action !== 'layersMore') return
+    if (e.repeat) return
     // Esc (or any cancel binding) also drops the router's own fold drag.
     if (action === 'cancel' && drag?.action === 'fold') {
       const d = drag

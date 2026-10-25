@@ -4,7 +4,7 @@
 //   Tab / Shift+Tab, arrows                   move the cursor
 //   Enter                                     set the grab point
 //   Tab / arrows                              cycle target landmarks (live preview)
-//   [ ]  V M                                  layers, fold kind (the normal bindings)
+//   L  V M                                    layer belt, fold kind (the normal bindings)
 //   + -                                       fold angle in 22.5 degree steps
 //   Enter                                     commit        Esc  cancel
 //
@@ -226,6 +226,11 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
 
   return {
     phase: (): KeyboardPhase => phase,
+
+    /** Open the layer belt from the keyboard (Task 10). Stub: nothing to open yet. */
+    openBelt(): boolean {
+      return false
+    },
 
     /** The fold key: show the landmark cursor and wait for a grab point. */
     start(): void {

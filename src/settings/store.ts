@@ -8,7 +8,7 @@ import {
 } from './schema'
 
 export const DEFAULT_SNAP: SnapSettings = {
-  corners: true, midpoints: true, intersections: true, edges: true, angle: true, axioms: false,
+  corners: true, midpoints: true, intersections: true, edges: true, creases: true, angle: true, axioms: false,
 }
 
 export function defaultSettings(): Settings {
@@ -91,12 +91,12 @@ export function migrate(raw: unknown): Settings {
   const d = defaultSettings()
   if (!isObj(raw)) return d
   const src = raw.version === undefined ? fromV0(raw as SettingsV0) : raw
-  if (src.version !== 1) return d
+  if (src.version !== 1 && src.version !== 2) return d
   const rm = src.reducedMotion
   const snap = isObj(src.snap) ? src.snap : {}
   const r = src.snapRadiusPx
   return {
-    version: 1,
+    version: SETTINGS_VERSION,
     bindings: cleanBindings(src.bindings),
     reducedMotion: rm === 'always' || rm === 'never' || rm === 'system' ? rm : d.reducedMotion,
     snap: {
@@ -104,6 +104,7 @@ export function migrate(raw: unknown): Settings {
       midpoints: bool(snap.midpoints, d.snap.midpoints),
       intersections: bool(snap.intersections, d.snap.intersections),
       edges: bool(snap.edges, d.snap.edges),
+      creases: bool(snap.creases, d.snap.creases),
       angle: bool(snap.angle, d.snap.angle),
       axioms: bool(snap.axioms, d.snap.axioms),
     },

@@ -24,6 +24,7 @@ const SNAPS: { key: keyof SnapSettings; label: string }[] = [
   { key: 'midpoints', label: 'Midpoints' },
   { key: 'intersections', label: 'Crossings' },
   { key: 'edges', label: 'Edges' },
+  { key: 'creases', label: 'Creases' },
   { key: 'angle', label: '22.5° angle' },
 ]
 

@@ -15,8 +15,8 @@ describe('default bindings', () => {
     expect(d.fold).toEqual([mouse(0)])
     expect(d.orbit).toEqual([mouse(2)])
     expect(d.pan).toEqual([mouse(1)])
-    expect(d.layersLess[0]).toMatchObject({ type: 'key', key: '[' })
-    expect(d.layersMore[0]).toMatchObject({ type: 'key', key: ']' })
+    expect(d.layerPicker).toEqual([{ type: 'key', key: 'l', mods: { mod: false, shift: false, alt: false } }])
+    expect(d.forceNewFold).toEqual([{ type: 'modifier', key: 'alt' }])
     expect(d.angleSnap).toEqual([{ type: 'modifier', key: 'shift' }])
     expect(d.redo[0]).toMatchObject({ key: 'z', mods: { mod: true, shift: true } })
     expect(d.shortcuts[0]).toMatchObject({ key: '?' }) // layout-aware: the character, Shift implied
@@ -30,9 +30,9 @@ describe('findConflicts', () => {
     b.fold = [mouse(2)]
     expect(findConflicts(b)).toEqual([['fold', 'orbit']])
   })
-  test('angleSnap (Shift held) does not conflict with [', () => {
+  test('angleSnap (Shift held) does not conflict with a key binding', () => {
     const b = cloneBindings(DEFAULT_BINDINGS)
-    b.layersLess = [{ type: 'key', code: 'ShiftLeft', mods: { mod: false, shift: false, alt: false } }]
+    b.layerPicker = [{ type: 'key', code: 'ShiftLeft', mods: { mod: false, shift: false, alt: false } }]
     expect(findConflicts(b)).toEqual([])
   })
   test('modifier bindings conflict only with each other', () => {
@@ -40,13 +40,10 @@ describe('findConflicts', () => {
     b.pan = [{ type: 'modifier', key: 'shift' }]
     expect(findConflicts(b)).toEqual([['pan', 'angleSnap']])
   })
-  test('zoom and layers sharing the wheel is context-separated, not a conflict', () => {
-    expect(findConflicts(DEFAULT_BINDINGS)).toEqual([])
-  })
   test('wheel shared with a non-context action (pan) is a conflict', () => {
     const b = cloneBindings(DEFAULT_BINDINGS)
     b.pan = [{ type: 'wheel', mods: { mod: false, shift: false, alt: false } }]
-    expect(findConflicts(b).length).toBe(3)
+    expect(findConflicts(b)).toEqual([['pan', 'zoom']])
   })
   test('different modifier sets do not conflict (undo vs redo)', () => {
     expect(findConflicts(DEFAULT_BINDINGS).length).toBe(0)
@@ -54,13 +51,32 @@ describe('findConflicts', () => {
 })
 
 describe('migrate', () => {
+  test('migrates a v1 save', () => {
+    const none = { mod: false, shift: false, alt: false }
+    const v1 = {
+      version: 1,
+      bindings: {
+        layersLess: [{ type: 'key', key: '9', mods: none }],
+        undo: [{ type: 'key', key: 'u', mods: { ...none, mod: true } }],
+      },
+      snap: { corners: true, midpoints: true, intersections: true, edges: true, angle: true, axioms: false },
+    }
+    const s = migrate(v1)
+    expect(s.version).toBe(2)
+    expect('layersLess' in s.bindings).toBe(false)
+    expect(s.bindings.undo).toEqual([{ type: 'key', key: 'u', mods: { ...none, mod: true } }])
+    expect(s.bindings.layerPicker).toEqual(DEFAULT_BINDINGS.layerPicker)
+    expect(s.bindings.forceNewFold).toEqual(DEFAULT_BINDINGS.forceNewFold)
+    expect(s.snap.creases).toBe(true)
+  })
+
   test('undefined and garbage give defaults', () => {
     expect(migrate(undefined)).toEqual(defaultSettings())
     expect(migrate('x')).toEqual(defaultSettings())
   })
-  test('v0 object becomes v1', () => {
+  test('v0 object becomes the current version', () => {
     const s = migrate({ reducedMotion: true, snapRadius: 20, toolReturns: false, keys: { valley: 'KeyB' } })
-    expect(s.version).toBe(1)
+    expect(s.version).toBe(2)
     expect(s.reducedMotion).toBe('always')
     expect(s.snapRadiusPx).toBe(20)
     expect(s.toolReturnsToFold).toBe(false)

@@ -19,7 +19,7 @@ afterEach(() => {
   el.remove()
 })
 
-const ACTIONS: Action[] = ['fold', 'orbit', 'pan', 'zoom', 'layersLess', 'layersMore', 'cancel']
+const ACTIONS: Action[] = ['fold', 'orbit', 'pan', 'zoom', 'cancel']
 const setup = (actions: Action[] = ACTIONS) => {
   const log: Log = []
   const handlers: Partial<Record<Action, (e: ActionEvent) => void>> = {}
@@ -177,10 +177,10 @@ describe('ctrl+wheel (trackpad pinch)', () => {
   })
   test('a binding that claims ctrl+wheel keeps it', () => {
     const b = cloneBindings(DEFAULT_BINDINGS)
-    b.layersMore = [{ type: 'wheel', mods: { mod: true, shift: false, alt: false } }]
+    b.pan = [{ type: 'wheel', mods: { mod: true, shift: false, alt: false } }]
     const log: Log = []
     disposers.push(createRouter(el, () => b, {
-      zoom: e => void log.push(['zoom', e]), layersMore: e => void log.push(['layersMore', e]),
+      zoom: e => void log.push(['zoom', e]), pan: e => void log.push(['pan', e]),
     }))
     wheel({ deltaY: -4, ctrlKey: true })
     expect(of(log, 'zoom')).toEqual([])

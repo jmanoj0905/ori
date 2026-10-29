@@ -282,6 +282,8 @@ export class Stage {
     // A commit arrives just before its preview is cleared (syncStage): keep a
     // landing in progress only if it is that same commit's (no preview now).
     if (this.preview) this.endLanding()
+    // The hover highlight names faces of the old frame: drop it (the next pointer move brings it back).
+    if (frame !== this.frame) this.hoverSpec = null
     this.frame = frame
     this.poses = poses
     const b = bboxOf(frame)

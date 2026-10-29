@@ -4,7 +4,7 @@
 // creases are drawn there as .cp-open, faint and solid).
 import { readFileSync } from 'node:fs'
 import { expect, test, type Page } from '@playwright/test'
-import { drag, expectSteps, foldLayers, holdForLayers, openStudio, settle, stepList, studio, type Vec2 } from './helpers'
+import { drag, expectSteps, foldLayers, holdForLayers, openStudio, px, settle, stepList, studio, type Vec2 } from './helpers'
 
 const cp = (page: Page, kind: 'open' | 'valley' | 'mountain') => page.locator(`.mini-cp .cp-${kind}`)
 
@@ -111,4 +111,24 @@ test('belt: hold the half-folded sheet, slide onto row 2 and drag out', async ({
   await expect(page.getByTestId('layer-badge')).toHaveText('2 of 2 layers')
   await page.mouse.up()
   await settle(page)
+})
+
+test('undo while a flap is highlighted under the pointer', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', e => errors.push(e.message))
+  await drag(page, [0.99, 0.5], [0, 0.5])
+  await foldLayers(page, [0.25, 0.99], [0.25, 0], 2) // four faces
+  await expectSteps(page, 2)
+  const [x, y] = await px(page, [0.25, 0.4])
+  await page.mouse.move(x, y, { steps: 3 }) // the hover flap highlight comes up over the top flap
+  await page.waitForFunction(() => (window.__ori!.stage as unknown as { hoverSpec: unknown }).hoverSpec !== null)
+  await page.locator('[data-stage-host] canvas').focus()
+  await page.keyboard.press('ControlOrMeta+z') // back to two faces
+  await expect.poll(() => studio(page, s => s.history.cursor)).toBe(1)
+  await settle(page)
+  expect(errors).toEqual([])
+  await page.keyboard.press('ControlOrMeta+Shift+z') // and forward again: the highlight never names a missing face
+  await expect.poll(() => studio(page, s => s.history.cursor)).toBe(2)
+  await settle(page)
+  expect(errors).toEqual([])
 })

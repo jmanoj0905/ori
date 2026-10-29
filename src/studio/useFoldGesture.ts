@@ -214,7 +214,7 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
         id: e.pointerId, grab, face: hit.face, press: [e.clientX, e.clientY], hold: null,
         moved: false, hinges, reading: { mode: 'new' }, last: null,
       }
-      if (gesture && tool === 'fold') active.hold = { handle: later(openBelt, HOLD_MS) }
+      if (gesture) active.hold = { handle: later(openBelt, HOLD_MS) } // every tool picks layers here; only Fold swings
       stage.setHoverMarker?.(null)
       clearHover()
       setCursor('grabbing')

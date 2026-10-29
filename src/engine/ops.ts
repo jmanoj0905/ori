@@ -853,6 +853,10 @@ export function label(kind: FoldKind, k: number, angleDeg: number): string {
   return `${what} fold · ${layers} · ${Math.round(angleDeg)}°`
 }
 
+export function unfoldLabel(k: number): string {
+  return `Unfold · ${k === 1 ? 'top flap' : `${k} layers`}`
+}
+
 // ---- R10: re-root on a stationary face ----
 
 export type Planar = { a: number; b: number; c: number; d: number; tx: number; ty: number; det: number; identity: boolean }
@@ -1156,7 +1160,8 @@ function commitHinge(frame: Frame, g: Gesture, h: Hinge): Result<{ frame: Frame;
       hinge: true,
       ...extraParams(g),
     },
-    label: label(g.kind, h.k, applied),
+    // Swung all the way flat (spec 09): the step opened the flap rather than folding it.
+    label: h.edges.every(({ e }) => edges_foldAngle[e] === 0) ? unfoldLabel(h.k) : label(g.kind, h.k, applied),
     at: Date.now(),
   }
   return { ok: true, frame: out, step }

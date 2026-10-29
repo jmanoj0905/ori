@@ -491,6 +491,14 @@ describe('layer belt: press and hold (spec 09)', () => {
     expect(said).toEqual(['Layer 1 of 2: top flap', 'Layer 2 of 2: top flap and 1 below'])
   })
 
+  test('the hold opens the belt for compound tools too (Reverse picks its layers there)', () => {
+    const { store, g } = setup()
+    store.getState().setTool('reverse')
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    expect(useUi.getState().belt).not.toBeNull()
+  })
+
   test('drift under slop still opens (Review Focus 2)', () => {
     const { g } = setup()
     g.down(press)
@@ -557,11 +565,4 @@ describe('layer belt: press and hold (spec 09)', () => {
     expect(useUi.getState().belt).toBeNull()
   })
 
-  test('only the Fold tool holds for the belt', () => {
-    const { store, g } = setup()
-    store.getState().setTool('reverse')
-    g.down(press)
-    vi.advanceTimersByTime(1000)
-    expect(useUi.getState().belt).toBeNull()
-  })
 })

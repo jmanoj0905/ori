@@ -705,6 +705,10 @@ input[type='range'] {
 .mini-cp .cp-boundary {
   stroke-width: 1.6;
 }
+.mini-cp .cp-open {
+  stroke-width: 0.75;
+  stroke-opacity: 0.35;
+}
 .step-list {
   flex: 1;
   min-height: 0;

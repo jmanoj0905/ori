@@ -88,3 +88,15 @@ describe('hingesAt', () => {
     expect(hingesAt(h, [0.1, 0.5], 1)).toEqual(c)
   })
 })
+
+describe('swing step labels', () => {
+  test('a swing that ends flat is an unfold; a part swing keeps the fold label', () => {
+    const f = halfFolded()
+    const [h] = hingesAt(f, [0.1, 0.5], 1)
+    const g = { tool: 'fold', grab: [0.1, 0.5], target: [0.1, 0.5], layers: 1, kind: h!.openKind, progress: 1, snapAngle: false, crease: h!.line } as const
+    const full = commit(f, { ...g, grab: [...g.grab], target: [...g.target] } as Gesture)
+    expect(full.ok && full.step.label).toBe('Unfold · top flap')
+    const part = commit(f, { ...g, grab: [...g.grab], target: [...g.target], angleDeg: 90 } as Gesture)
+    expect(part.ok && part.step.label).toMatch(/^(Valley|Mountain) fold · top flap · 90°$/)
+  })
+})

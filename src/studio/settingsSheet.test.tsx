@@ -83,13 +83,13 @@ describe('settings sheet: controls', () => {
   test('captures mouse buttons and the wheel, with modifiers', () => {
     open()
     fireEvent.click(screen.getByRole('button', { name: 'Change Pan' }))
-    fireEvent.mouseDown(capture(), { button: 2, shiftKey: true })
-    expect(binds('Pan')).toHaveTextContent('Shift + Right-drag')
+    fireEvent.mouseDown(capture(), { button: 2, ctrlKey: true }) // (Shift or Alt + drag would clash with the held Angle snap / Force new fold)
+    expect(binds('Pan')).toHaveTextContent('Ctrl/⌘ + Right-drag')
     fireEvent.click(screen.getByRole('button', { name: 'Change Zoom' }))
-    fireEvent.wheel(capture(), { deltaY: -100, ctrlKey: true })
+    fireEvent.wheel(capture(), { deltaY: -100, ctrlKey: true, shiftKey: false })
     expect(binds('Zoom')).toHaveTextContent('Ctrl/⌘ + Scroll')
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))
-    expect(useSettings.getState().bindings.pan).toEqual([{ type: 'mouse', button: 2, mods: { mod: false, shift: true, alt: false } }])
+    expect(useSettings.getState().bindings.pan).toEqual([{ type: 'mouse', button: 2, mods: { mod: true, shift: false, alt: false } }])
     expect(useSettings.getState().bindings.zoom).toEqual([{ type: 'wheel', mods: { mod: true, shift: false, alt: false } }])
   })
 
@@ -100,11 +100,11 @@ describe('settings sheet: controls', () => {
     expect(binds('Angle snap')).toHaveTextContent('Hold Alt')
   })
 
-  test('replacing a binding keeps the other kinds (layers keeps its scroll wheel)', () => {
+  test('replacing a binding keeps the other kinds (zoom keeps its scroll wheel)', () => {
     open()
-    fireEvent.click(screen.getByRole('button', { name: 'Change Fewer layers' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Change Zoom' }))
     fireEvent.keyDown(capture(), { key: 'q', code: 'KeyQ' })
-    expect(binds('Fewer layers')).toHaveTextContent('Q or Scroll')
+    expect(binds('Zoom')).toHaveTextContent('Scroll or Q')
   })
 
   test('a clash is shown inline, Save is disabled, and resolving it re-enables Save', () => {
@@ -116,7 +116,10 @@ describe('settings sheet: controls', () => {
     expect(within(row('Orbit')).getByRole('alert')).toHaveTextContent('Fold')
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'Change Orbit' }))
-    fireEvent.mouseDown(capture(), { button: 1, altKey: true })
+    fireEvent.mouseDown(capture(), { button: 1, altKey: true }) // Alt is held for Force new fold: still a clash
+    expect(within(row('Orbit')).getByRole('alert')).toHaveTextContent('Force a new fold')
+    fireEvent.click(screen.getByRole('button', { name: 'Change Orbit' }))
+    fireEvent.mouseDown(capture(), { button: 1, ctrlKey: true })
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled()
     fireEvent.click(screen.getByRole('button', { name: 'Save' }))

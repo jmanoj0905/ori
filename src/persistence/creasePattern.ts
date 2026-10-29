@@ -8,7 +8,9 @@ import type { Frame } from '@engine'
 export const DASH = { valley: '6 4', mountain: '6 3 1.5 3' } as const
 
 export type CpKind = 'boundary' | 'valley' | 'mountain'
-export type CpSegment = { kind: CpKind; x1: number; y1: number; x2: number; y2: number }
+/** An open crease (spec 09): drawn only when asked for (the MiniCP), never in the SVG export. */
+export type CpSegmentKind = CpKind | 'open'
+export type CpSegment = { kind: CpSegmentKind; x1: number; y1: number; x2: number; y2: number }
 export type CpLayout = {
   /** Total drawing size, padding included. */
   width: number
@@ -20,16 +22,19 @@ export type CpLayout = {
 
 const PAD = 0.04
 const KIND: Record<string, CpKind | undefined> = { B: 'boundary', V: 'valley', M: 'mountain' }
+const OPEN = /^[FfUu]$/
 
 /**
  * Lay the frame's crease pattern out. `scale` multiplies paper units (1 keeps
  * them; the SVG export scales so dashes have a sensible size). Flat (F),
- * unassigned and other creases are not drawn.
+ * unassigned and other creases are not drawn, unless `open` is set: then they,
+ * and a valley or mountain at 0°, are 'open' segments (as render/creases has them).
  */
-export function creasePatternLayout(frame: Frame, scale = 1): CpLayout {
+export function creasePatternLayout(frame: Frame, scale = 1, opts: { open?: boolean } = {}): CpLayout {
   const v = frame.vertices_coords ?? []
   const e = frame.edges_vertices ?? []
   const a = frame.edges_assignment ?? []
+  const ang = frame.edges_foldAngle ?? []
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
   for (const p of v) {
     x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0])
@@ -45,7 +50,9 @@ export function creasePatternLayout(frame: Frame, scale = 1): CpLayout {
   e.forEach(([i, j], k) => {
     const p = v[i]
     const q = v[j]
-    const kind = KIND[a[k] ?? '']
+    const asg = a[k] ?? ''
+    let kind: CpSegmentKind | undefined = KIND[asg]
+    if (opts.open && (OPEN.test(asg) || ((kind === 'valley' || kind === 'mountain') && Math.abs(ang[k] ?? 1) < 1e-6))) kind = 'open'
     if (!p || !q || !kind) return
     segments.push({ kind, x1: X(p[0]), y1: Y(p[1]), x2: X(q[0]), y2: Y(q[1]) })
   })

@@ -853,6 +853,10 @@ export function label(kind: FoldKind, k: number, angleDeg: number): string {
   return `${what} fold · ${layers} · ${Math.round(angleDeg)}°`
 }
 
+export function unfoldLabel(k: number): string {
+  return `Unfold · ${k === 1 ? 'top flap' : `${k} layers`}`
+}
+
 // ---- R10: re-root on a stationary face ----
 
 export type Planar = { a: number; b: number; c: number; d: number; tx: number; ty: number; det: number; identity: boolean }
@@ -964,7 +968,7 @@ function reroot(frame: Frame, s: number, A: Planar): { frame: Frame; index: numb
  * shown angle is how far the flap turns, at most `range`; progress 1 lands
  * flat. The swept collision check clamps it as for any fold.
  */
-type Hinge = {
+export type Hinge = {
   line: Line
   /** Hinge edges and, for each, the per-unit paper-angle rate of the swing. */
   edges: { e: number; rate: number }[]
@@ -978,7 +982,7 @@ type Hinge = {
 
 const HINGE_EPS = 1e-7
 
-function hingePlan(frame: Frame, g: Gesture): Result<{ hinge: Hinge }> | null {
+export function hingePlan(frame: Frame, g: Gesture): Result<{ hinge: Hinge }> | null {
   const cl = creaseLine(g)
   if (!cl.ok) return null
   const line = cl.line
@@ -1156,7 +1160,8 @@ function commitHinge(frame: Frame, g: Gesture, h: Hinge): Result<{ frame: Frame;
       hinge: true,
       ...extraParams(g),
     },
-    label: label(g.kind, h.k, applied),
+    // Swung all the way flat (spec 09): the step opened the flap rather than folding it.
+    label: h.edges.every(({ e }) => edges_foldAngle[e] === 0) ? unfoldLabel(h.k) : label(g.kind, h.k, applied),
     at: Date.now(),
   }
   return { ok: true, frame: out, step }

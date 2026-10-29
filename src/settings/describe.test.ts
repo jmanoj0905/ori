@@ -26,8 +26,8 @@ describe('describeBinding', () => {
     expect(describeBinding({ type: 'modifier', key: 'mod' })).toBe('Hold Ctrl/⌘')
   })
   test('lists join with "or"; an empty list reads Unbound', () => {
-    const list: Binding[] = DEFAULT_BINDINGS.layersLess
-    expect(describeBindings(list)).toBe('[ or Scroll')
+    const list: Binding[] = DEFAULT_BINDINGS.zoom
+    expect(describeBindings(list)).toBe('Scroll')
     expect(describeBindings([])).toBe('Unbound')
   })
   test('every action has a label', () => {

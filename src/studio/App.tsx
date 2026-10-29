@@ -21,6 +21,7 @@ import { HintLine } from './islands/HintLine'
 import { Steps } from './islands/Steps'
 import { PaperPanel } from './islands/PaperPanel'
 import { Notice } from './islands/Notice'
+import { LayerBelt } from './islands/LayerBelt'
 import { bootStudio, recordingGate } from './boot'
 import { exportPng } from '../persistence/png'
 import { EXPORT_FAILED, notify } from '../persistence/notice'
@@ -249,7 +250,7 @@ export function App() {
         // `npm run build:e2e`; in a production build both conditions are constant false and
         // the hook is dropped from the bundle (scripts/bundle-size.mjs asserts it).
         if (import.meta.env.DEV || import.meta.env.VITE_ORI_E2E === '1') {
-          Object.assign(window, { __ori: { store: useStudio, stage: st, ui: useUi, settings: useSettings, soft: () => import('../soft/harness') } })
+          Object.assign(window, { __ori: { store: useStudio, stage: st, ui: useUi, settings: useSettings, soft: () => import('../soft/harness'), check: () => import('../lessons/check') } })
         }
       })
       .catch(err => {
@@ -375,6 +376,7 @@ export function App() {
           </Suspense>
         )}
         <CoachMark stage={stageReady && !stageDown(stageStatus) ? stageReady : null} reduced={reducedMotion} />
+        <LayerBelt stage={stageReady} />
         <Notice />
         {shareOpen && <ShareDialog onClose={() => setShareOpen(false)} />}
         {recordOpen && stageReady && (

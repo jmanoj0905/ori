@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import * as THREE from 'three'
-import { describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Vec2 } from '@engine'
 import { clientToPlane, planeToClient, pxPerUnit, snapRadiusPaper, type RectLike } from '../render/pickMath'
 import { inProcessCommitter } from './committer'
 import { createStudioStore } from './store'
-import { current } from '@engine'
-import { createFoldGesture, dragProgress, SNAP_RADIUS_PX, type GestureStage } from './useFoldGesture'
+import { current, layerAt, progressToAngle, startHistory } from '@engine'
+import type { Frame } from '@engine'
+import { halfFolded, openedHalf } from '../engine/testkit'
+import { useUi } from './ui'
+import { BELT_RADIUS_PX, rowPx } from './belt'
+import { createFoldGesture, dragProgress, SNAP_RADIUS_PX, type GestureOptions, type GestureStage } from './useFoldGesture'
 
 const line = (a: Vec2, b: Vec2) => ({ origin: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as Vec2, vector: [-(b[1] - a[1]), b[0] - a[0]] as Vec2 })
 
@@ -302,4 +306,315 @@ describe('lost pointer capture', () => {
     g.move(ev(2))
     expect(store.getState().preview).not.toBeNull()
   })
+})
+
+describe('swing on an existing crease (spec 09)', () => {
+  // Identity projection at 100 px per paper unit (y up): client (x, y) is paper (x / 100, 1 − y / 100).
+  const at = (p: Vec2) => ({ button: 0, pointerId: 1, clientX: p[0] * 100, clientY: (1 - p[1]) * 100 })
+  const setup = (frame: Frame, extra: Partial<GestureStage> = {}, opts: GestureOptions = {}) => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    store.getState().restoreHistory(startHistory(frame))
+    const toPaper = (x: number, y: number): Vec2 => [x / 100, 1 - y / 100]
+    const stage: GestureStage = {
+      canvas: document.createElement('canvas'),
+      pick: (x, y) => {
+        const p = toPaper(x, y)
+        const face = layerAt(current(store.getState().history), p)[0]
+        return face === undefined ? null : { face, paper: p, folded: p }
+      },
+      projectToPaperPlane: toPaper,
+      pxPerUnit: () => 100,
+      ...extra,
+    }
+    return { store, g: createFoldGesture(stage, store, opts) }
+  }
+  /** Fold angles of the edges lying on x = 0.5 (crease-pattern coordinates). */
+  const anglesOnHalf = (f: Frame) =>
+    f.edges_vertices.flatMap(([u, v], e) => {
+      const [a, b] = [f.vertices_coords[u]!, f.vertices_coords[v]!]
+      return Math.abs(a[0] - 0.5) < 1e-6 && Math.abs(b[0] - 0.5) < 1e-6 ? [{ a: f.edges_foldAngle[e]!, as: f.edges_assignment[e]! }] : []
+    })
+
+  test('pulling the flap back opens it', async () => {
+    const { store, g } = setup(halfFolded())
+    expect(g.down(at([0.1, 0.5]))).toBe(true)
+    g.move(at([0.9, 0.5]))
+    expect(store.getState().reading).toBe('swing')
+    await g.up(at([0.9, 0.5]))
+    const f = current(store.getState().history)
+    expect(store.getState().history.steps.length).toBe(1)
+    expect(f.edges_foldAngle.every(a => Math.abs(a) < 1e-6)).toBe(true)
+    const half = anglesOnHalf(f)
+    expect(half.length).toBeGreaterThan(0)
+    expect(half.every(h => h.as === 'F')).toBe(true)
+  })
+
+  test('release near open settles open', async () => {
+    const { store, g } = setup(halfFolded())
+    g.down(at([0.1, 0.5]))
+    // The grab snaps onto the left edge, [0, 0.5]: the hinge is 0.5 away, its mirror 1.
+    // progressToAngle(p) = 172 at p = 1 − sqrt(8 / 180), about 0.79 (cursor x ≈ 0.79).
+    const grab = store.getState().gesture!.grab
+    const p = 1 - Math.sqrt(8 / 180)
+    expect(progressToAngle(p)).toBeCloseTo(172)
+    const cursor: Vec2 = [grab[0] + 2 * (0.5 - grab[0]) * p, 0.5]
+    g.move(at(cursor))
+    expect(store.getState().gesture!.progress).toBeCloseTo(p)
+    await g.up(at(cursor))
+    const f = current(store.getState().history)
+    expect(f.edges_foldAngle.every(a => Math.abs(a) < 1e-6)).toBe(true)
+  })
+
+  test('forceNew makes a new fold', async () => {
+    const before = halfFolded()
+    const { store, g } = setup(before)
+    g.setForceNew(true)
+    g.down(at([0.1, 0.5]))
+    g.move(at([0.3, 0.5])) // straight toward the hinge: a swing without the modifier
+    expect(store.getState().reading).toBe('new')
+    await g.up(at([0.3, 0.5]))
+    const f = current(store.getState().history)
+    expect(store.getState().history.steps.length).toBe(1)
+    expect(f.edges_vertices.length).toBeGreaterThan(before.edges_vertices.length)
+    const half = anglesOnHalf(f)
+    expect(half.length).toBeGreaterThan(0)
+    expect(half.every(h => Math.abs(Math.abs(h.a) - 180) < 1e-6)).toBe(true)
+  })
+
+  test('crease snap: a bisector at x = 0.51 locks onto the open crease at x = 0.5', async () => {
+    const before = openedHalf()
+    const onLine = (f: Frame, x: number) => f.vertices_coords.filter(v => Math.abs(v[0] - x) < 1e-6).length
+    const { store, g } = setup(before)
+    g.down(at([0.25, 0.5]))
+    g.move(at([0.77, 0.5])) // bisector x = 0.51
+    expect(store.getState().reading).toBe('new')
+    expect(store.getState().gesture!.crease!.origin[0]).toBeCloseTo(0.5)
+    await g.up(at([0.77, 0.5]))
+    const f = current(store.getState().history)
+    expect(store.getState().history.steps.length).toBe(1)
+    expect(onLine(f, 0.5)).toBe(onLine(before, 0.5))
+    expect(onLine(f, 0.51)).toBe(0)
+    expect(anglesOnHalf(f).every(h => Math.abs(Math.abs(h.a) - 180) < 1e-6)).toBe(true)
+  })
+
+  test('hover highlights hinge, at most once per frame', () => {
+    const calls: { faces: readonly number[] | null; hinges: readonly (readonly [Vec2, Vec2])[] }[] = []
+    let queued: (() => void)[] = []
+    const flush = () => {
+      const q = queued
+      queued = []
+      q.forEach(cb => cb())
+    }
+    const { g } = setup(halfFolded(), { setHoverFlap: (faces, hinges) => void calls.push({ faces, hinges }) }, {
+      raf: cb => void queued.push(cb),
+    })
+    g.hover(at([0.1, 0.5]))
+    g.hover(at([0.12, 0.5]))
+    flush()
+    expect(calls.length).toBe(1)
+    expect(calls[0]!.faces!.length).toBeGreaterThan(0)
+    expect(calls[0]!.hinges.length).toBeGreaterThan(0)
+    g.leave()
+    expect(calls.at(-1)!.faces).toBeNull()
+  })
+
+  test('a press clears the hover flap', () => {
+    const calls: (readonly number[] | null)[] = []
+    const { g } = setup(halfFolded(), { setHoverFlap: faces => void calls.push(faces) }, { raf: cb => cb() })
+    g.hover(at([0.1, 0.5]))
+    expect(calls.at(-1)).not.toBeNull()
+    g.down(at([0.1, 0.5]))
+    expect(calls.at(-1)).toBeNull()
+  })
+
+  test('other tools never swing', () => {
+    const { store, g } = setup(halfFolded())
+    store.getState().setTool('reverse')
+    g.down(at([0.1, 0.5]))
+    g.move(at([0.9, 0.5]))
+    expect(store.getState().reading).toBeNull()
+  })
+})
+
+describe('layer belt: press and hold (spec 09)', () => {
+  // Identity projection at 100 px per paper unit (y up), as in the swing tests.
+  const at = (p: Vec2) => ({ button: 0, pointerId: 1, clientX: p[0] * 100, clientY: (1 - p[1]) * 100 })
+  const press = at([0.25, 0.5]) // client (25, 50): the two-layer stack of halfFolded(), away from any landmark
+  const by = (dx: number, dy: number) => ({ ...press, clientX: press.clientX + dx, clientY: press.clientY + dy })
+  const setup = () => {
+    const store = createStudioStore({ committer: inProcessCommitter })
+    store.getState().restoreHistory(startHistory(halfFolded()))
+    const toPaper = (x: number, y: number): Vec2 => [x / 100, 1 - y / 100]
+    const stage: GestureStage = {
+      canvas: document.createElement('canvas'),
+      pick: (x, y) => {
+        const p = toPaper(x, y)
+        const face = layerAt(current(store.getState().history), p)[0]
+        return face === undefined ? null : { face, paper: p, folded: p }
+      },
+      projectToPaperPlane: toPaper,
+      pxPerUnit: () => 100,
+    }
+    const said: string[] = []
+    return { store, said, g: createFoldGesture(stage, store, { announce: t => void said.push(t) }) }
+  }
+  beforeEach(() => {
+    vi.useFakeTimers()
+    useUi.getState().closeBelt()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    useUi.getState().closeBelt()
+  })
+
+  test('hold opens the belt', () => {
+    const { g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(399)
+    expect(useUi.getState().belt).toBeNull()
+    vi.advanceTimersByTime(1)
+    const belt = useUi.getState().belt!
+    expect(belt).not.toBeNull()
+    expect(belt.stack.faces.length).toBe(2)
+    expect([belt.clientX, belt.clientY]).toEqual([press.clientX, press.clientY])
+    expect(belt.hovered).toBe(0) // the top flap, as announced
+    expect(belt.keyboard).toBe(false)
+  })
+
+  test('the belt announces the top flap on open and each new row under the pointer', () => {
+    const { g, said } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    expect(said).toEqual(['Layer 1 of 2: top flap'])
+    g.move(by(0, rowPx(2) / 2))
+    g.move(by(1, rowPx(2) / 2)) // same row: no repeat
+    expect(said).toEqual(['Layer 1 of 2: top flap', 'Layer 2 of 2: top flap and 1 below'])
+  })
+
+  test('the hold opens the belt for compound tools too (Reverse picks its layers there)', () => {
+    const { store, g } = setup()
+    store.getState().setTool('reverse')
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    expect(useUi.getState().belt).not.toBeNull()
+  })
+
+  test('drift under slop still opens (Review Focus 2)', () => {
+    const { g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(150)
+    g.move(by(2, 1))
+    vi.advanceTimersByTime(150)
+    g.move(by(3, -2))
+    vi.advanceTimersByTime(100)
+    expect(useUi.getState().belt).not.toBeNull()
+  })
+
+  test('moving 5px first never opens (Review Focus 2)', async () => {
+    const { store, g } = setup()
+    g.down(press)
+    g.move(by(5, 0))
+    g.move(by(0, 0)) // coming back does not re-arm the hold
+    vi.advanceTimersByTime(1000)
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().gesture!.layers).toBe(1) // the fold proceeds with the top layer
+    g.move(at([0.4, 0.5]))
+    expect(store.getState().preview).not.toBeNull()
+  })
+
+  test('drag out takes the hovered layer and those above', () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2)) // row 1: the second layer
+    expect(useUi.getState().belt!.hovered).toBe(1)
+    expect(store.getState().preview).toBeNull() // inside the belt nothing folds
+    const out = by(BELT_RADIUS_PX + 10, rowPx(2) / 2)
+    g.move(out)
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().gesture!.layers).toBe(2)
+    expect(store.getState().gesture!.target).toEqual([out.clientX / 100, 1 - out.clientY / 100]) // the same move drags
+    g.move(at([0.4, 0.5])) // back over the press point: the belt stays closed, the two layers fold
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().gesture!.layers).toBe(2)
+    expect(store.getState().preview).not.toBeNull()
+  })
+
+  test('a sideways or diagonal exit keeps the row: only a mostly vertical move changes it', () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2)) // row 1: the second layer
+    g.move(by(30, -rowPx(2) / 2)) // up and away across row 0, more sideways than up
+    expect(useUi.getState().belt!.hovered).toBe(1)
+    g.move(by(BELT_RADIUS_PX + 10, -rowPx(2)))
+    expect(store.getState().gesture!.layers).toBe(2)
+  })
+
+  test('a slow shallow exit in 1px steps keeps the row (Final review #2)', () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2)) // row 1
+    for (let i = 1; i <= 2 * BELT_RADIUS_PX; i++) g.move(by(i, rowPx(2) / 2 - Math.floor(i / 2))) // up at slope 0.5, 1px at a time
+    expect(store.getState().gesture!.layers).toBe(2)
+  })
+
+  test('a straight exit past the end of the stack keeps the row it left (Final review #2)', () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, -rowPx(2) / 2)) // row 0
+    g.move(by(0, rowPx(2) / 2)) // row 1
+    for (let y = rowPx(2) + 1; y <= BELT_RADIUS_PX + 5; y += 1) g.move(by(1, y)) // on down below the stack and out
+    expect(store.getState().gesture!.layers).toBe(2)
+  })
+
+  test('the belt opens on the top flap, and press jitter does not pick another row (Final review #3)', () => {
+    for (const jitter of [-1, 1]) {
+      const { store, g } = setup()
+      g.down(press)
+      vi.advanceTimersByTime(400)
+      expect(useUi.getState().belt!.hovered).toBe(0)
+      g.move(by(0, jitter))
+      g.move(by(BELT_RADIUS_PX + 10, jitter)) // straight out sideways
+      expect(store.getState().gesture!.layers).toBe(1)
+      g.cancel()
+    }
+  })
+
+  test('a mostly vertical move inside the belt still changes the row', () => {
+    const { g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2))
+    g.move(by(2, -rowPx(2) / 2))
+    expect(useUi.getState().belt!.hovered).toBe(0)
+  })
+
+  test('release inside the belt does nothing (Review Focus 3)', async () => {
+    const { store, g } = setup()
+    const before = store.getState().history.steps.length
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2))
+    await g.up(by(0, rowPx(2) / 2))
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().history.steps.length).toBe(before)
+    expect(store.getState().gesture).toBeNull()
+  })
+
+  test('cancel closes the belt; a quick release clears the hold timer', async () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.cancel()
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().gesture).toBeNull()
+    g.down(press)
+    await g.up(press)
+    vi.advanceTimersByTime(1000)
+    expect(useUi.getState().belt).toBeNull()
+  })
+
 })

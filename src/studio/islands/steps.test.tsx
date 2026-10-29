@@ -11,6 +11,7 @@ import { setReducedMotionSource } from '../motion'
 import { useStudio } from '../store'
 import { useSettings, defaultSettings } from '../../settings/store'
 import { MINI_DASH, MiniCP } from './MiniCP'
+import { halfFolded, openedHalf } from '../../engine/testkit'
 import { Steps } from './Steps'
 
 class FakeWorker {
@@ -144,6 +145,18 @@ describe('MiniCP', () => {
     expect(container.querySelectorAll('line[stroke-dasharray="6 3 1.5 3"]').length).toBeGreaterThan(0)
     expect(container.querySelectorAll('.cp-boundary').length).toBeGreaterThanOrEqual(4)
     expect(container.querySelector('.cp-boundary')).not.toHaveAttribute('stroke-dasharray')
+  })
+
+  test('open creases are drawn faint and solid (spec 09); a folded sheet has none', () => {
+    const { container } = render(<MiniCP frame={openedHalf()} />)
+    const open = container.querySelectorAll('.cp-open')
+    expect(open.length).toBeGreaterThan(0)
+    expect(open[0]).not.toHaveAttribute('stroke-dasharray')
+    expect(container.querySelectorAll('.cp-valley, .cp-mountain')).toHaveLength(0)
+    cleanup()
+    const folded = render(<MiniCP frame={halfFolded()} />).container
+    expect(folded.querySelectorAll('.cp-open')).toHaveLength(0)
+    expect(folded.querySelectorAll('.cp-valley').length).toBeGreaterThan(0)
   })
 
   test('updates live with the history cursor', () => {

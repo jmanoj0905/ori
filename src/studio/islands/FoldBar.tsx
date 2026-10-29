@@ -17,7 +17,7 @@ const subscribeCoarse = (cb: () => void) => {
   q?.addEventListener?.('change', cb)
   return () => q?.removeEventListener?.('change', cb)
 }
-/** True on touch-first devices, where the layer stepper replaces the scroll wheel. */
+/** True on touch-first devices, where the fold bar gets bigger targets. */
 export const useCoarsePointer = (): boolean => useSyncExternalStore(subscribeCoarse, () => coarseQuery()?.matches === true, () => false)
 
 const fmt = (n: number) => (Math.abs(n) < 0.0005 ? 0 : n).toFixed(2)
@@ -139,8 +139,8 @@ export function FoldBar() {
   const history = useStudio(s => s.history)
   const kind = useStudio(s => s.kind)
   const pending = useStudio(s => s.pending)
+  const reading = useStudio(s => s.reading)
   const setKind = useStudio(s => s.setKind)
-  const setLayers = useStudio(s => s.setLayers)
   const setNumeric = useStudio(s => s.setNumeric)
   const setLastFold = useStudio(s => s.setLastFold)
   // Lesson mode: a checked step is not re-committed from here (the store refuses it too).
@@ -172,9 +172,10 @@ export function FoldBar() {
   useEffect(() => setOpen(false), [live, gesture?.grab, history.cursor, history.steps.length])
 
   if (!subject) return null
+  const swinging = live && reading === 'swing'
 
   const k = live ? gesture.layers : subject.layers
-  const shownKind: FoldKind = live ? kind : subject.kind
+  const shownKind: FoldKind = live ? (gesture.kind ?? kind) : subject.kind
   const liveAngle = live ? (gesture.angleDeg ?? preview?.angleDeg ?? 0) : last!.angleDeg
   const angle = local ?? liveAngle
   const canAngle = tool === 'fold'
@@ -215,10 +216,10 @@ export function FoldBar() {
       )}
       <div className="fold-row">
         <div role="group" aria-label="Fold direction" className="seg kinds">
-          <button type="button" aria-pressed={shownKind === 'valley'} disabled={pending} onClick={() => onKind('valley')}>
+          <button type="button" aria-pressed={shownKind === 'valley'} disabled={pending || swinging} onClick={() => onKind('valley')}>
             <span className="glyph" aria-hidden="true">┄┄</span> Valley
           </button>
-          <button type="button" aria-pressed={shownKind === 'mountain'} disabled={pending} onClick={() => onKind('mountain')}>
+          <button type="button" aria-pressed={shownKind === 'mountain'} disabled={pending || swinging} onClick={() => onKind('mountain')}>
             <span className="glyph" aria-hidden="true">┄·┄</span> Mountain
           </button>
         </div>
@@ -239,10 +240,10 @@ export function FoldBar() {
           <output className="mono" aria-hidden="true">{Math.round(angle)}°</output>
         </label>
 
+        {live && reading && <span className="mono" data-testid="reading">{reading === 'swing' ? 'Swing on crease' : 'New fold'}</span>}
+
         <div className="badge" role="group" aria-label="Layers">
-          <button type="button" className="step" aria-label="Fewer layers" disabled={!live || k <= 1} onClick={() => setLayers(k - 1)}>−</button>
           <span className="mono" data-testid="layer-badge">{k} of {total} {total === 1 ? 'layer' : 'layers'}</span>
-          <button type="button" className="step" aria-label="More layers" disabled={!live || k >= total} onClick={() => setLayers(k + 1)}>+</button>
         </div>
 
         <button

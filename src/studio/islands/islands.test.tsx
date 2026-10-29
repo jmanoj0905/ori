@@ -55,6 +55,30 @@ afterEach(() => {
 })
 
 describe('fold bar', () => {
+  test('during a swing the bar shows the gesture kind, not the store kind', () => {
+    useStudio.setState({ history: quarterFolded() })
+    const hinge = { origin: [0.5, 0] as [number, number], vector: [0, 1] as [number, number] }
+    useStudio.getState().begin([1, 1])
+    act(() => useStudio.getState().drag([0.8, 0.8], 0.5, { crease: hinge, kind: 'mountain', reading: 'swing' }))
+    render(<FoldBar />)
+    expect(useStudio.getState().kind).toBe('valley')
+    expect(screen.getByRole('button', { name: /Mountain/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Valley/ })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  test('shows the live reading and disables the V/M toggle during a swing', () => {
+    useStudio.setState({ history: quarterFolded() })
+    useStudio.getState().begin([1, 1])
+    act(() => useStudio.setState({ reading: 'swing' }))
+    render(<FoldBar />)
+    expect(screen.getByText('Swing on crease')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Valley/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Mountain/ })).toBeDisabled()
+    act(() => useStudio.setState({ reading: 'new' }))
+    expect(screen.getByText('New fold')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Valley/ })).not.toBeDisabled()
+  })
+
   test('renders only while a gesture is set, and shows "2 of 4 layers"', () => {
     useStudio.setState({ history: quarterFolded() })
     render(<FoldBar />)

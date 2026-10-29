@@ -68,6 +68,40 @@ export async function drag(page: Page, from: Vec2, to: Vec2, opts: { steps?: num
   }
 }
 
+/**
+ * Press on `at` and hold still until the layer belt opens (spec 09), then slide
+ * onto row `k` (1 = the top layer) of its side view. The button stays down: the
+ * next mouse move out of the belt takes that layer and every layer above it.
+ * Returns the row's client point.
+ */
+export async function holdForLayers(page: Page, at: Vec2, k: number): Promise<Vec2> {
+  const [x, y] = await px(page, at)
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.waitForFunction(() => !!window.__ori!.ui.getState().belt, undefined, { timeout: 5_000 })
+  // Row centres as studio/belt.ts lays them out: rowPx(n) tall, stacked top → bottom about the press point.
+  const [cx, cy, n] = await page.evaluate(() => {
+    const b = window.__ori!.ui.getState().belt
+    return [b.clientX, b.clientY, b.stack.faces.length] as [number, number, number]
+  })
+  const r = Math.min(14, (2 * 72 - 16) / n)
+  const row: Vec2 = [cx, cy - (n * r) / 2 + (k - 0.5) * r]
+  await page.mouse.move(row[0], row[1], { steps: 3 })
+  await expect.poll(() => page.evaluate(() => window.__ori!.ui.getState().belt?.hovered)).toBe(k - 1)
+  return row
+}
+
+/** Fold `from` onto `to` taking the top `layers` layers (more than one: picked with the belt). */
+export async function foldLayers(page: Page, from: Vec2, to: Vec2, layers: number): Promise<void> {
+  if (layers <= 1) return drag(page, from, to)
+  await holdForLayers(page, from, layers)
+  const [bx, by] = await px(page, to)
+  // Straight out toward the target, at whatever angle: a mostly sideways move keeps the row.
+  await page.mouse.move(bx, by, { steps: 16 })
+  await page.mouse.up()
+  await settle(page)
+}
+
 export const stepList = (page: Page): Locator => page.getByRole('list', { name: 'Fold steps' })
 
 /** Fold steps in the list (the "0 · Blank sheet" row is not a step). */

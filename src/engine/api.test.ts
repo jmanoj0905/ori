@@ -25,8 +25,10 @@ describe('the @engine public API', () => {
         'poses',
         'landmarks',
         'snapPoint',
+        'snapCreaseLine',
         'layerAt',
         'layerRanks',
+        'stackProfile',
         'PAPER_SIZES',
         'startHistory',
         'push',
@@ -47,6 +49,8 @@ describe('the @engine public API', () => {
         'SCULPTED',
         'branch',
         'patternStep',
+        'hingesAt',
+        'progressToAngle',
       ].sort(),
     )
   })

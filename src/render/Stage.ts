@@ -109,6 +109,7 @@ type Built = {
   shade: THREE.Mesh
   valley: CreaseLines
   mountain: CreaseLines
+  open: CreaseLines
 }
 
 type Ghost = {
@@ -119,6 +120,7 @@ type Ghost = {
   xray: THREE.Mesh
   valley: CreaseLines
   mountain: CreaseLines
+  open: CreaseLines
   live: CreaseLines
 }
 
@@ -181,6 +183,13 @@ export class Stage {
   /** The lesson target ghost (setTarget) and its pulse loop. */
   private targetSpec: TargetGhost | null = null
   private target: TargetPieces | null = null
+  /** The hover flap highlight (setHoverFlap). */
+  private hover: { group: THREE.Group; geometry: THREE.BufferGeometry; hinges: CreaseLines } | null = null
+  private hoverSpec: { faces: number[]; hinges: (readonly [Vec2, Vec2])[] } | null = null
+  private readonly hoverMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(ACCENT), transparent: true, opacity: 0.14, depthWrite: false, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: 0, polygonOffsetUnits: -1,
+  })
   private readonly targetMat = new THREE.MeshBasicMaterial({
     color: new THREE.Color(INK), transparent: true, opacity: TARGET_OPACITY, depthWrite: false, side: THREE.DoubleSide,
     polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2,
@@ -273,6 +282,8 @@ export class Stage {
     // A commit arrives just before its preview is cleared (syncStage): keep a
     // landing in progress only if it is that same commit's (no preview now).
     if (this.preview) this.endLanding()
+    // The hover highlight names faces of the old frame: drop it (the next pointer move brings it back).
+    if (frame !== this.frame) this.hoverSpec = null
     this.frame = frame
     this.poses = poses
     const b = bboxOf(frame)
@@ -347,7 +358,7 @@ export class Stage {
         if (!b) continue
         b.front.material = this.materials.front
         b.back.material = this.materials.back
-        this.inkLines(b.valley, b.mountain)
+        this.inkLines(b.valley, b.mountain, b.open)
       }
       if (this.preview) tintGhost(this.ghostMats, sideColors(s), this.preview.blocked, this.ghostFade())
     }
@@ -412,6 +423,40 @@ export class Stage {
       this.pulseRaf = requestAnimationFrame(loop)
     }
     this.pulseRaf = requestAnimationFrame(loop)
+  }
+
+  /**
+   * Highlight a flap under the pointer: its faces' folded outlines softly
+   * tinted, its hinge segments solid in the accent colour. `null` clears it.
+   */
+  setHoverFlap(faces: readonly number[] | null, hinges: readonly (readonly [Vec2, Vec2])[]): void {
+    this.hoverSpec = faces && faces.length ? { faces: [...faces], hinges: hinges.map(h => [h[0], h[1]] as const) } : null
+    this.buildHover()
+    this.invalidate()
+  }
+
+  private buildHover(): void {
+    const h = this.hover
+    if (h) {
+      h.group.removeFromParent()
+      h.geometry.dispose()
+      h.hinges.dispose()
+      this.hover = null
+    }
+    const spec = this.hoverSpec
+    const frame = this.frame
+    if (!spec || !frame || this.disposed) return
+    const lo = this.committedLayers ?? layerOffsets(frame, this.poses, this.gap())
+    const geometry = buildPaperGeometry(frame, this.poses, this.gap(), { offsets: lo.offsets, faces: spec.faces })
+    const tint = new THREE.Mesh(geometry, this.hoverMat)
+    tint.renderOrder = 8
+    const hinges = buildLiveCrease(spec.hinges, 'open', ACCENT, 2 * this.gap())
+    hinges.material.uniforms.uOpacity!.value = 0.6
+    hinges.setViewport(this.width * this.dpr, this.height * this.dpr, this.dpr)
+    const group = new THREE.Group()
+    group.add(tint, hinges)
+    this.hover = { group, geometry, hinges }
+    this.scene.add(group)
   }
 
   private disposeTarget(): void {
@@ -767,7 +812,10 @@ export class Stage {
     this.disposeStationary()
     this.disposeGhostPieces()
     this.disposeTarget()
+    this.hoverSpec = null
+    this.buildHover()
     this.hideSoft()
+    this.hoverMat.dispose()
     this.targetMat.dispose()
     this.ringMat.dispose()
     disposeMaterials(this.materials)
@@ -850,6 +898,7 @@ export class Stage {
     this.committed = this.build(frame, this.poses, lo)
     this.committed.group.visible = !this.preview && !this.soft
     this.scene.add(this.committed.group)
+    this.buildHover()
     const box = this.committed.geometry.boundingBox
     if (box) this.fitShadow(box)
   }
@@ -864,11 +913,11 @@ export class Stage {
     const lift = CREASE_LIFT * this.gap()
     const shade = new THREE.Mesh(buildCreaseShade(frame, poses, { offsets: lo.offsets, up: lo.up, lift, faces }), this.shadeMat)
     shade.renderOrder = 2
-    const { valley, mountain } = buildCreaseLines(frame, poses, { offsets: lo.offsets, levels: lo.levels, up: lo.up, lift, faces })
-    this.inkLines(valley, mountain)
+    const { valley, mountain, open } = buildCreaseLines(frame, poses, { offsets: lo.offsets, levels: lo.levels, up: lo.up, lift, faces })
+    this.inkLines(valley, mountain, open)
     const group = new THREE.Group()
-    group.add(front, back, shade, valley, mountain)
-    return { group, geometry, front, back, shade, valley, mountain }
+    group.add(front, back, shade, valley, mountain, open)
+    return { group, geometry, front, back, shade, valley, mountain, open }
   }
 
   /** Ink that reads on each side of the paper (dark on light paper, pale on dark). */
@@ -913,21 +962,21 @@ export class Stage {
     front.castShadow = true
     front.renderOrder = back.renderOrder = 10
     xray.renderOrder = 11
-    const { valley, mountain } = buildCreaseLines(p.frame, p.poses, {
+    const { valley, mountain, open } = buildCreaseLines(p.frame, p.poses, {
       offsets: lo.offsets, levels: lo.levels, up: lo.up, lift: CREASE_LIFT * this.gap(), faces: p.moving, ...(solid ? {} : { opacity: 0.55 }),
     })
-    this.inkLines(valley, mountain)
-    valley.renderOrder = mountain.renderOrder = 12
+    this.inkLines(valley, mountain, open)
+    valley.renderOrder = mountain.renderOrder = open.renderOrder = 12
     const live = buildLiveCrease(p.crease, st.kind ?? 'valley', ACCENT)
     live.setViewport(this.width * this.dpr, this.height * this.dpr, this.dpr)
     live.visible = !solid
     if (!solid) tintGhost(this.ghostMats, sideColors(this.paper), p.blocked, this.ghostFade())
     const group = new THREE.Group()
-    group.add(front, back, xray, valley, mountain, live)
+    group.add(front, back, xray, valley, mountain, open, live)
     // R55: the dragged flap hovers a little (render-only z; its angle is the preview's).
     this.ghostLift = solid ? 0 : flapLift(st, this.reducedMotion())
     group.position.z = this.ghostLift
-    this.ghost = { group, geometry, front, back, xray, valley, mountain, live }
+    this.ghost = { group, geometry, front, back, xray, valley, mountain, open, live }
     this.scene.add(group)
   }
 
@@ -945,6 +994,7 @@ export class Stage {
     b.shade.geometry.dispose()
     b.valley.dispose()
     b.mountain.dispose()
+    b.open.dispose()
   }
 
   private disposeStationary(): void {
@@ -960,6 +1010,7 @@ export class Stage {
     g.geometry.dispose()
     g.valley.dispose()
     g.mountain.dispose()
+    g.open.dispose()
     g.live.dispose()
     this.ghost = null
   }

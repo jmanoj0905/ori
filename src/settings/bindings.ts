@@ -11,16 +11,17 @@ const wheel = (): Binding => ({ type: 'wheel', mods: { ...NONE } })
 
 /**
  * Spec 04 default table. Unbound by default (the table has no entry): topView,
- * resetView, settings. `keyboardFold` (F) is the only addition to the table. Wheel: zoom and layersLess/layersMore all hold a plain
- * wheel; the router picks the meaning by context (folding -> layers).
+ * resetView, settings. `keyboardFold` (F), `layerPicker` (L) and `forceNewFold`
+ * (hold Alt) are additions to the table. The plain wheel is always zoom; layers
+ * are chosen from the layer belt, never stepped blind.
  */
 export const DEFAULT_BINDINGS: Bindings = {
   fold: [mouse(0)],
   orbit: [mouse(2)],
   pan: [mouse(1)],
   zoom: [wheel()],
-  layersLess: [key('['), wheel()],
-  layersMore: [key(']'), wheel()],
+  layerPicker: [key('l')],
+  forceNewFold: [{ type: 'modifier', key: 'alt' }],
   angleSnap: [{ type: 'modifier', key: 'shift' }],
   valley: [key('v')],
   mountain: [key('m')],
@@ -59,16 +60,16 @@ export function sameBinding(a: Binding, b: Binding): boolean {
   }
 }
 
-/** Wheel actions that the router separates by context (folding vs not). */
-const WHEEL_CONTEXTS: ReadonlySet<Action> = new Set<Action>(['zoom', 'layersLess', 'layersMore'])
+/** `m` is a held modifier that a mouse or wheel binding `b` needs. */
+const masks = (m: Binding, b: Binding) => m.type === 'modifier' && (b.type === 'mouse' || b.type === 'wheel') && b.mods[m.key]
 
 /**
  * Two actions conflict when they hold an identical binding (same type, code or
  * button, same modifier set). Rules:
- *  - `modifier` bindings are their own class: compared only with each other.
- *  - an identical wheel binding shared by zoom / layersLess / layersMore is NOT
- *    a conflict: zoom applies when not folding, layers while folding, and
- *    less/more are the two scroll directions.
+ *  - `modifier` bindings are compared with each other, and also clash with a
+ *    mouse or wheel binding that needs that modifier: the router ignores a
+ *    held-modifier key when matching mouse and wheel, so that binding would
+ *    never fire (an Alt+drag orbit under the default Alt forceNewFold).
  * Returns each conflicting pair once, in ACTION declaration order.
  */
 export function findConflicts(b: Bindings): [Action, Action][] {
@@ -78,11 +79,7 @@ export function findConflicts(b: Bindings): [Action, Action][] {
     for (let j = i + 1; j < actions.length; j++) {
       const x = actions[i], y = actions[j]
       const clash = b[x].some(p =>
-        b[y].some(q => {
-          if (!sameBinding(p, q)) return false
-          if (p.type === 'wheel' && WHEEL_CONTEXTS.has(x) && WHEEL_CONTEXTS.has(y)) return false
-          return true
-        }))
+        b[y].some(q => sameBinding(p, q) || masks(p, q) || masks(q, p)))
       if (clash) out.push([x, y])
     }
   }

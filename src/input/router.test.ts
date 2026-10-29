@@ -21,7 +21,7 @@ afterEach(() => {
   el.remove()
 })
 
-const setup = (actions: Action[] = ['fold', 'orbit', 'pan', 'zoom', 'layersLess', 'layersMore', 'angleSnap', 'valley', 'mountain', 'undo', 'redo', 'cancel']) => {
+const setup = (actions: Action[] = ['fold', 'orbit', 'pan', 'zoom', 'angleSnap', 'forceNewFold', 'valley', 'mountain', 'undo', 'redo', 'cancel']) => {
   const log: Log = []
   const handlers: Partial<Record<Action, (e: ActionEvent) => void>> = {}
   for (const a of actions) handlers[a] = e => void log.push([a, e])
@@ -79,7 +79,6 @@ describe('mouse drags', () => {
     disposers.push(createRouter(el, () => bindings, {
       fold: e => { log.push(['fold', e]); return false },
       zoom: e => void log.push(['zoom', e]),
-      layersMore: e => void log.push(['layersMore', e]),
     }))
     ptr('pointerdown')
     ptr('pointermove', { clientX: 5 })
@@ -99,25 +98,13 @@ describe('wheel', () => {
     expect(e.defaultPrevented).toBe(true)
   })
 
-  test('while a fold is active: wheel up = layersMore, down = layersLess', () => {
+  test('wheel zooms while folding', () => {
     const log = setup()
     ptr('pointerdown')
     wheel(-100)
     wheel(100)
-    expect(log.filter(([a]) => a === 'zoom')).toHaveLength(0)
-    expect(log.filter(([a]) => a.startsWith('layers')).map(([a]) => a)).toEqual(['layersMore', 'layersLess'])
-    ptr('pointerup', { buttons: 0 })
-    wheel(100)
-    expect(log[log.length - 1][0]).toBe('zoom')
-  })
-
-  test('small trackpad deltas accumulate to one layer step', () => {
-    const log = setup()
-    ptr('pointerdown')
-    for (let i = 0; i < 9; i++) wheel(-10)
-    expect(log.filter(([a]) => a === 'layersMore')).toHaveLength(0)
-    for (let i = 0; i < 1; i++) wheel(-10)
-    expect(log.filter(([a]) => a === 'layersMore')).toHaveLength(1)
+    expect(log.filter(([a]) => a === 'zoom').map(([, e]) => e.delta)).toEqual([-100, 100])
+    expect(log.filter(([a]) => a !== 'zoom' && a !== 'fold')).toEqual([])
   })
 
   test('a modifier-gated zoom binding needs the modifier', () => {
@@ -238,6 +225,17 @@ describe('keyboard', () => {
     key('ShiftLeft', { shiftKey: true, repeat: true })
     key('ShiftLeft', {}, 'keyup')
     expect(phases(log, 'angleSnap')).toEqual(['start', 'end'])
+  })
+
+  test('forceNewFold (Alt) emits start/end once and never blocks a fold drag', () => {
+    const log = setup()
+    key('AltLeft', { altKey: true })
+    key('AltLeft', { altKey: true, repeat: true })
+    ptr('pointerdown', { altKey: true })
+    expect(phases(log, 'fold')).toEqual(['start'])
+    ptr('pointerup', { buttons: 0, altKey: true })
+    key('AltLeft', {}, 'keyup')
+    expect(phases(log, 'forceNewFold')).toEqual(['start', 'end'])
   })
 
   test('shift held before a click does not stop the fold from matching', () => {

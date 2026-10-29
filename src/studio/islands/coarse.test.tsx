@@ -21,16 +21,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('fold bar layer stepper on touch', () => {
-  test('a coarse pointer marks the bar for touch and the - / + buttons call setLayers', () => {
+describe('fold bar on touch', () => {
+  test('a coarse pointer marks the bar for touch; layers are a read-only badge with no stepper', () => {
     media(true)
     useStudio.setState({ gesture: { ...gesture(), layers: 2 } })
     render(<FoldBar />)
     expect(screen.getByRole('region', { name: 'Fold' })).toHaveAttribute('data-coarse')
-    const spy = vi.fn()
-    act(() => useStudio.setState({ setLayers: spy }))
-    fireEvent.click(screen.getByRole('button', { name: 'Fewer layers' }))
-    expect(spy).toHaveBeenCalledWith(1)
+    expect(screen.getByTestId('layer-badge')).toHaveTextContent('2 of 1 layer')
+    expect(screen.queryByRole('button', { name: /layers/ })).toBeNull()
   })
 
   test('a fine pointer leaves the bar unmarked', () => {

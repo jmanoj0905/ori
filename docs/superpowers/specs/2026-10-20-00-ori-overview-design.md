@@ -56,6 +56,7 @@ The project is also a portfolio piece, so craft and polish matter as much as fea
 | 06 | Guided lessons | 3 |
 | 07 | Designer tool | 4 |
 | 08 | Curved and wet folding (XPBD) | 5 |
+| 09 | Living creases and layer picking | 6 |
 
 ## Phases
 1. **Sandbox:** specs 01–04, plus autosave and PNG export from 05, plus three presets (plane, cup, crane).

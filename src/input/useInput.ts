@@ -27,10 +27,6 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
     const st = useStudio
     const g = createFoldGesture(stage, st, opts)
     let snapHeld = false
-    const layers = (d: number) => {
-      const gs = st.getState().gesture
-      if (gs) st.getState().setLayers(gs.layers + d)
-    }
     const kf = createKeyboardFold({ stage, store: st })
     // R61: entering replay ends a pointer or keyboard fold; while replaying, folds do not start.
     const replaying = () => st.getState().replaying
@@ -53,8 +49,8 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
       orbit: e => { if (e.phase === 'move') stage.orbit(e.dx ?? 0, e.dy ?? 0) },
       pan: e => { if (e.phase === 'move') stage.pan(e.dx ?? 0, e.dy ?? 0) },
       zoom: e => stage.zoom(e.delta ?? 0),
-      layersLess: () => layers(-1),
-      layersMore: () => layers(1),
+      layerPicker: () => kf.openBelt(),
+      forceNewFold: e => g.setForceNew(e.phase === 'start'),
       angleSnap: e => {
         snapHeld = e.phase === 'start'
         st.getState().setSnapAngle(snapHeld && useSettings.getState().snap.angle)
@@ -131,6 +127,7 @@ export function useInput(stage: InputStage | null, opts?: GestureOptions): void 
       el.removeEventListener('pointermove', hover)
       el.removeEventListener('pointerleave', leave)
       stage.setHoverMarker?.(null)
+      stage.setHoverFlap?.(null, [])
       el.style.cursor = ''
     }
   }, [stage, opts])

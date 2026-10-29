@@ -145,6 +145,40 @@ describe('useStudio store', () => {
     expect(s.getState().gesture!.layers).toBe(1)
   })
 
+  test('drag opts carry a swing crease, kind and reading; a plain drag clears them', () => {
+    const s = fresh()
+    const hinge = { origin: [0.5, 0] as [number, number], vector: [0, 1] as [number, number] }
+    s.getState().begin([1, 1])
+    s.getState().drag([0.8, 0.8], 0.5, { crease: hinge, kind: 'mountain', reading: 'swing' })
+    expect(s.getState().gesture!.crease).toEqual(hinge)
+    expect(s.getState().gesture!.kind).toBe('mountain')
+    expect(s.getState().reading).toBe('swing')
+    expect(s.getState().kind).toBe('valley')
+    s.getState().drag([0.7, 0.7], 0.5)
+    expect(s.getState().gesture!.crease).toBeUndefined()
+    expect(s.getState().gesture!.kind).toBe('valley')
+    expect(s.getState().reading).toBeNull()
+  })
+
+  test('setKind during a swing leaves the gesture kind alone; begin and cancel reset the reading', () => {
+    const s = fresh()
+    const hinge = { origin: [0.5, 0] as [number, number], vector: [0, 1] as [number, number] }
+    s.getState().begin([1, 1])
+    s.getState().drag([0.8, 0.8], 0.5, { crease: hinge, kind: 'mountain', reading: 'swing' })
+    s.getState().setKind('valley')
+    s.getState().setKind('mountain')
+    s.getState().setKind('valley')
+    expect(s.getState().gesture!.kind).toBe('mountain')
+    expect(s.getState().kind).toBe('valley')
+    s.getState().cancel()
+    expect(s.getState().reading).toBeNull()
+    s.getState().begin([1, 1])
+    s.getState().drag([0.8, 0.8], 0.5, { reading: 'new' })
+    expect(s.getState().reading).toBe('new')
+    s.getState().begin([1, 1])
+    expect(s.getState().reading).toBeNull()
+  })
+
   test('turnOver adds a step', async () => {
     const s = fresh()
     await expect(s.getState().turnOver()).resolves.toBe(true)

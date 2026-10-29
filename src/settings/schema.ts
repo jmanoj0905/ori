@@ -2,13 +2,13 @@ import type { PaperSettings } from '../paper'
 
 export type Action =
   | 'fold' | 'orbit' | 'pan' | 'zoom'
-  | 'layersLess' | 'layersMore' | 'angleSnap'
+  | 'layerPicker' | 'forceNewFold' | 'angleSnap'
   | 'valley' | 'mountain' | 'reverse' | 'squash' | 'petal' | 'turnOver'
   | 'undo' | 'redo' | 'cancel' | 'topView' | 'resetView' | 'shortcuts' | 'settings'
   | 'keyboardFold'
 
 export const ACTIONS: readonly Action[] = [
-  'fold', 'orbit', 'pan', 'zoom', 'layersLess', 'layersMore', 'angleSnap',
+  'fold', 'orbit', 'pan', 'zoom', 'layerPicker', 'forceNewFold', 'angleSnap',
   'valley', 'mountain', 'reverse', 'squash', 'petal', 'turnOver',
   'undo', 'redo', 'cancel', 'topView', 'resetView', 'shortcuts', 'settings', 'keyboardFold',
 ]
@@ -22,7 +22,7 @@ export type Mods = { mod: boolean; shift: boolean; alt: boolean }
 export type ModKey = 'shift' | 'alt' | 'mod'
 
 /**
- * `modifier` is a hold-only binding (angle snap = hold Shift). It is a separate
+ * `modifier` is a hold-only binding (angle snap = hold Shift, force a new fold = hold Alt). It is a separate
  * class: it is compared only against other `modifier` bindings, never keys.
  */
 /**
@@ -48,12 +48,13 @@ export type SnapSettings = {
   midpoints: boolean
   intersections: boolean
   edges: boolean
+  creases: boolean
   angle: boolean
   axioms: boolean
 }
 
 export type Settings = {
-  version: 1
+  version: 2
   bindings: Bindings
   reducedMotion: ReducedMotion
   snap: SnapSettings
@@ -65,5 +66,5 @@ export type Settings = {
   softPaper: boolean
 }
 
-export const SETTINGS_VERSION = 1 as const
+export const SETTINGS_VERSION = 2 as const
 export const SETTINGS_KEY = 'ori.settings'

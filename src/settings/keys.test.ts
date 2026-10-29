@@ -42,8 +42,8 @@ describe('matching', () => {
     expect(matchesKey(sheet, ev({ key: '/', code: 'Slash' }))).toBe(false)
   })
 
-  test('[ and ] match the characters, including AltGr on European layouts (not read as Ctrl+Alt)', () => {
-    const less = k(DEFAULT_BINDINGS.layersLess[0]!)
+  test('[ matches the character, including AltGr on European layouts (not read as Ctrl+Alt)', () => {
+    const less = k({ type: 'key', key: '[', mods: { mod: false, shift: false, alt: false } })
     expect(matchesKey(less, ev({ key: '[', code: 'BracketLeft' }))).toBe(true)
     expect(matchesKey(less, ev({ key: '[', code: 'Digit8', ctrlKey: true, altKey: true, altGraph: true }))).toBe(true)
     expect(matchesKey(less, ev({ key: 'ü', code: 'BracketLeft' }))).toBe(false)
@@ -109,14 +109,14 @@ describe('migration of code-based bindings', () => {
       version: 1,
       bindings: {
         valley: [codeB('KeyV')], undo: [codeB('KeyZ', { mod: true })], shortcuts: [codeB('Slash', { shift: true })],
-        layersLess: [codeB('BracketLeft'), { type: 'wheel', mods: none }],
+        layerPicker: [codeB('KeyL')],
       },
     }
     const s = migrate(old)
     expect(s.bindings.valley).toEqual(DEFAULT_BINDINGS.valley)
     expect(s.bindings.undo).toEqual(DEFAULT_BINDINGS.undo)
     expect(s.bindings.shortcuts).toEqual(DEFAULT_BINDINGS.shortcuts)
-    expect(s.bindings.layersLess).toEqual(DEFAULT_BINDINGS.layersLess)
+    expect(s.bindings.layerPicker).toEqual(DEFAULT_BINDINGS.layerPicker)
   })
 
   test('a code binding and the key binding it migrates to are the same binding (conflicts see through)', () => {

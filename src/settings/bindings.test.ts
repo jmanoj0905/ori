@@ -40,6 +40,14 @@ describe('findConflicts', () => {
     b.pan = [{ type: 'modifier', key: 'shift' }]
     expect(findConflicts(b)).toEqual([['pan', 'angleSnap']])
   })
+  test('a held modifier clashes with a mouse or wheel binding that needs it (the router masks it there)', () => {
+    const b = cloneBindings(DEFAULT_BINDINGS)
+    b.orbit = [{ type: 'mouse', button: 0, mods: { mod: false, shift: false, alt: true } }]
+    expect(findConflicts(b)).toEqual([['orbit', 'forceNewFold']])
+    b.orbit = [mouse(2)]
+    b.zoom = [{ type: 'wheel', mods: { mod: false, shift: true, alt: false } }]
+    expect(findConflicts(b)).toEqual([['zoom', 'angleSnap']])
+  })
   test('wheel shared with a non-context action (pan) is a conflict', () => {
     const b = cloneBindings(DEFAULT_BINDINGS)
     b.pan = [{ type: 'wheel', mods: { mod: false, shift: false, alt: false } }]
@@ -83,6 +91,14 @@ describe('migrate', () => {
     expect(s2.bindings.forceNewFold).toEqual([])
     expect(findConflicts(s2.bindings)).toEqual([])
   })
+  test('v1 save with a custom Alt+drag orbit keeps it and leaves forceNewFold unbound (Final review #4)', () => {
+    const altLeft = { type: 'mouse', button: 0, mods: { mod: false, shift: false, alt: true } }
+    const s = migrate({ version: 1, bindings: { orbit: [altLeft] } })
+    expect(s.bindings.orbit).toEqual([altLeft])
+    expect(s.bindings.forceNewFold).toEqual([])
+    expect(findConflicts(s.bindings)).toEqual([])
+  })
+
   test('undefined and garbage give defaults', () => {
     expect(migrate(undefined)).toEqual(defaultSettings())
     expect(migrate('x')).toEqual(defaultSettings())

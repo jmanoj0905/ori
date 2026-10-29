@@ -60,10 +60,16 @@ export function sameBinding(a: Binding, b: Binding): boolean {
   }
 }
 
+/** `m` is a held modifier that a mouse or wheel binding `b` needs. */
+const masks = (m: Binding, b: Binding) => m.type === 'modifier' && (b.type === 'mouse' || b.type === 'wheel') && b.mods[m.key]
+
 /**
  * Two actions conflict when they hold an identical binding (same type, code or
  * button, same modifier set). Rules:
- *  - `modifier` bindings are their own class: compared only with each other.
+ *  - `modifier` bindings are compared with each other, and also clash with a
+ *    mouse or wheel binding that needs that modifier: the router ignores a
+ *    held-modifier key when matching mouse and wheel, so that binding would
+ *    never fire (an Alt+drag orbit under the default Alt forceNewFold).
  * Returns each conflicting pair once, in ACTION declaration order.
  */
 export function findConflicts(b: Bindings): [Action, Action][] {
@@ -73,7 +79,7 @@ export function findConflicts(b: Bindings): [Action, Action][] {
     for (let j = i + 1; j < actions.length; j++) {
       const x = actions[i], y = actions[j]
       const clash = b[x].some(p =>
-        b[y].some(q => sameBinding(p, q)))
+        b[y].some(q => sameBinding(p, q) || masks(p, q) || masks(q, p)))
       if (clash) out.push([x, y])
     }
   }

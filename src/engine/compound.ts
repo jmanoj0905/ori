@@ -580,7 +580,15 @@ function findSquashFlap(frame: Frame, grab: Vec2, face?: number): SquashFlap | n
   const stack = stackFrom(frame, grab, face)
   if (stack.length < 2) return null
   const [U0, D0] = stack
-  const ridge = facesEdges(frame, U0, facesOf).filter(e => facesOf[e].includes(D0) && isFolded(frame, e))
+  // Each layer's panel: its faces joined across open creases (pre-creased paper
+  // splits a layer into faces that still lie flat together), so the ridge and
+  // hinge are found wherever the press lands on the flap.
+  const panel = (f: number) => flood(frame, f, facesOf, e => isOpen(frame, e))
+  const [P, Q] = [panel(U0), panel(D0)]
+  if ([...P].some(f => Q.has(f))) return null
+  const ridge = [...new Set([...P].flatMap(f => facesEdges(frame, f, facesOf)))].filter(
+    e => facesOf[e].some(x => P.has(x)) && facesOf[e].some(x => Q.has(x)) && isFolded(frame, e),
+  )
   if (ridge.length === 0) return null
   const r = lineOf(segOf(frame, ridge[0], coords))
   if (!ridge.every(e => onLine(segOf(frame, e, coords), r))) return null
@@ -591,9 +599,10 @@ function findSquashFlap(frame: Frame, grab: Vec2, face?: number): SquashFlap | n
   const hi = ends.reduce((a, b) => (t(b) > t(a) ? b : a))
 
   for (const [apex, ridgeEnd] of [[lo, hi], [hi, lo]] as [Vec2, Vec2][]) {
-    const hinges = [U0, D0]
-      .flatMap(f => facesEdges(frame, f, facesOf))
+    // folded hinges first: an open crease through the flap is a hinge only when nothing else is
+    const hinges = [...new Set([...P, ...Q].flatMap(f => facesEdges(frame, f, facesOf)))]
       .filter(e => isInner(frame, e, facesOf) && !onLine(segOf(frame, e, coords), r))
+      .sort((a, b) => Number(isOpen(frame, a)) - Number(isOpen(frame, b)))
       .map(e => segOf(frame, e, coords))
       .filter(([a, b]) => samePoint(a, apex) || samePoint(b, apex))
     for (const sg of hinges) {
@@ -655,13 +664,18 @@ function buildSquash(frame: Frame, g: Gesture): Result<{ built: Built }> {
     const [pa, pb] = fo[e].map(parentOf)
     return U.has(pa) !== U.has(pb) && !all.has(U.has(pa) ? pb : pa)
   }
+  const cc = foldedCoords(c.cut)
+  // an existing (open) crease of a layer along b is that layer's b-crease, as a cut one would be
+  const sameLayer = (pa: number, pb: number) => (U.has(pa) && U.has(pb)) || (D.has(pa) && D.has(pb))
+  const onB = (e: number) => onLine(segOf(c.cut, e, cc), b)
   const variant = (flipU: boolean, valley: boolean): Stepped | null => {
     const x = editsOf(c.cut)
     c.cut.edges_vertices.forEach((_, e) => {
       if (fo[e].length !== 2) return
       const [fa, fb] = fo[e]
       const [pa, pb] = [parentOf(fa), parentOf(fb)]
-      if (pa === pb) {
+      if (pa === pb || (sameLayer(pa, pb) && onB(e))) {
+        if (pa !== pb && !isFolded(c.cut, e)) fold(x, e, 1)
         if (U.has(pa) && flipU) flipVM(x, e) // U's new b-crease
       } else if ((U.has(pa) && D.has(pb)) || (D.has(pa) && U.has(pb))) {
         open(x, e) // the ridge opens

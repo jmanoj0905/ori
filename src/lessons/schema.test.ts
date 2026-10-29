@@ -5,6 +5,7 @@ import { checkStep } from './check'
 import { LAUNCH_LESSONS, loadLessons, parseLesson, sheetOf, type Lesson } from './schema'
 import { gestureOf, lessonSkeleton } from './devExport'
 import { RECORDINGS } from './authoring/recordings'
+import { waterbombCreases } from '../engine/testkit'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -52,6 +53,17 @@ describe('launch lessons', () => {
       }
       prev = s.target
     }
+  })
+
+  test('the waterbomb lesson folds from pre-creased paper too (spec 09 scenario 3)', () => {
+    let f: Frame = waterbombCreases()
+    const l = byId('waterbomb')
+    for (const [i, s] of l.steps.entries()) {
+      const r = s.tool === 'turnOver' ? turnOver(f) : commit(f, s.demo!)
+      if (!r.ok) throw new Error(`step ${i + 1}: ${r.reason}`)
+      f = r.frame
+    }
+    expect(checkStep(f, l.steps.at(-1)!.target, { allowMirror: false })).toEqual({ match: true })
   })
 
   test('the plane, cup and crane lessons fold the same models as their presets', () => {

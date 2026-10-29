@@ -94,11 +94,10 @@ export async function holdForLayers(page: Page, at: Vec2, k: number): Promise<Ve
 /** Fold `from` onto `to` taking the top `layers` layers (more than one: picked with the belt). */
 export async function foldLayers(page: Page, from: Vec2, to: Vec2, layers: number): Promise<void> {
   if (layers <= 1) return drag(page, from, to)
-  const [rx, ry] = await holdForLayers(page, from, layers)
+  await holdForLayers(page, from, layers)
   const [bx, by] = await px(page, to)
-  // Leave the belt sideways along the row, toward the target: the last row crossed is the one taken.
-  await page.mouse.move(rx + (bx >= rx ? 1 : -1) * 80, ry, { steps: 4 })
-  await page.mouse.move(bx, by, { steps: 12 })
+  // Straight out toward the target, at whatever angle: a mostly sideways move keeps the row.
+  await page.mouse.move(bx, by, { steps: 16 })
   await page.mouse.up()
   await settle(page)
 }

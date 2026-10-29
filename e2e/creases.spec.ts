@@ -16,10 +16,15 @@ async function allRun(page: Page, kind: 'open' | 'valley', way: 'h' | 'v'): Prom
   }), way)
 }
 
-/** Fold `from` onto `to`, then swing the flap straight back open (its tip now sits on `to`). */
+/**
+ * Fold `from` onto `to`, then swing the flap straight back open. The swing presses just inside
+ * the flap's tip (which sits on `to`), as a person would: on the paper's very corner the pick
+ * can land on the layer underneath, and lifting that one turns the whole sheet face down.
+ */
 async function preCrease(page: Page, from: Vec2, to: Vec2) {
   await drag(page, from, to)
-  await drag(page, to, from)
+  const tip: Vec2 = [to[0] + (from[0] - to[0]) * 0.05, to[1] + (from[1] - to[1]) * 0.05]
+  await drag(page, tip, from)
 }
 
 test.beforeEach(async ({ page }) => {
@@ -59,10 +64,7 @@ test('refold reversed: the mountain lands on the opened crease', async ({ page }
   await expect(cp(page, 'valley')).toHaveCount(0)
 })
 
-// Known gap (spec 09 scenario 3): on pre-creased paper the squash takes an open crease (the diagonal)
-// as its hinge instead of the folded book fold, so the collapse does not reach the waterbomb base.
-// Choosing the folded hinge then fails the layer-order solve. Squash is out of spec 09's scope; this needs its own fix.
-test.fail('waterbomb from pre-creases', async ({ page }) => {
+test('waterbomb from pre-creases', async ({ page }) => {
   await preCrease(page, [0.99, 0.99], [0, 0])
   await preCrease(page, [0.01, 0.99], [1, 0])
   await preCrease(page, [0.5, 0.99], [0.5, 0])
@@ -86,14 +88,8 @@ test.fail('waterbomb from pre-creases', async ({ page }) => {
       continue
     }
     const d = step.demo!
-    let grab = d.grab
-    if (step.tool === 'squash') {
-      await page.getByRole('button', { name: 'Squash', exact: true }).click()
-      // The lesson grabs the flap on the diagonal, which is a crease here and the squash's hinge:
-      // press just inside the flap instead (toward the sheet's vertical centre line).
-      grab = [d.grab[0] + (d.grab[0] < 0.5 ? -0.04 : 0.04), d.grab[1]]
-    }
-    await foldLayers(page, grab, d.target, d.layers)
+    if (step.tool === 'squash') await page.getByRole('button', { name: 'Squash', exact: true }).click()
+    await foldLayers(page, d.grab, d.target, d.layers) // the squash presses right on the open diagonal
   }
   await expectSteps(page, 8 + lesson.steps.length)
   const last = lesson.steps.at(-1)!

@@ -164,3 +164,22 @@ export function openedHalf(): Frame {
   if (!r.ok) throw new Error(`openedHalf fixture refused: ${r.reason}`)
   return r.frame
 }
+
+/**
+ * A square pre-creased with the waterbomb's four lines (both diagonals, both
+ * midlines), each folded and swung back open: flat, with four 'F' creases.
+ */
+export function waterbombCreases(): Frame {
+  let f = makeSheet({ width: 1, height: 1 })
+  const lines: [Vec2, Vec2][] = [[[1, 1], [0, 0]], [[0, 1], [1, 0]], [[0.5, 1], [0.5, 0]], [[1, 0.5], [0, 0.5]]]
+  for (const [from, to] of lines) {
+    const g: Gesture = { tool: 'fold', grab: from, target: to, layers: 1, kind: 'valley', progress: 1, snapAngle: false }
+    const folded = commit(f, g)
+    if (!folded.ok) throw new Error(`waterbombCreases fold refused: ${folded.reason}`)
+    const [h] = hingesAt(folded.frame, to, 1)
+    const opened = commit(folded.frame, { ...g, grab: to, kind: h.openKind, crease: h.line })
+    if (!opened.ok) throw new Error(`waterbombCreases swing refused: ${opened.reason}`)
+    f = opened.frame
+  }
+  return f
+}

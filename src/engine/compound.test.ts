@@ -5,7 +5,7 @@ import { layerAt } from './layers'
 import { commit, preview, turnOver, type Gesture } from './ops'
 import { foldedCoords, layerOrders, makeSheet } from './rabbit'
 import { containsPoint } from './layers'
-import { area, base, doubleTriangle, halfFolded, preliminary } from './testkit'
+import { area, base, doubleTriangle, halfFolded, preliminary, waterbombCreases } from './testkit'
 import type { Frame, Line, Tool, Vec2 } from './types'
 
 const sheet = () => makeSheet({ width: 1, height: 1 })
@@ -253,6 +253,30 @@ describe('squash fold', () => {
     expect(samePolygon(a.map(p => reflect(p, axis)), b, 1e-7)).toBe(true)
     // the folded edge's outer end lands on the axis
     for (const v of verticesAt(frame, [0.5, 0])) expect(close(c[v][0], c[v][1], 1e-9)).toBe(true)
+  })
+
+  test.each([
+    ['on the open diagonal', [0.4, 0.4]],
+    ['beside it, toward the folded edge', [0.36, 0.4]],
+    ['beside it, toward the hinge', [0.44, 0.4]],
+  ] as [string, Vec2][])('on pre-creased paper the flap squashes along its open diagonal (pressed %s)', (_, grab) => {
+    // spec 09 scenario 3: the waterbomb's first squash after folding the pre-creased square in quarters
+    let f = waterbombCreases()
+    f = ok(commit(f, gesture('fold', { grab: [0.5, 1], target: [0.5, 0] }))).frame
+    f = ok(commit(f, gesture('fold', { grab: [1, 0.25], target: [0, 0.25], layers: 2 }))).frame
+    const { frame } = ok(squashFold(f, gesture('squash', { grab, target: [0.1, 0.1], layers: 2 })))
+    expect(frame.edges_vertices.length).toBe(f.edges_vertices.length) // the existing creases, no new ones
+    expect(layerOrders(frame)).not.toBeNull()
+    const angleOf = (p: Vec2, q: Vec2) => {
+      const at = (v: number, r: Vec2) => near(frame.vertices_coords[v], r)
+      const e = frame.edges_vertices.findIndex(([u, v]) => (at(u, p) && at(v, q)) || (at(u, q) && at(v, p)))
+      return frame.edges_foldAngle[e]
+    }
+    // the flap's diagonals fold; its ridge (the right half of the first fold) and its hinge open
+    expect(Math.abs(angleOf([0.5, 0.5], [1, 0]))).toBe(180)
+    expect(Math.abs(angleOf([0.5, 0.5], [1, 1]))).toBe(180)
+    expect(angleOf([0.5, 0.5], [1, 0.5])).toBe(0)
+    expect(angleOf([0.5, 0.5], [0.5, 0])).toBe(0)
   })
 
   test('a single layer cannot be squashed', () => {

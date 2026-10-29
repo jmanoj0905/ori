@@ -19,9 +19,10 @@
 // on. A swing released within SETTLE_OPEN_DEG of flat settles fully open.
 // Other tools (reverse, squash, petal) keep their plain bisector drag.
 //
-// Layer belt (spec 09, Fold tool only): a press held HOLD_MS within
+// Layer belt (spec 09, every tool): a press held HOLD_MS within
 // HOLD_SLOP_PX opens the belt (ui.belt) over the stack at the grab. While it is
-// open, moves inside it only hover a row; leaving it takes the hovered layer
+// open, moves inside it only hover a row (once a row is hovered, only a mostly
+// vertical move changes it, so a diagonal exit keeps it); leaving it takes the hovered layer
 // and every layer above it (setLayers), re-collects the hinges for that stack
 // and carries on as an ordinary drag. Releasing inside it cancels: no step.
 // A move past the slop before the hold fires cancels the hold, so a quick
@@ -113,6 +114,8 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
     press: Vec2
     /** The pending hold timer, until it fires or the pointer drifts past the slop. */
     hold: { handle: unknown } | null
+    /** The last pointer sample inside the open belt (client px), to tell a row change from an exit. */
+    inBelt: Vec2 | null
     moved: boolean
     hinges: readonly HingeCandidate[]
     reading: Reading
@@ -211,7 +214,7 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
       const { gesture, tool, history } = store.getState()
       const hinges = gesture && tool === 'fold' ? hingesAt(current(history), grab, gesture.layers, hit.face) : []
       active = {
-        id: e.pointerId, grab, face: hit.face, press: [e.clientX, e.clientY], hold: null,
+        id: e.pointerId, grab, face: hit.face, press: [e.clientX, e.clientY], hold: null, inBelt: null,
         moved: false, hinges, reading: { mode: 'new' }, last: null,
       }
       if (gesture) active.hold = { handle: later(openBelt, HOLD_MS) } // every tool picks layers here; only Fold swings
@@ -260,6 +263,12 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
       const ui = useUi.getState()
       if (ui.belt) {
         if (insideBelt(ui.belt, e.clientX, e.clientY)) {
+          const prev = active.inBelt ?? active.press
+          active.inBelt = [e.clientX, e.clientY]
+          // Only a mostly vertical move changes the row: heading out sideways or
+          // diagonally keeps the layer picked, even across the rows above it.
+          const vertical = Math.abs(e.clientY - prev[1]) >= Math.abs(e.clientX - prev[0])
+          if (ui.belt.hovered !== null && !vertical) return
           const row = beltRowAt(ui.belt, e.clientX, e.clientY)
           if (row !== null && row !== ui.belt.hovered) announce(layerWords(row + 1, ui.belt.stack.faces.length))
           return ui.hoverBelt(row)

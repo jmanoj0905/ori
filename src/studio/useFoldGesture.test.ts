@@ -540,6 +540,26 @@ describe('layer belt: press and hold (spec 09)', () => {
     expect(store.getState().preview).not.toBeNull()
   })
 
+  test('a sideways or diagonal exit keeps the row: only a mostly vertical move changes it', () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2)) // row 1: the second layer
+    g.move(by(30, -rowPx(2) / 2)) // up and away across row 0, more sideways than up
+    expect(useUi.getState().belt!.hovered).toBe(1)
+    g.move(by(BELT_RADIUS_PX + 10, -rowPx(2)))
+    expect(store.getState().gesture!.layers).toBe(2)
+  })
+
+  test('a mostly vertical move inside the belt still changes the row', () => {
+    const { g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2))
+    g.move(by(2, -rowPx(2) / 2))
+    expect(useUi.getState().belt!.hovered).toBe(0)
+  })
+
   test('release inside the belt does nothing (Review Focus 3)', async () => {
     const { store, g } = setup()
     const before = store.getState().history.steps.length

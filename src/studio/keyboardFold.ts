@@ -5,6 +5,11 @@
 //   Enter                                     set the grab point
 //   Tab / arrows                              cycle target landmarks (live preview)
 //   L  V M                                    layer belt, fold kind (the normal bindings)
+//
+// The layer belt (spec 09), once a grab point is set: L opens it at the grab
+// with the top layer hovered. Up / Down move through the stack, Enter takes the
+// hovered layer and those above it, Esc closes the belt only. Each row is
+// announced ("Layer 2 of 4: top flap and 1 below").
 //   + -                                       fold angle in 22.5 degree steps
 //   Enter                                     commit        Esc  cancel
 //
@@ -22,11 +27,12 @@
 // target points (lessons/lessonSlice lessonPoints) join the landmarks, named
 // "lesson grab point" / "lesson target point", and the cursor starts on the
 // grab point.
-import { current, landmarks } from '@engine'
+import { current, landmarks, stackProfile } from '@engine'
 import type { Landmark, Vec2 } from '@engine'
 import { dragProgress } from './useFoldGesture'
 import { announce as defaultAnnounce, foldWords } from './announce'
 import { useUi, type KeyboardPhase } from './ui'
+import { layerWords } from './belt'
 import type { StudioState } from './store'
 import { lessonPoints } from '../lessons/lessonSlice'
 
@@ -108,7 +114,7 @@ type StoreLike = {
   subscribe(listener: (s: StudioState, prev: StudioState) => void): () => void
 }
 export type KeyboardFoldDeps = {
-  stage?: { setHoverMarker?(p: Vec2 | null): void }
+  stage?: { setHoverMarker?(p: Vec2 | null): void; clientOf?(p: Vec2): Vec2 }
   store: StoreLike
   announce?: (text: string) => void
   onPhase?: (p: KeyboardPhase) => void
@@ -120,6 +126,7 @@ const bisector = (grab: Vec2, target: Vec2) => {
   return { origin: [(grab[0] + target[0]) / 2, (grab[1] + target[1]) / 2] as Vec2, vector: [-d[1], d[0]] as Vec2 }
 }
 
+const ANGLE_KEYS = { '+': 1, '=': 1, '-': -1, '_': -1 } as const
 const ARROWS: Record<string, Dir> = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' }
 
 export function createKeyboardFold({ stage, store, announce = defaultAnnounce, onPhase = p => useUi.getState().setKf(p) }: KeyboardFoldDeps) {
@@ -147,6 +154,7 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
   const reset = (cancelGesture: boolean) => {
     if (phase === 'idle') return
     if (cancelGesture && store.getState().gesture) store.getState().cancel()
+    useUi.getState().closeBelt()
     cursor = null
     grab = null
     ls = []
@@ -224,12 +232,42 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
     void store.getState().release()
   }
 
+  /** Up / Down / Enter / Esc while the belt is open (see the header). */
+  const beltKey = (key: string): boolean => {
+    const ui = useUi.getState()
+    const belt = ui.belt!
+    const n = belt.stack.faces.length
+    const at = belt.hovered ?? 0
+    if (key === 'ArrowUp' || key === 'ArrowDown') {
+      const next = Math.min(n - 1, Math.max(0, at + (key === 'ArrowDown' ? 1 : -1)))
+      ui.hoverBelt(next)
+      announce(layerWords(next + 1, n))
+    } else if (key === 'Enter') {
+      store.getState().setLayers(at + 1)
+      ui.closeBelt()
+      announce(`${layerWords(at + 1, n)}. ${previewWords()}`.trim())
+    } else if (key === 'Escape') ui.closeBelt()
+    // The cursor's other keys wait for the belt to close; the normal bindings (V, M, L) stay live.
+    else return key === 'Tab' || key in ANGLE_KEYS
+    return true
+  }
+
   return {
     phase: (): KeyboardPhase => phase,
 
-    /** Open the layer belt from the keyboard (Task 10). Stub: nothing to open yet. */
+    /** The layerPicker key: open the layer belt at the grab point. True when it opened. */
     openBelt(): boolean {
-      return false
+      const { gesture, history } = store.getState()
+      if (phase !== 'target' || !grab || !gesture) return false
+      const stack = stackProfile(current(history), grab)
+      if (stack.faces.length < 2) {
+        announce('One layer here: nothing to pick.')
+        return false
+      }
+      const [clientX, clientY] = stage?.clientOf?.(grab) ?? [0, 0]
+      useUi.getState().openBelt({ clientX, clientY, stack, hovered: 0, keyboard: true })
+      announce(layerWords(1, stack.faces.length))
+      return true
     },
 
     /** The fold key: show the landmark cursor and wait for a grab point. */
@@ -262,6 +300,7 @@ export function createKeyboardFold({ stage, store, announce = defaultAnnounce, o
     /** Returns true when the key was consumed (the caller then preventDefault()s it). */
     key(e: KeyInfo): boolean {
       if (phase === 'idle') return false
+      if (useUi.getState().belt?.keyboard) return beltKey(e.key)
       if (e.key === 'Escape') {
         reset(true)
         announce('Keyboard fold cancelled.')

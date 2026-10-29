@@ -34,7 +34,8 @@ import { useStudio, type DragOptions, type StudioState } from './store'
 import { useSettings } from '../settings/store'
 import { readDrag, settleOpen, type Reading } from './dragReading'
 import { useUi } from './ui'
-import { beltRowAt, HOLD_MS, HOLD_SLOP_PX, insideBelt } from './belt'
+import { beltRowAt, HOLD_MS, HOLD_SLOP_PX, insideBelt, layerWords } from './belt'
+import { announce as defaultAnnounce } from './announce'
 
 /** Crease snap: a new fold's bisector within this angle of an existing crease locks onto it. */
 const CREASE_SNAP_DEG = 4
@@ -65,6 +66,8 @@ export type GestureOptions = {
   /** Timer for the press-and-hold that opens the layer belt (default the global setTimeout / clearTimeout). */
   setTimeout?: (cb: () => void, ms: number) => unknown
   clearTimeout?: (handle: unknown) => void
+  /** The live region (default announce): the belt reads out each layer. */
+  announce?: (text: string) => void
 }
 type PointerLike = { button?: number; pointerId: number; clientX: number; clientY: number }
 
@@ -120,6 +123,7 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
   const raf = opts.raf ?? (cb => void requestAnimationFrame(cb))
   const later = opts.setTimeout ?? ((cb, ms) => setTimeout(cb, ms))
   const unlater = opts.clearTimeout ?? (h => clearTimeout(h as ReturnType<typeof setTimeout>))
+  const announce = opts.announce ?? defaultAnnounce
 
   /** Drop the pending hold, if any. */
   const unhold = () => {
@@ -141,6 +145,7 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
     const stack = stackProfile(current(history), active.grab, active.face)
     if (stack.faces.length < 2) return // a single layer: nothing to pick
     useUi.getState().openBelt({ clientX: active.press[0], clientY: active.press[1], stack, hovered: null, keyboard: false })
+    announce(layerWords(1, stack.faces.length)) // dragging out before reaching a row takes the top flap
   }
 
   /** Landmarks the user has snapping switched on for (Tools island / settings). */
@@ -254,7 +259,11 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
       if (active.hold && Math.hypot(e.clientX - active.press[0], e.clientY - active.press[1]) > HOLD_SLOP_PX) unhold()
       const ui = useUi.getState()
       if (ui.belt) {
-        if (insideBelt(ui.belt, e.clientX, e.clientY)) return ui.hoverBelt(beltRowAt(ui.belt, e.clientX, e.clientY))
+        if (insideBelt(ui.belt, e.clientX, e.clientY)) {
+          const row = beltRowAt(ui.belt, e.clientX, e.clientY)
+          if (row !== null && row !== ui.belt.hovered) announce(layerWords(row + 1, ui.belt.stack.faces.length))
+          return ui.hoverBelt(row)
+        }
         // Out of the belt: take the hovered layer and those above, then fold on.
         store.getState().setLayers((ui.belt.hovered ?? 0) + 1)
         const { gesture, history } = store.getState()

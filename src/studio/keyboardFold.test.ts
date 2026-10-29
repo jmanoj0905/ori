@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { PAPER_SIZES, createPaper, landmarks, startHistory } from '@engine'
-import type { Vec2 } from '@engine'
+import type { Frame, Vec2 } from '@engine'
+import { halfFolded } from '../engine/testkit'
 import { inProcessCommitter } from './committer'
 import { createKeyboardFold, nextLandmark } from './keyboardFold'
 import { createStudioStore } from './store'
+import { useUi } from './ui'
 
 const square = () => landmarks(startHistory(createPaper(PAPER_SIZES.square)).frames[0])
 const at = (p: Vec2) => (l: { p: Vec2 }) => Math.abs(l.p[0] - p[0]) < 1e-9 && Math.abs(l.p[1] - p[1]) < 1e-9
@@ -50,11 +52,14 @@ describe('nextLandmark', () => {
   })
 })
 
-function setup() {
+const clientOf = (p: Vec2): Vec2 => [100 + p[0] * 200, 500 - p[1] * 200]
+
+function setup(frame?: Frame) {
   const store = createStudioStore({ committer: inProcessCommitter, reduced: () => true })
+  if (frame) store.getState().restoreHistory(startHistory(frame))
   const marker = vi.fn()
   const said: string[] = []
-  const kf = createKeyboardFold({ stage: { setHoverMarker: marker }, store, announce: t => said.push(t) })
+  const kf = createKeyboardFold({ stage: { setHoverMarker: marker, clientOf }, store, announce: t => said.push(t) })
   const press = (key: string, shiftKey = false) => kf.key({ key, shiftKey })
   return { store, marker, said, kf, press }
 }
@@ -181,5 +186,94 @@ describe('keyboard fold flow', () => {
     kf.start()
     expect(kf.phase()).toBe('idle')
     expect(store.getState().gesture?.grab).toEqual([1, 1])
+  })
+})
+
+describe('keyboard layer belt (spec 09)', () => {
+  beforeEach(() => useUi.getState().closeBelt())
+  afterEach(() => useUi.getState().closeBelt())
+
+  /** Half-folded sheet, grab set and a target chosen: phase 'target'. */
+  const targeting = () => {
+    const t = setup(halfFolded())
+    t.kf.start()
+    t.press('Enter')
+    t.press('Tab')
+    expect(t.kf.phase()).toBe('target')
+    return t
+  }
+
+  test('L opens the belt at the grab, top layer hovered, and announces it', () => {
+    const { kf, said, store } = targeting()
+    expect(kf.openBelt()).toBe(true)
+    const belt = useUi.getState().belt!
+    expect(belt.keyboard).toBe(true)
+    expect(belt.hovered).toBe(0)
+    expect(belt.stack.faces.length).toBe(2)
+    expect([belt.clientX, belt.clientY]).toEqual(clientOf(store.getState().gesture!.grab))
+    expect(said.at(-1)).toBe('Layer 1 of 2: top flap')
+  })
+
+  test('ArrowDown announces the next layer; Enter takes it and closes the belt', () => {
+    const { kf, said, store, press } = targeting()
+    kf.openBelt()
+    expect(press('ArrowDown')).toBe(true)
+    expect(useUi.getState().belt!.hovered).toBe(1)
+    expect(said.at(-1)).toBe('Layer 2 of 2: top flap and 1 below')
+    press('ArrowDown') // clamped at the bottom
+    expect(useUi.getState().belt!.hovered).toBe(1)
+    press('ArrowUp')
+    expect(said.at(-1)).toBe('Layer 1 of 2: top flap')
+    press('ArrowDown')
+    expect(press('Enter')).toBe(true)
+    expect(store.getState().gesture!.layers).toBe(2)
+    expect(useUi.getState().belt).toBeNull()
+    expect(store.getState().history.steps).toHaveLength(0) // Enter in the belt picks, it does not commit
+    expect(kf.phase()).toBe('target')
+  })
+
+  test('Escape closes the belt only: the keyboard fold stays in target', () => {
+    const { kf, store, press } = targeting()
+    kf.openBelt()
+    expect(press('Escape')).toBe(true)
+    expect(useUi.getState().belt).toBeNull()
+    expect(kf.phase()).toBe('target')
+    expect(store.getState().gesture).not.toBeNull()
+    expect(store.getState().gesture!.layers).toBe(1)
+  })
+
+  test('while the belt is open the cursor keys wait, and other keys fall through to the bindings', () => {
+    const { kf, press } = targeting()
+    kf.openBelt()
+    expect(press('Tab')).toBe(true)
+    expect(press('+')).toBe(true)
+    expect(useUi.getState().belt).not.toBeNull()
+    expect(press('m')).toBe(false)
+  })
+
+  test('openBelt is refused outside the target phase', () => {
+    const { kf, press } = setup(halfFolded())
+    expect(kf.openBelt()).toBe(false)
+    kf.start()
+    expect(kf.openBelt()).toBe(false) // grab phase: no grab point yet
+    press('Enter')
+    expect(kf.openBelt()).toBe(true)
+    expect(useUi.getState().belt).not.toBeNull()
+  })
+
+  test('a single layer has nothing to pick: the belt stays closed', () => {
+    const { kf, press, said } = setup()
+    kf.start()
+    press('Enter')
+    expect(kf.openBelt()).toBe(false)
+    expect(useUi.getState().belt).toBeNull()
+    expect(said.at(-1)).toBe('One layer here: nothing to pick.')
+  })
+
+  test('cancelling the keyboard fold closes an open belt', () => {
+    const { kf } = targeting()
+    kf.openBelt()
+    kf.cancel()
+    expect(useUi.getState().belt).toBeNull()
   })
 })

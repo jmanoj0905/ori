@@ -455,7 +455,8 @@ describe('layer belt: press and hold (spec 09)', () => {
       projectToPaperPlane: toPaper,
       pxPerUnit: () => 100,
     }
-    return { store, g: createFoldGesture(stage, store) }
+    const said: string[] = []
+    return { store, said, g: createFoldGesture(stage, store, { announce: t => void said.push(t) }) }
   }
   beforeEach(() => {
     vi.useFakeTimers()
@@ -478,6 +479,16 @@ describe('layer belt: press and hold (spec 09)', () => {
     expect([belt.clientX, belt.clientY]).toEqual([press.clientX, press.clientY])
     expect(belt.hovered).toBeNull()
     expect(belt.keyboard).toBe(false)
+  })
+
+  test('the belt announces the top flap on open and each new row under the pointer', () => {
+    const { g, said } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    expect(said).toEqual(['Layer 1 of 2: top flap'])
+    g.move(by(0, rowPx(2) / 2))
+    g.move(by(1, rowPx(2) / 2)) // same row: no repeat
+    expect(said).toEqual(['Layer 1 of 2: top flap', 'Layer 2 of 2: top flap and 1 below'])
   })
 
   test('drift under slop still opens (Review Focus 2)', () => {

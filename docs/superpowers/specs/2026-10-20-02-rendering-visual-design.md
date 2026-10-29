@@ -33,6 +33,7 @@ These are user-selectable (see spec 03 for the panel):
 They follow the Yoshizawa–Randlett diagram convention:
 - **Valley:** dashed `┄┄`.
 - **Mountain:** dash-dot `┄·┄`.
+- **Open crease** (spec 09; assignment F, or a valley/mountain at 0°): a faint, thin, solid line, never dashed.
 
 **How they're drawn:**
 - On the paper's surface, in a soft ink colour, with a dash length that stays constant in screen space.

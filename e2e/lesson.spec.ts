@@ -60,7 +60,11 @@ test('complete the cup lesson with the keyboard alone', async ({ page }) => {
       expect(near(await studio(page, s => s.gesture?.grab), d.grab)).toBe(true)
       for (let n = 0; n < 60 && !near(await studio(page, s => s.gesture?.target), d.target); n++) await page.keyboard.press('Tab')
       expect(near(await studio(page, s => s.gesture?.target), d.target)).toBe(true)
-      for (let k = 1; k < d.layers; k++) await page.keyboard.press(']')
+      if (d.layers > 1) {
+        await page.keyboard.press('l') // the layer belt, top layer first
+        for (let k = 1; k < d.layers; k++) await page.keyboard.press('ArrowDown')
+        await page.keyboard.press('Enter')
+      }
       await page.keyboard.press('Enter')
     }
     await settle(page)

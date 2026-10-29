@@ -63,11 +63,13 @@ test('blocked preview', async ({ page }) => {
   await drag(page, [0.99, 0.5], [0, 0.5]) // book fold: the right half lies on the left
   await page.locator('[data-stage-host] canvas').focus()
   await page.keyboard.press('m') // mountain: the top flap would swing down through the bottom layer
+  await page.keyboard.down('Alt') // toward its hinge reads as a swing (spec 09): force the new fold
   await drag(page, [0.1, 0.5], [0.4, 0.5], { release: false })
   await expect(hint(page)).toHaveText('Flap would pass through paper.')
   await expect(hint(page)).toHaveAttribute('data-blocked', '')
   await frames(page, 3)
   await expect(page).toHaveScreenshot('blocked-preview.png')
   await page.keyboard.press('Escape')
+  await page.keyboard.up('Alt')
   await page.mouse.up()
 })

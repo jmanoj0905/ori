@@ -7,19 +7,14 @@
 // corner (0,1) onto (1,0), then (0,0) onto (1,1) through both layers, the
 // crane's first two steps) is folded through the UI here.
 import { expect, test, type Page } from '@playwright/test'
-import { drag, expectSteps, hint, openStudio, playPreset, settle, stepList, studio, type Vec2 } from './helpers'
+import { drag, expectSteps, foldLayers, hint, openStudio, playPreset, settle, stepList, studio, type Vec2 } from './helpers'
 
 const MISS = 'That crease misses the paper.'
 
 const folding = (page: Page) => page.locator('.studio[data-folding]')
 
-/** Fold `from` onto `to`, adding `extraLayers` with ] while the button is held. */
-async function foldWith(page: Page, from: Vec2, to: Vec2, extraLayers = 0) {
-  await drag(page, from, to, { release: false })
-  for (let i = 0; i < extraLayers; i++) await page.keyboard.press(']')
-  await page.mouse.up()
-  await settle(page)
-}
+/** Fold `from` onto `to`, taking `extraLayers` more than the top one from the layer belt. */
+const foldWith = (page: Page, from: Vec2, to: Vec2, extraLayers = 0) => foldLayers(page, from, to, 1 + extraLayers)
 
 /** The double triangle: two folds, four layers, open along P–Q = (1,0)–(1,1). */
 async function doubleTriangle(page: Page) {

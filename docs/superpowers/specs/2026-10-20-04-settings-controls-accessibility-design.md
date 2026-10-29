@@ -25,8 +25,9 @@ A side sheet or modal with these sections:
 | Fold | Left-drag on paper |
 | Orbit | Right-drag |
 | Pan | Middle-drag |
-| Zoom | Scroll (when not folding) |
-| Fewer / more layers | `[` `]`, or scroll while folding |
+| Zoom | Scroll |
+| Layer picker (keyboard fold) | `L` |
+| Force a new fold (hold while dragging; never blocks the drag) | Hold Alt |
 | Angle snap | Hold Shift |
 | Valley / Mountain | `V` / `M` |
 | Reverse / Squash / Petal | `R` / `S` / `P` |
@@ -40,7 +41,7 @@ This is a complete fold path with no mouse:
 1. Press the fold key. The landmark cursor appears.
 2. Tab or the arrow keys cycle through landmarks, ordered by proximity in the direction of the arrow. Enter sets the grab point.
 3. Cycle through target landmarks the same way. The live preview shows.
-4. `[` and `]` change layers, `V` and `M` switch the fold type, and `+` and `-` change the angle in 22.5° steps.
+4. `L` opens the layer belt at the grab point (spec 09): Up and Down move through the stack, Enter takes that layer and those above it, Esc closes the belt. Each layer is announced ("Layer 2 of 4: top flap and 1 below"). `V` and `M` switch the fold type, and `+` and `-` change the angle in 22.5° steps.
 5. Enter commits; Esc cancels.
 
 Tool modes use the same flow.

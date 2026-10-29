@@ -21,8 +21,9 @@
 //
 // Layer belt (spec 09, every tool): a press held HOLD_MS within
 // HOLD_SLOP_PX opens the belt (ui.belt) over the stack at the grab. While it is
-// open, moves inside it only hover a row (once a row is hovered, only a mostly
-// vertical move changes it, so a diagonal exit keeps it); leaving it takes the hovered layer
+// open (on the top flap), moves inside it only hover a row: a slide of
+// ROW_SLIDE_PX or more, mostly vertical and over the stack, changes it, so
+// jitter and a sideways, diagonal or end-on exit keep it; leaving it takes the hovered layer
 // and every layer above it (setLayers), re-collects the hinges for that stack
 // and carries on as an ordinary drag. Releasing inside it cancels: no step.
 // A move past the slop before the hold fires cancels the hold, so a quick
@@ -35,8 +36,11 @@ import { useStudio, type DragOptions, type StudioState } from './store'
 import { useSettings } from '../settings/store'
 import { readDrag, settleOpen, type Reading } from './dragReading'
 import { useUi } from './ui'
-import { beltRowAt, HOLD_MS, HOLD_SLOP_PX, insideBelt, layerWords } from './belt'
+import { beltRowAt, HOLD_MS, HOLD_SLOP_PX, insideBelt, layerWords, rowPx } from './belt'
 import { announce as defaultAnnounce } from './announce'
+
+/** A slide inside the belt must travel this far (client px), mostly vertically, to change the row. */
+const ROW_SLIDE_PX = 3
 
 /** Crease snap: a new fold's bisector within this angle of an existing crease locks onto it. */
 const CREASE_SNAP_DEG = 4
@@ -114,8 +118,8 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
     press: Vec2
     /** The pending hold timer, until it fires or the pointer drifts past the slop. */
     hold: { handle: unknown } | null
-    /** The last pointer sample inside the open belt (client px), to tell a row change from an exit. */
-    inBelt: Vec2 | null
+    /** Where the belt's row was last set (client px): a row change is measured from here, not per sample. */
+    anchor: Vec2
     moved: boolean
     hinges: readonly HingeCandidate[]
     reading: Reading
@@ -147,7 +151,8 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
     if (!gesture || pending) return
     const stack = stackProfile(current(history), active.grab, active.face)
     if (stack.faces.length < 2) return // a single layer: nothing to pick
-    useUi.getState().openBelt({ clientX: active.press[0], clientY: active.press[1], stack, hovered: null, keyboard: false })
+    active.anchor = active.press
+    useUi.getState().openBelt({ clientX: active.press[0], clientY: active.press[1], stack, hovered: 0, keyboard: false })
     announce(layerWords(1, stack.faces.length)) // dragging out before reaching a row takes the top flap
   }
 
@@ -214,7 +219,7 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
       const { gesture, tool, history } = store.getState()
       const hinges = gesture && tool === 'fold' ? hingesAt(current(history), grab, gesture.layers, hit.face) : []
       active = {
-        id: e.pointerId, grab, face: hit.face, press: [e.clientX, e.clientY], hold: null, inBelt: null,
+        id: e.pointerId, grab, face: hit.face, press: [e.clientX, e.clientY], hold: null, anchor: [e.clientX, e.clientY],
         moved: false, hinges, reading: { mode: 'new' }, last: null,
       }
       if (gesture) active.hold = { handle: later(openBelt, HOLD_MS) } // every tool picks layers here; only Fold swings
@@ -263,12 +268,15 @@ export function createFoldGesture(stage: GestureStage, store: StoreLike = useStu
       const ui = useUi.getState()
       if (ui.belt) {
         if (insideBelt(ui.belt, e.clientX, e.clientY)) {
-          const prev = active.inBelt ?? active.press
-          active.inBelt = [e.clientX, e.clientY]
-          // Only a mostly vertical move changes the row: heading out sideways or
-          // diagonally keeps the layer picked, even across the rows above it.
-          const vertical = Math.abs(e.clientY - prev[1]) >= Math.abs(e.clientX - prev[0])
-          if (ui.belt.hovered !== null && !vertical) return
+          // Only a deliberate, mostly vertical slide (from where the row was last
+          // set) changes the row, and only over the stack itself: press jitter,
+          // or heading out sideways, diagonally or past the stack's end, keeps it.
+          const dx = Math.abs(e.clientX - active.anchor[0])
+          const dy = Math.abs(e.clientY - active.anchor[1])
+          const n = ui.belt.stack.faces.length
+          const overStack = Math.abs(e.clientY - ui.belt.clientY) <= (n * rowPx(n)) / 2
+          if (dy < ROW_SLIDE_PX || dy < dx || !overStack) return
+          active.anchor = [e.clientX, e.clientY]
           const row = beltRowAt(ui.belt, e.clientX, e.clientY)
           if (row !== null && row !== ui.belt.hovered) announce(layerWords(row + 1, ui.belt.stack.faces.length))
           return ui.hoverBelt(row)

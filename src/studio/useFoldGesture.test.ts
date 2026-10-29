@@ -477,7 +477,7 @@ describe('layer belt: press and hold (spec 09)', () => {
     expect(belt).not.toBeNull()
     expect(belt.stack.faces.length).toBe(2)
     expect([belt.clientX, belt.clientY]).toEqual([press.clientX, press.clientY])
-    expect(belt.hovered).toBeNull()
+    expect(belt.hovered).toBe(0) // the top flap, as announced
     expect(belt.keyboard).toBe(false)
   })
 
@@ -549,6 +549,38 @@ describe('layer belt: press and hold (spec 09)', () => {
     expect(useUi.getState().belt!.hovered).toBe(1)
     g.move(by(BELT_RADIUS_PX + 10, -rowPx(2)))
     expect(store.getState().gesture!.layers).toBe(2)
+  })
+
+  test('a slow shallow exit in 1px steps keeps the row (Final review #2)', () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, rowPx(2) / 2)) // row 1
+    for (let i = 1; i <= 2 * BELT_RADIUS_PX; i++) g.move(by(i, rowPx(2) / 2 - Math.floor(i / 2))) // up at slope 0.5, 1px at a time
+    expect(store.getState().gesture!.layers).toBe(2)
+  })
+
+  test('a straight exit past the end of the stack keeps the row it left (Final review #2)', () => {
+    const { store, g } = setup()
+    g.down(press)
+    vi.advanceTimersByTime(400)
+    g.move(by(0, -rowPx(2) / 2)) // row 0
+    g.move(by(0, rowPx(2) / 2)) // row 1
+    for (let y = rowPx(2) + 1; y <= BELT_RADIUS_PX + 5; y += 1) g.move(by(1, y)) // on down below the stack and out
+    expect(store.getState().gesture!.layers).toBe(2)
+  })
+
+  test('the belt opens on the top flap, and press jitter does not pick another row (Final review #3)', () => {
+    for (const jitter of [-1, 1]) {
+      const { store, g } = setup()
+      g.down(press)
+      vi.advanceTimersByTime(400)
+      expect(useUi.getState().belt!.hovered).toBe(0)
+      g.move(by(0, jitter))
+      g.move(by(BELT_RADIUS_PX + 10, jitter)) // straight out sideways
+      expect(store.getState().gesture!.layers).toBe(1)
+      g.cancel()
+    }
   })
 
   test('a mostly vertical move inside the belt still changes the row', () => {
